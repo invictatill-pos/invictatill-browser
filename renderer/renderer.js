@@ -711,12 +711,6 @@ if (ssBtn) {
   });
 }
 
-// ─── Auto-Update UI ───────────────────────────────────────────────────────────
-const updateBanner = $('update-banner');
-const updateTitle  = $('update-banner-title');
-const updateSub    = $('update-banner-sub');
-const updateFill   = $('update-progress-fill');
-const installBtn   = $('btn-install-update');
 // ═══════════════════════════════════════════════════════════════════════════
 //  DUAL ENGINE SWITCHER: GAMING VS WFH (v1.3.0)
 // ═══════════════════════════════════════════════════════════════════════════
