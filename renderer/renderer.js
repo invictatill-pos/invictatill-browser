@@ -712,34 +712,61 @@ if (ssBtn) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
 //  DUAL ENGINE SWITCHER: GAMING VS WFH (v1.3.0)
 // ═══════════════════════════════════════════════════════════════════════════
-let currentEngineMode = 'gaming'; // 'gaming' or 'wfh'
+let currentEngineMode = 'wfh'; // WFH is default mode!
 const btnModeGaming = $('btn-mode-gaming');
 const btnModeWfh    = $('btn-mode-wfh');
 const aiDrawerBtn   = $('btn-ai-drawer');
 
-function switchEngineMode(mode) {
+async function initEngineMode() {
+  try {
+    const settings = await api.getSettings();
+    const savedMode = settings.engineMode || 'wfh'; // default to WFH mode
+    switchEngineMode(savedMode, true);
+  } catch(e) {
+    switchEngineMode('wfh', true);
+  }
+}
+
+function switchEngineMode(mode, isInitial = false) {
   currentEngineMode = mode;
-  document.body.classList.remove('mode-gaming', 'mode-wfh');
+  document.body.classList.remove('mode-normal', 'mode-gaming', 'mode-ultra', 'mode-wfh');
   
+  const titlePill = document.getElementById('title-mode-pill');
+  const titlePillText = document.getElementById('title-mode-text');
+
   if (mode === 'wfh') {
     document.body.classList.add('mode-wfh');
     btnModeGaming?.classList.remove('active-gaming');
     btnModeWfh?.classList.add('active-wfh');
     if (aiDrawerBtn) aiDrawerBtn.style.display = 'flex';
-    notify('💼 Switched to WFH Mode — Invicta AI & Activity Logger Active!', 'success', 3000);
-    // Auto-open AI Drawer when switching to WFH for quick access
-    toggleAiDrawer(true);
-    // Start continuous activity logging loop
+    if (titlePillText) titlePillText.textContent = 'WFH AI';
+    if (titlePill) titlePill.className = 'title-mode-pill mode-wfh';
+
+    if (!isInitial) {
+      notify('💼 Switched to WFH Mode — Invicta AI & Activity Logger Active!', 'success', 3000);
+      toggleAiDrawer(true);
+    }
     startActivityLogger();
   } else {
     document.body.classList.add('mode-gaming');
     btnModeWfh?.classList.remove('active-wfh');
     btnModeGaming?.classList.add('active-gaming');
-    notify('🎮 Switched to Gaming Engine — High GPU & FPS Boost Active!', 'info', 3000);
-    toggleAiDrawer(false);
+    if (titlePillText) titlePillText.textContent = 'Gaming';
+    if (titlePill) titlePill.className = 'title-mode-pill mode-gaming';
+
+    if (!isInitial) {
+      notify('🎮 Switched to Gaming Engine — High GPU & FPS Boost Active!', 'info', 3000);
+      toggleAiDrawer(false);
+    }
   }
+
+  // Persist mode choice so it remembers on last state
+  api.getSettings().then(s => {
+    api.saveSettings({ ...s, engineMode: mode });
+  }).catch(() => {});
 }
 
 if (btnModeGaming) btnModeGaming.addEventListener('click', () => switchEngineMode('gaming'));
@@ -1111,7 +1138,8 @@ document.addEventListener('keydown', e => {
 });
 
 // ─── Initial Startup Setup ────────────────────────────────────────────────────
+initEngineMode();
 loadPendingTasks();
 loadWorkRecords('day');
 
-notify('🚀 InvictaTill Browser v1.3.0 Ready! Gaming & WFH Dual Engines Online ⚡', 'success', 5000);
+notify('🚀 InvictaTill Browser v1.3.0 Ready! WFH AI Engine Active ⚡', 'success', 5000);

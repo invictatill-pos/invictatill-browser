@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
-<body class="mode-normal">
+<body class="mode-wfh">
 
   <!-- ═══════════════════════════════════════════════════════ TITLEBAR -->
   <div id="titlebar" class="titlebar">
@@ -24,12 +24,12 @@
           <circle cx="12" cy="12" r="3" fill="url(#lg1)"/>
           <defs>
             <linearGradient id="lg1" x1="0" y1="0" x2="24" y2="24">
-              <stop offset="0%" stop-color="#00e5ff"/>
-              <stop offset="100%" stop-color="#8b5cf6"/>
+              <stop offset="0%" stop-color="#10b981"/>
+              <stop offset="100%" stop-color="#3b82f6"/>
             </linearGradient>
             <linearGradient id="lg2" x1="0" y1="0" x2="24" y2="24">
-              <stop offset="0%" stop-color="#00e5ff"/>
-              <stop offset="100%" stop-color="#8b5cf6"/>
+              <stop offset="0%" stop-color="#10b981"/>
+              <stop offset="100%" stop-color="#3b82f6"/>
             </linearGradient>
           </defs>
         </svg>
@@ -37,7 +37,7 @@
       <span class="logo-text">InvictaTill<span class="logo-accent"> Browser</span></span>
       <div class="title-mode-pill" id="title-mode-pill">
         <div class="pill-dot"></div>
-        <span id="title-mode-text">Normal</span>
+        <span id="title-mode-text">WFH AI</span>
       </div>
     </div>
 
@@ -109,10 +109,10 @@
 
       <!-- Mode Switcher Pill -->
       <div class="main-mode-toggle-group">
-        <button class="mode-toggle-btn active-gaming" id="btn-mode-gaming" title="Switch to Gaming Engine">
+        <button class="mode-toggle-btn" id="btn-mode-gaming" title="Switch to Gaming Engine">
           🎮 Gaming
         </button>
-        <button class="mode-toggle-btn" id="btn-mode-wfh" title="Switch to WFH AI Engine">
+        <button class="mode-toggle-btn active-wfh" id="btn-mode-wfh" title="Switch to WFH AI Engine">
           💼 WFH
         </button>
       </div>
