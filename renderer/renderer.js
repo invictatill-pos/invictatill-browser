@@ -788,8 +788,25 @@ function switchEngineMode(mode, isInitial = false) {
   }).catch(() => {});
 }
 
-if (btnModeGaming) btnModeGaming.addEventListener('click', () => switchEngineMode('gaming'));
-if (btnModeWfh)    btnModeWfh.addEventListener('click',    () => switchEngineMode('wfh'));
+if (btnModeGaming) {
+  btnModeGaming.addEventListener('click', (e) => {
+    e.stopPropagation();
+    switchEngineMode('gaming');
+  });
+}
+if (btnModeWfh) {
+  btnModeWfh.addEventListener('click', (e) => {
+    e.stopPropagation();
+    switchEngineMode('wfh');
+  });
+}
+const titleModePill = $('title-mode-pill');
+if (titleModePill) {
+  titleModePill.addEventListener('click', (e) => {
+    e.stopPropagation();
+    switchEngineMode(currentEngineMode === 'wfh' ? 'gaming' : 'wfh');
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  WFH CONTINUOUS WORK ACTIVITY RECORDER
