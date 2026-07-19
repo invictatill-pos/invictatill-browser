@@ -161,55 +161,58 @@ const modeBtnClasses = ['', 'mode-gaming', 'mode-ultra'];
 async function setGamingMode(level) {
   state.gamingMode = level;
 
+  if (currentEngineMode === 'wfh' && level > 0) {
+    switchEngineMode('gaming');
+    return;
+  }
+
   // Update body class
-  document.body.classList.remove(...modeClasses);
-  document.body.classList.add(modeClasses[level]);
+  document.body.classList.remove('mode-normal', 'mode-gaming', 'mode-ultra');
+  if (currentEngineMode === 'gaming') {
+    document.body.classList.add(modeClasses[level] || 'mode-gaming');
+  }
 
   // Update nav button
-  gamingModeBtn.classList.remove('mode-gaming', 'mode-ultra');
-  if (modeBtnClasses[level]) gamingModeBtn.classList.add(modeBtnClasses[level]);
-  modeLabel.textContent = modeNames[level];
+  if (gamingModeBtn) {
+    gamingModeBtn.classList.remove('mode-gaming', 'mode-ultra');
+    if (modeBtnClasses[level]) gamingModeBtn.classList.add(modeBtnClasses[level]);
+  }
+  if (modeLabel) modeLabel.textContent = modeNames[level];
 
   // Update titlebar mode pill
   const titlePill = document.getElementById('title-mode-pill');
   const titlePillText = document.getElementById('title-mode-text');
-  if (titlePill && titlePillText) {
+  if (titlePill && titlePillText && currentEngineMode === 'gaming') {
     titlePillText.textContent = modeNames[level];
-    titlePill.className = 'title-mode-pill';
+    titlePill.className = 'title-mode-pill mode-gaming';
   }
 
   // Update HUD mode display
-  hudMode.textContent = modeNames[level];
+  if (hudMode) hudMode.textContent = modeNames[level];
 
   // Update perf cards
   document.querySelectorAll('.perf-card').forEach(c => {
     c.classList.toggle('active', parseInt(c.dataset.mode) === level);
   });
 
-  // Apply in main process (returns killedApps list for Ultra mode)
+  // Apply in main process
   const result = await api.setGamingMode(level);
 
-  // Boost GPU and renderer process priority when entering any gaming mode
   if (level > 0) {
     api.boostGpuPriority().catch(() => {});
   }
 
-  if (level === 0) {
-    notify('✅ Normal mode — Restored standard performance', 'info');
+  if (level === 0 && currentEngineMode === 'gaming') {
+    notify('✅ Gaming Normal mode — Standard performance', 'info');
   } else if (level === 1) {
     notify('🎮 Gaming Mode ON — GPU+CPU priority boosted, display stay-on locked!', 'success');
   } else if (level === 2) {
-    // Show what was killed
     const killed = result?.killedApps || [];
     if (killed.length > 0) {
       notify(`⚡ Ultra Gaming ON — Killed ${killed.length} background apps!`, 'warning', 4000);
-      setTimeout(() => {
-        notify(`🔴 Closed: ${killed.slice(0,5).join(', ')}${killed.length > 5 ? ` +${killed.length-5} more` : ''}`, 'warning', 5000);
-      }, 800);
     } else {
-      notify('⚡ Ultra Gaming ON — Maximum performance! No background apps found.', 'warning', 4000);
+      notify('⚡ Ultra Gaming ON — Maximum performance!', 'warning', 4000);
     }
-    notify('🔒 CPU + GPU + Renderer set to HIGH priority', 'success', 3000);
   }
 }
 
@@ -736,14 +739,23 @@ function switchEngineMode(mode, isInitial = false) {
   
   const titlePill = document.getElementById('title-mode-pill');
   const titlePillText = document.getElementById('title-mode-text');
+  const ntpSubtitle = document.querySelector('.ntp-subtitle');
 
   if (mode === 'wfh') {
     document.body.classList.add('mode-wfh');
     btnModeGaming?.classList.remove('active-gaming');
     btnModeWfh?.classList.add('active-wfh');
-    if (aiDrawerBtn) aiDrawerBtn.style.display = 'flex';
+    if (ntpSubtitle) ntpSubtitle.textContent = 'AI-Powered WFH Workspace Browser';
+
     if (titlePillText) titlePillText.textContent = 'WFH AI';
     if (titlePill) titlePill.className = 'title-mode-pill mode-wfh';
+
+    // Disable Gaming HUD floating overlay when in WFH mode
+    if (state.hudVisible) toggleHud();
+
+    // Reset CPU/GPU gaming priorities
+    api.setGamingMode(0).catch(() => {});
+    state.gamingMode = 0;
 
     if (!isInitial) {
       notify('💼 Switched to WFH Mode — Invicta AI & Activity Logger Active!', 'success', 3000);
@@ -754,12 +766,19 @@ function switchEngineMode(mode, isInitial = false) {
     document.body.classList.add('mode-gaming');
     btnModeWfh?.classList.remove('active-wfh');
     btnModeGaming?.classList.add('active-gaming');
+    if (ntpSubtitle) ntpSubtitle.textContent = 'High-Performance Cloud Gaming Browser';
+
     if (titlePillText) titlePillText.textContent = 'Gaming';
     if (titlePill) titlePill.className = 'title-mode-pill mode-gaming';
 
+    // Close AI Drawer when entering Gaming Mode
+    toggleAiDrawer(false);
+
+    // Apply Gaming boost priority
+    setGamingMode(1);
+
     if (!isInitial) {
       notify('🎮 Switched to Gaming Engine — High GPU & FPS Boost Active!', 'info', 3000);
-      toggleAiDrawer(false);
     }
   }
 

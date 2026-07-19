@@ -1263,6 +1263,56 @@ body.fullscreen .new-tab-page { top: 0; }
   box-shadow: 0 0 12px rgba(16, 185, 129, 0.2);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   STRICT FEATURE SEGREGATION (GAMING VS WFH)
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* WFH Mode Restrictions */
+body.mode-wfh .section-gaming,
+body.mode-wfh #btn-gaming-mode,
+body.mode-wfh #btn-hud,
+body.mode-wfh #hud-overlay {
+  display: none !important;
+}
+
+body.mode-wfh .section-wfh,
+body.mode-wfh #btn-ai-drawer {
+  display: flex !important;
+}
+
+/* Gaming Mode Restrictions */
+body.mode-gaming .section-wfh,
+body.mode-gaming #btn-ai-drawer,
+body.mode-gaming .wfh-ai-drawer {
+  display: none !important;
+}
+
+body.mode-gaming .section-gaming,
+body.mode-gaming #btn-gaming-mode,
+body.mode-gaming #btn-hud {
+  display: flex !important;
+}
+
+/* Titlebar Badges for Modes */
+.title-mode-pill.mode-wfh {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.4) !important;
+  color: #10b981 !important;
+}
+.title-mode-pill.mode-wfh .pill-dot {
+  background: #10b981 !important;
+  box-shadow: 0 0 8px #10b981 !important;
+}
+
+.title-mode-pill.mode-gaming {
+  background: rgba(0, 229, 255, 0.15) !important;
+  border-color: rgba(0, 229, 255, 0.4) !important;
+  color: #00f5ff !important;
+}
+.title-mode-pill.mode-gaming .pill-dot {
+  background: #00f5ff !important;
+  box-shadow: 0 0 8px #00f5ff !important;
+}
+
 /* WFH Mode Global Theme Adjustments */
 body.mode-wfh {
   --cyan: #10b981;
