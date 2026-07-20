@@ -716,7 +716,7 @@ if (ssBtn) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
-//  DUAL ENGINE SWITCHER: GAMING VS WFH (v1.3.0)
+//  DUAL ENGINE SWITCHER: GAMING VS WFH (v1.3.1)
 // ═══════════════════════════════════════════════════════════════════════════
 let currentEngineMode = 'wfh'; // WFH is default mode!
 const btnModeGaming = $('btn-mode-gaming');
@@ -1178,4 +1178,4 @@ initEngineMode();
 loadPendingTasks();
 loadWorkRecords('day');
 
-notify('🚀 InvictaTill Browser v1.3.0 Ready! WFH AI Engine Active ⚡', 'success', 5000);
+notify('🚀 InvictaTill Browser v1.3.1 Ready! WFH AI Engine Active ⚡', 'success', 5000);

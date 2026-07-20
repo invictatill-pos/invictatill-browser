@@ -180,6 +180,15 @@ svg { display: block; flex-shrink: 0; }
   background: var(--text-4);
   transition: background var(--transition), box-shadow var(--transition);
 }
+body.mode-wfh .title-mode-pill {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #10b981;
+}
+body.mode-wfh .title-mode-pill .pill-dot {
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
 body.mode-gaming .title-mode-pill {
   background: rgba(0,229,255,0.06);
   border-color: var(--border-cyan);
@@ -427,6 +436,40 @@ body.mode-ultra .title-mode-pill .pill-dot { background: var(--purple-light); bo
 .nav-icon-btn.active { color: var(--cyan); }
 .mode-label { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; }
 
+/* Mode Switcher Group */
+.main-mode-toggle-group {
+  display: flex;
+  align-items: center;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 2px;
+  gap: 2px;
+}
+
+.mode-toggle-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 12px;
+  color: var(--text-3);
+  transition: all var(--transition-fast);
+}
+.mode-toggle-btn:hover {
+  background: var(--glass-hover);
+  color: var(--text-1);
+}
+.mode-toggle-btn.active-gaming {
+  background: rgba(0,229,255,0.15);
+  color: var(--cyan);
+  box-shadow: var(--shadow-cyan);
+}
+.mode-toggle-btn.active-wfh {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
 /* Gaming Mode Button States */
 .gaming-mode-btn { border: 1px solid transparent; border-radius: var(--radius-sm); }
 
@@ -583,6 +626,12 @@ body.mode-ultra .title-mode-pill .pill-dot { background: var(--purple-light); bo
   letter-spacing: 0.3px;
 }
 #ntp-search-btn:hover { opacity: 0.85; transform: scale(1.03); }
+
+/* Mode-specific content hiding */
+body.mode-gaming .section-wfh,
+body.mode-normal .section-wfh,
+body.mode-ultra .section-wfh { display: none; }
+body.mode-wfh .section-gaming { display: none; }
 
 /* ─── NTP Sections ───────────────────────────────────────────────────────── */
 .ntp-section { margin-bottom: 32px; }
@@ -1224,7 +1273,7 @@ body.fullscreen .new-tab-page { top: 0; }
 .update-dismiss-btn:hover { background: rgba(255,56,96,0.15); color: var(--red); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   DUAL MODE SWITCHER & WFH THEME (v1.3.0)
+   DUAL MODE SWITCHER & WFH THEME (v1.3.1)
    ═══════════════════════════════════════════════════════════════════════════ */
 .main-mode-toggle-group {
   display: flex;

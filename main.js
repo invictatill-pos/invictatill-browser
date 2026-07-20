@@ -766,7 +766,7 @@ ipcMain.handle('ask-invicta-ai', async (e, { prompt, context }) => {
     };
   } else {
     return {
-      response: `🤖 **Invicta AI Assistant** (Self-Learning v1.3.0 Engine)\n\nI have captured your active browser context (**${pageTitle}**).\nHow can I help your work today?\n\n- Ask *"summarize"* to summarize active page.\n- Ask *"task"* to generate a pending item.\n- Ask *"report"* for your daily work summary.`,
+      response: `🤖 **Invicta AI Assistant** (Self-Learning v1.3.1 Engine)\n\nI have captured your active browser context (**${pageTitle}**).\nHow can I help your work today?\n\n- Ask *"summarize"* to summarize active page.\n- Ask *"task"* to generate a pending item.\n- Ask *"report"* for your daily work summary.`,
       taskExtracted: null
     };
   }
@@ -774,7 +774,7 @@ ipcMain.handle('ask-invicta-ai', async (e, { prompt, context }) => {
 
 // ─── VERSION & UPDATES ────────────────────────────────────────────────────────
 const RELEASE_DETAILS = {
-  version: '1.3.0',
+  version: '1.3.1',
   releaseDate: new Date().toISOString().split('T')[0],
   title: 'InvictaTill Browser Dual Engine & WFH AI Update',
   features: [
