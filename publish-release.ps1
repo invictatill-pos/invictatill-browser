@@ -1,4 +1,4 @@
-﻿# =====================================================
+# =====================================================
 # InvictaTill Browser — GitHub Release Publisher
 # Usage: .\publish-release.ps1
 # Set GH_TOKEN env var before running!
@@ -49,9 +49,9 @@ Write-Host "  DONE! Release v$Version is LIVE!" -ForegroundColor Green
 Write-Host "======================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Release URL:" -ForegroundColor Cyan
-Write-Host "  https://github.com/invictatill-pos/invictatill-website/releases/tag/v$Version" -ForegroundColor White
+Write-Host "  https://github.com/invictatill-pos/invictatill-browser/releases/tag/v$Version" -ForegroundColor White
 Write-Host ""
 Write-Host "Download URL:" -ForegroundColor Cyan
-Write-Host "  https://github.com/invictatill-pos/invictatill-website/releases/latest/download/InvictaTill%20Browser%20Setup%20$Version.exe" -ForegroundColor White
+Write-Host "  https://github.com/invictatill-pos/invictatill-browser/releases/latest/download/InvictaTill%20Browser%20Setup%20$Version.exe" -ForegroundColor White
 Write-Host ""
 Write-Host "Existing users will auto-update on next app launch." -ForegroundColor Yellow
