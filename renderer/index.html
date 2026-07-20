@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; worker-src 'self' blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:;" />
   <title>InvictaTill Browser</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -522,7 +522,7 @@
     <div class="dropdown-divider"></div>
     <div class="dropdown-sub">About</div>
     <div style="padding:6px 16px 10px;font-size:11px;color:var(--text-3)">
-      InvictaTill Browser <span id="about-version" style="color:var(--cyan)">v1.2.0</span><br>
+      InvictaTill Browser <span id="about-version" style="color:var(--cyan)">v1.3.2</span><br>
       <span id="about-update-status">Checking for updates...</span>
     </div>
   </div>
@@ -631,7 +631,7 @@
         <div class="modal-title-wrap">
           <div class="modal-icon">🚀</div>
           <div>
-            <div class="modal-ver-badge" id="modal-ver-badge">v1.3.1 Release</div>
+            <div class="modal-ver-badge" id="modal-ver-badge">v1.3.2 Release</div>
             <h2 class="modal-title" id="modal-release-title">InvictaTill Browser Dual Engine Update</h2>
           </div>
         </div>
