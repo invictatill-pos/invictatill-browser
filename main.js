@@ -2554,7 +2554,7 @@ function createMainWindow() {
     handleShortcut(event, input, activeTabId);
   });
 
-  mainWindow.loadURL(SHELL_URL);
+  mainWindow.loadFile(SHELL_FILE);
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     mainWindow.maximize();
