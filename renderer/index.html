@@ -1,683 +1,416 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; worker-src 'self' blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:;" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <title>InvictaTill Browser</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css">
 </head>
-<body class="mode-wfh">
-
-  <!-- ═══════════════════════════════════════════════════════ TITLEBAR -->
-  <div id="titlebar" class="titlebar">
-    <div class="titlebar-drag-region"></div>
-
-    <!-- Logo -->
-    <div class="title-logo">
-      <div class="logo-icon">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-          <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" fill="none" stroke="url(#lg1)" stroke-width="1.5"/>
-          <polygon points="12,6 18,9.5 18,14.5 12,18 6,14.5 6,9.5" fill="url(#lg2)" opacity="0.2"/>
-          <circle cx="12" cy="12" r="3" fill="url(#lg1)"/>
-          <defs>
-            <linearGradient id="lg1" x1="0" y1="0" x2="24" y2="24">
-              <stop offset="0%" stop-color="#10b981"/>
-              <stop offset="100%" stop-color="#3b82f6"/>
-            </linearGradient>
-            <linearGradient id="lg2" x1="0" y1="0" x2="24" y2="24">
-              <stop offset="0%" stop-color="#10b981"/>
-              <stop offset="100%" stop-color="#3b82f6"/>
-            </linearGradient>
-          </defs>
-        </svg>
-      </div>
-      <span class="logo-text">InvictaTill<span class="logo-accent"> Browser</span></span>
-      <!-- Title Mode Pill -->
-      <div class="title-mode-pill mode-workspace" id="title-mode-pill">
-        <span class="pulse-dot"></span>
-        <span id="title-mode-text">Workspace</span>
-      </div>
-    </div>
-
-    <!-- Window Controls -->
-    <div class="window-controls">
-      <button class="win-btn win-minimize" id="btn-minimize" title="Minimize">
-        <svg width="12" height="2" viewBox="0 0 12 2"><rect width="12" height="2" fill="currentColor"/></svg>
-      </button>
-      <button class="win-btn win-maximize" id="btn-maximize" title="Maximize">
-        <svg width="12" height="12" viewBox="0 0 12 12"><rect width="10" height="10" x="1" y="1" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-      </button>
-      <button class="win-btn win-close" id="btn-close" title="Close">
-        <svg width="12" height="12" viewBox="0 0 12 12"><line x1="1" y1="1" x2="11" y2="11" stroke="currentColor" stroke-width="1.5"/><line x1="11" y1="1" x2="1" y2="11" stroke="currentColor" stroke-width="1.5"/></svg>
-      </button>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════ TABS BAR -->
-  <div id="tabs-bar" class="tabs-bar">
-    <div id="tabs-container" class="tabs-container"></div>
-    <button class="tab-new-btn" id="btn-new-tab" title="New Tab (Ctrl+T)">
-      <svg width="14" height="14" viewBox="0 0 14 14"><line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" stroke-width="2"/><line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="2"/></svg>
-    </button>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════ NAVIGATION BAR -->
-  <div id="nav-bar" class="nav-bar">
-    <!-- Nav Buttons -->
-    <div class="nav-buttons">
-      <button class="nav-btn" id="btn-back" title="Back">
-        <svg width="16" height="16" viewBox="0 0 16 16"><polyline points="10,2 4,8 10,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </button>
-      <button class="nav-btn" id="btn-forward" title="Forward">
-        <svg width="16" height="16" viewBox="0 0 16 16"><polyline points="6,2 12,8 6,14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </button>
-      <button class="nav-btn" id="btn-reload" title="Reload (F5)">
-        <svg width="16" height="16" viewBox="0 0 16 16"><path d="M13.5 6A6 6 0 1 0 14 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><polyline points="10,2 14,6 10,10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </button>
-    </div>
-
-    <!-- Address Bar -->
-    <div class="address-bar-wrap">
-      <div class="addr-lock-icon">
-        <svg width="12" height="14" viewBox="0 0 12 14"><rect x="1" y="6" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M3 6V4a3 3 0 1 1 6 0v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-      </div>
-      <input type="text" id="address-bar" class="address-bar" placeholder="Search or enter URL... (Ctrl+L)" autocomplete="off" spellcheck="false" />
-      <!-- Bookmark star button inside address bar -->
-      <button class="addr-star-btn" id="btn-bookmark-star" title="Bookmark this page">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-          <polygon id="star-icon-poly" points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-        </svg>
-      </button>
-      <button class="addr-go-btn" id="btn-go" title="Go">
-        <svg width="14" height="14" viewBox="0 0 14 14"><polyline points="4,2 10,7 4,12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-      </button>
-    </div>
-
-    <div class="nav-right-controls">
-      <div class="nav-sep"></div>
-
-      <!-- Mute Tab -->
-      <button class="nav-icon-btn" id="btn-mute" title="Mute Tab">
-        <svg id="mute-icon" width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <polygon points="11,5 6,9 2,9 2,15 6,15 11,19" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-          <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </button>
-
-      <!-- Mode Switcher Pill -->
-      <!-- Mode toggle removed (Gaming moved to separate dedicated window via Settings menu) -->
-      <!-- Invicta AI Assistant Drawer Toggle (WFH Mode) -->
-      <button class="nav-icon-btn ai-drawer-btn" id="btn-ai-drawer" title="Invicta AI Assistant & Work Records">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M12 8v4l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <circle cx="12" cy="12" r="2" fill="currentColor"/>
-        </svg>
-        <span class="ai-badge-text">Invicta AI</span>
-      </button>
-
-      <!-- Screenshot -->
-      <button class="nav-icon-btn" id="btn-screenshot" title="Screenshot (Ctrl+Shift+S)">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-          <circle cx="12" cy="13" r="4" stroke="currentColor" stroke-width="1.5"/>
-        </svg>
-      </button>
-
-      <!-- Gaming Mode Level Toggle -->
-      <button class="nav-icon-btn gaming-mode-btn" id="btn-gaming-mode" title="Gaming Performance Boost (Ctrl+G)">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <path d="M6 12h6M9 9v6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          <circle cx="17" cy="10" r="1" fill="currentColor"/>
-          <circle cx="19" cy="12" r="1" fill="currentColor"/>
-          <rect x="2" y="7" width="20" height="10" rx="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
-        </svg>
-        <span class="mode-label">Normal</span>
-      </button>
-
-      <!-- HUD Toggle -->
-      <button class="nav-icon-btn" id="btn-hud" title="Toggle HUD (Ctrl+H)">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M8 12l3 3 5-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </button>
-
-      <!-- Fullscreen -->
-      <button class="nav-icon-btn" id="btn-fullscreen" title="Fullscreen (F11)">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <polyline points="15,3 21,3 21,9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <polyline points="9,21 3,21 3,15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="21" y1="3" x2="14" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="3" y1="21" x2="10" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </button>
-
-      <!-- Split Screen Toggle -->
-      <button class="nav-icon-btn" id="btn-split-screen" title="Toggle Split Screen">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <rect x="3" y="3" width="8" height="18" rx="1" stroke="currentColor" stroke-width="1.5"/>
-          <rect x="13" y="3" width="8" height="18" rx="1" stroke="currentColor" stroke-width="1.5"/>
-        </svg>
-      </button>
-
-      <div class="nav-sep"></div>
-
-      <!-- More menu -->
-      <button class="nav-icon-btn" id="btn-menu" title="Menu">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="5" r="1.5" fill="currentColor"/>
-          <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
-          <circle cx="12" cy="19" r="1.5" fill="currentColor"/>
-        </svg>
-      </button>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════ WEBVIEW CONTAINER -->
-  <div id="webviews-container" class="webviews-container">
-    <!-- webview tags will be injected here dynamically by renderer.js -->
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════ NEW TAB PAGE -->
-  <div id="new-tab-page" class="new-tab-page">
-    <div class="ntp-bg-glow"></div>
-
-    <div class="ntp-content">
-      <!-- Logo -->
-      <div class="ntp-logo">
-        <div class="ntp-logo-icon">
-          <svg width="60" height="60" viewBox="0 0 24 24" fill="none">
-            <polygon points="12,2 22,8 22,16 12,22 2,16 2,8" fill="none" stroke="url(#nlg)" stroke-width="1"/>
-            <polygon points="12,5 19,9 19,15 12,19 5,15 5,9" fill="url(#nlg2)" opacity="0.15"/>
-            <circle cx="12" cy="12" r="4" fill="url(#nlg)"/>
-            <defs>
-              <linearGradient id="nlg" x1="0" y1="0" x2="24" y2="24">
-                <stop offset="0%" stop-color="#00f5ff"/>
-                <stop offset="100%" stop-color="#7c3aed"/>
-              </linearGradient>
-              <linearGradient id="nlg2" x1="0" y1="0" x2="24" y2="24">
-                <stop offset="0%" stop-color="#00f5ff"/>
-                <stop offset="100%" stop-color="#7c3aed"/>
-              </linearGradient>
-            </defs>
+<body class="mode-workspace" data-engine-mode="workspace" data-private="false">
+  <header class="browser-chrome" id="browser-chrome">
+    <div class="titlebar" id="titlebar">
+      <div class="titlebar-drag-region" aria-hidden="true"></div>
+      <div class="title-logo" aria-label="InvictaTill Browser">
+        <span class="logo-mark" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M12 2 21 7v10l-9 5-9-5V7l9-5Z" stroke="currentColor" stroke-width="1.5"></path>
+            <path d="m8 12 2.5 2.5L16 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path>
           </svg>
-        </div>
-        <h1 class="ntp-title">InvictaTill <span>Browser</span></h1>
-        <p class="ntp-subtitle">High-Performance Cloud Gaming Browser</p>
+        </span>
+        <span class="logo-text">InvictaTill</span>
+        <span class="mode-badge" id="mode-badge">
+          <span class="mode-dot" aria-hidden="true"></span>
+          <span id="mode-badge-text">Workspace</span>
+        </span>
+      </div>
+      <div class="titlebar-status" id="titlebar-status" role="status" aria-live="polite"></div>
+      <div class="window-controls">
+        <button class="window-button" id="btn-minimize" type="button" aria-label="Minimize window" title="Minimize">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6h10" stroke="currentColor"></path></svg>
+        </button>
+        <button class="window-button" id="btn-maximize" type="button" aria-label="Maximize window" title="Maximize">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" fill="none" stroke="currentColor"></rect></svg>
+        </button>
+        <button class="window-button window-close" id="btn-close" type="button" aria-label="Close window" title="Close">
+          <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="m1.5 1.5 9 9m0-9-9 9" stroke="currentColor"></path></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="tabs-bar" id="tabs-bar">
+      <div class="tabs-scroll">
+        <div class="tabs-container" id="tabs-container" role="tablist" aria-label="Open tabs"></div>
+      </div>
+      <button class="chrome-button new-tab-button" id="btn-new-tab" type="button" aria-label="New tab" title="New tab (Ctrl+T)">
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+      </button>
+      <button class="chrome-button compact-action" id="btn-reopen-tab" type="button" aria-label="Reopen closed tab" title="Reopen closed tab (Ctrl+Shift+T)">
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5V2m0 0h3M3 2l3 3a5 5 0 1 1-1.4 6.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+    </div>
+
+    <nav class="nav-bar" id="nav-bar" aria-label="Browser controls">
+      <div class="nav-cluster">
+        <button class="chrome-button" id="btn-back" type="button" aria-label="Go back" title="Back (Alt+Left)" disabled>
+          <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="m11.5 3.5-5.5 5 5.5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </button>
+        <button class="chrome-button" id="btn-forward" type="button" aria-label="Go forward" title="Forward (Alt+Right)" disabled>
+          <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="m6.5 3.5 5.5 5-5.5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </button>
+        <button class="chrome-button" id="btn-reload" type="button" aria-label="Reload page" title="Reload (Ctrl+R)">
+          <svg class="reload-icon" width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="M14.5 7A6 6 0 1 0 15 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M11.5 3.5 15 7l-3.5 3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <svg class="stop-icon" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor"></rect></svg>
+        </button>
+        <button class="chrome-button home-button" id="btn-home" type="button" aria-label="Open home page" title="Home">
+          <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="m2.5 8 6.5-5 6.5 5v7H11v-4H7v4H2.5V8Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path></svg>
+        </button>
       </div>
 
-      <!-- Quick Search -->
-      <div class="ntp-search-wrap">
-        <div class="ntp-search-box">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/><line x1="16.5" y1="16.5" x2="22" y2="22" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-          <input type="text" id="ntp-search" placeholder="Search Google or enter URL..." />
-          <button id="ntp-search-btn">Go</button>
-        </div>
+      <div class="omnibox-shell" id="omnibox-shell">
+        <button class="security-indicator" id="security-indicator" type="button" aria-label="Page information" title="Page information">
+          <span id="security-icon" aria-hidden="true">⌂</span>
+          <span id="security-text">New tab</span>
+        </button>
+        <label class="visually-hidden" for="address-bar">Address and search bar</label>
+        <input id="address-bar" class="address-bar" type="text" inputmode="url" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Search or enter address">
+        <button class="omnibox-action" id="btn-bookmark-star" type="button" aria-label="Bookmark this page" aria-pressed="false" title="Bookmark this page (Ctrl+D)">
+          <svg width="17" height="17" viewBox="0 0 20 20" aria-hidden="true"><path id="bookmark-star-path" d="m10 2.2 2.25 4.55 5.02.73-3.63 3.54.86 5-4.5-2.36L5.5 16l.86-4.98-3.63-3.54 5.02-.73L10 2.2Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"></path></svg>
+        </button>
       </div>
 
-      <!-- WFH Workspace Shortcuts Section -->
-      <div class="ntp-section section-wfh">
-        <h2 class="ntp-section-title">💼 WFH Productivity Workspaces</h2>
-        <div class="platform-grid">
-          <button class="platform-card" data-url="https://docs.google.com" data-name="Google Docs">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #4285f4, #34a853)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-            </div>
-            <span class="platform-name">Google Docs</span>
-            <span class="platform-tag">Workspace</span>
-          </button>
-
-          <button class="platform-card" data-url="https://github.com" data-name="GitHub">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #24292e, #404448)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-            </div>
-            <span class="platform-name">GitHub</span>
-            <span class="platform-tag">Code &amp; PRs</span>
-          </button>
-
-          <button class="platform-card" data-url="https://notion.so" data-name="Notion">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #000000, #2f3437)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M4.459 4.208c.746.606 1.026.56 2.428.466l11.455-.7c.326 0 .42-.14.28-.326L16.945 1.76c-.466-.606-.98-.933-2.286-.84L2.873 1.88c-.373.047-.466.233-.28.466zM5.579 7.426v14.457c0 .746.42.98 1.444.933l13.136-.746c.933-.047 1.166-.606 1.166-1.353V6.26c0-.653-.326-.886-.98-.84L6.698 6.164c-.793.047-1.119.42-1.119 1.262z"/></svg>
-            </div>
-            <span class="platform-name">Notion</span>
-            <span class="platform-tag">Docs &amp; Tasks</span>
-          </button>
-
-          <button class="platform-card" data-url="https://slack.com" data-name="Slack">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #4A154B, #611f69)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M6 15a3 3 0 1 1 3-3v3H6zm0-6a3 3 0 1 1 3 3V9H6zm9 6a3 3 0 1 1-3 3v-3h3zm-3-9a3 3 0 1 1 3 3h-3V6z"/></svg>
-            </div>
-            <span class="platform-name">Slack</span>
-            <span class="platform-tag">Team Chat</span>
-          </button>
-
-          <button class="platform-card" data-url="https://khata.invictatill.shop" data-name="Invicta Khata">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #10b981, #059669)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg>
-            </div>
-            <span class="platform-name">Invicta Khata</span>
-            <span class="platform-tag">Bahi-Khata Ledger</span>
-          </button>
-
-          <button class="platform-card" data-url="https://figma.com" data-name="Figma">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #F24E1E, #A259FF)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="4"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/></svg>
-            </div>
-            <span class="platform-name">Figma</span>
-            <span class="platform-tag">Design Studio</span>
-          </button>
-
-          <button class="platform-card" data-url="https://stackoverflow.com" data-name="Stack Overflow">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #f48024, #da670b)">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><path d="M18.986 21.865v-6.404h2.134V24H1.844v-8.539h2.133v6.404h15.009zM6.111 19.731h10.671v-2.134H6.111v2.134zm.643-5.263l10.278 2.825.565-2.056-10.278-2.825-.565 2.056z"/></svg>
-            </div>
-            <span class="platform-name">Stack Overflow</span>
-            <span class="platform-tag">Developer Q&amp;A</span>
-          </button>
-        </div>
+      <div class="nav-actions">
+        <button class="chrome-button action-button" id="btn-mute" type="button" aria-label="Mute current tab" aria-pressed="false" title="Mute tab (Ctrl+M)">
+          <span aria-hidden="true" id="mute-icon">🔊</span>
+        </button>
+        <button class="chrome-button action-button" id="btn-split-screen" type="button" aria-label="Toggle split view" aria-pressed="false" title="Split view">
+          <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><rect x="2" y="2.5" width="14" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"></rect><path d="M9 3v12" stroke="currentColor" stroke-width="1.4"></path></svg>
+        </button>
+        <button class="chrome-button action-button" id="btn-screenshot" type="button" aria-label="Capture page screenshot" title="Screenshot (Ctrl+Shift+S)">
+          <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 5.5h2l1-2h6l1 2h2a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 15 15.5H3A1.5 1.5 0 0 1 1.5 14V7A1.5 1.5 0 0 1 3 5.5Z" fill="none" stroke="currentColor" stroke-width="1.4"></path><circle cx="9" cy="10" r="3" fill="none" stroke="currentColor" stroke-width="1.4"></circle></svg>
+        </button>
+        <button class="chrome-button ai-button" id="btn-ai-drawer" type="button" aria-label="Open Invicta AI workspace" aria-expanded="false" aria-controls="workspace-drawer" title="Invicta AI workspace">
+          <span class="ai-spark" aria-hidden="true">✦</span>
+          <span class="ai-button-label">Invicta AI</span>
+        </button>
+        <button class="chrome-button action-button" id="btn-menu" type="button" aria-label="Browser menu" aria-expanded="false" aria-controls="browser-menu" title="Menu">
+          <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="3.5" r="1.2" fill="currentColor"></circle><circle cx="9" cy="9" r="1.2" fill="currentColor"></circle><circle cx="9" cy="14.5" r="1.2" fill="currentColor"></circle></svg>
+        </button>
       </div>
+    </nav>
 
-      <!-- Gaming Platforms -->
-      <div class="ntp-section section-gaming">
-        <h2 class="ntp-section-title">⚡ Cloud Gaming Platforms</h2>
-        <div class="platform-grid">
-          <button class="platform-card" data-url="https://jiogames.com" data-name="JioGames">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #0070f3, #00c9ff)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M12 2L2 7v10l10 5 10-5V7z"/></svg>
-            </div>
-            <span class="platform-name">JioGames</span>
-            <span class="platform-tag">Cloud Gaming</span>
-          </button>
+    <section class="find-bar hidden" id="find-bar" aria-label="Find in page">
+      <label class="visually-hidden" for="find-input">Find in page</label>
+      <input class="find-input" id="find-input" type="search" autocomplete="off" placeholder="Find in page">
+      <span class="find-results" id="find-results" role="status" aria-live="polite">0/0</span>
+      <button class="find-button" id="find-prev" type="button" aria-label="Previous match" title="Previous match (Shift+Enter)">↑</button>
+      <button class="find-button" id="find-next" type="button" aria-label="Next match" title="Next match (Enter)">↓</button>
+      <button class="find-button find-close" id="find-close" type="button" aria-label="Close find bar" title="Close">✕</button>
+    </section>
+  </header>
 
-          <button class="platform-card" data-url="https://www.xbox.com/en-IN/play" data-name="Xbox Cloud">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #107C10, #52b043)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="10"/><path d="M7 12c0-2.5 5-8 5-8s5 5.5 5 8-2.2 5-5 5-5-2.5-5-5z" fill="#107C10"/></svg>
-            </div>
-            <span class="platform-name">Xbox Cloud</span>
-            <span class="platform-tag">Game Pass</span>
-          </button>
-
-          <button class="platform-card" data-url="https://play.geforcenow.com" data-name="GeForce NOW">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #76b900, #a3d62e)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><polygon points="12,2 22,20 2,20"/></svg>
-            </div>
-            <span class="platform-name">GeForce NOW</span>
-            <span class="platform-tag">NVIDIA</span>
-          </button>
-
-          <button class="platform-card" data-url="https://www.playstation.com/en-in/ps-now/" data-name="PlayStation">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #003087, #0070d1)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M9 4v16l4-4 4 4V4z"/></svg>
-            </div>
-            <span class="platform-name">PlayStation</span>
-            <span class="platform-tag">Remote Play</span>
-          </button>
-
-          <button class="platform-card" data-url="https://luna.amazon.com" data-name="Amazon Luna">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #ff9900, #ffb347)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="4"/><path d="M2 12h4M18 12h4M12 2v4M12 18v4"/></svg>
-            </div>
-            <span class="platform-name">Amazon Luna</span>
-            <span class="platform-tag">Cloud</span>
-          </button>
-
-          <button class="platform-card" data-url="https://boosteroid.com" data-name="Boosteroid">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #e91e63, #ff4081)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>
-            </div>
-            <span class="platform-name">Boosteroid</span>
-            <span class="platform-tag">Cloud Gaming</span>
-          </button>
-
-          <button class="platform-card" data-url="https://stadia.google.com" data-name="Google Stadia">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #db4437, #ff6b5a)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/><path d="M8 12h8M12 8l4 4-4 4" stroke="white" stroke-width="2"/></svg>
-            </div>
-            <span class="platform-name">Stadia</span>
-            <span class="platform-tag">Google</span>
-          </button>
-
-          <button class="platform-card" data-url="https://shadow.tech" data-name="Shadow PC">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #1a1a2e, #16213e)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><rect x="2" y="6" width="20" height="12" rx="2" fill="none" stroke="white" stroke-width="2"/><path d="M8 10h8M8 14h5" stroke="white" stroke-width="1.5"/></svg>
-            </div>
-            <span class="platform-name">Shadow PC</span>
-            <span class="platform-tag">Full PC Cloud</span>
-          </button>
-
-          <button class="platform-card" data-url="https://www.antstream.com" data-name="Antstream">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #ff6b00, #ff9c40)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg>
-            </div>
-            <span class="platform-name">Antstream</span>
-            <span class="platform-tag">Retro Cloud</span>
-          </button>
-
-          <button class="platform-card" data-url="https://parsec.app" data-name="Parsec">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #5a21f5, #7c53ff)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="2"/><path d="M8 12l3-3 5 5" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>
-            </div>
-            <span class="platform-name">Parsec</span>
-            <span class="platform-tag">Remote Play</span>
-          </button>
-
-          <button class="platform-card" data-url="https://rainway.com" data-name="Rainway">
-            <div class="platform-icon" style="background: linear-gradient(135deg, #00bcd4, #0097a7)">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="white" stroke-width="1.5" fill="none"/><polyline points="9,22 9,12 15,12 15,22" stroke="white" stroke-width="1.5"/></svg>
-            </div>
-            <span class="platform-name">Rainway</span>
-            <span class="platform-tag">PC Streaming</span>
-          </button>
+  <main class="browser-stage" id="browser-stage">
+    <section class="new-tab-page visible" id="new-tab-page" aria-labelledby="new-tab-heading">
+      <div class="ntp-backdrop" aria-hidden="true"></div>
+      <div class="ntp-content">
+        <div class="ntp-hero">
+          <span class="ntp-logo" aria-hidden="true">✦</span>
+          <p class="eyebrow">Workspace browser</p>
+          <h1 id="new-tab-heading">Browse with clarity.</h1>
+          <p class="ntp-subtitle" id="ntp-subtitle">Invicta AI shares page context only when you choose.</p>
         </div>
-      </div>
+        <form class="ntp-search" id="ntp-search-form">
+          <label class="visually-hidden" for="ntp-search">Search the web or enter an address</label>
+          <svg width="19" height="19" viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.6"></circle><path d="m12.7 12.7 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+          <input id="ntp-search" type="text" autocomplete="off" spellcheck="false" placeholder="Search or enter an address">
+          <button id="ntp-search-btn" type="submit">Search</button>
+        </form>
 
-      <!-- Bookmarks -->
-      <div class="ntp-section" id="bookmarks-section">
-        <h2 class="ntp-section-title">⭐ Bookmarks
-          <button id="clear-bookmarks-btn" style="background:none;border:none;color:var(--text-3);font-size:10px;cursor:pointer;margin-left:4px;letter-spacing:0.3px" title="Clear all bookmarks">Clear all</button>
-        </h2>
-        <div id="bookmarks-grid" class="bookmarks-grid">
-          <div class="bookmarks-empty" id="bookmarks-empty">No bookmarks yet — star ⭐ any page from the address bar to add it here.</div>
-        </div>
-      </div>
-
-      <!-- System Stats -->
-      <div class="ntp-section">
-        <h2 class="ntp-section-title">📊 System Performance</h2>
-        <div class="sys-stats-grid">
-          <div class="sys-stat-card">
-            <div class="stat-icon cpu-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="1" stroke="currentColor" stroke-width="1.5"/><rect x="8" y="8" width="8" height="8" stroke="currentColor" stroke-width="1.5"/><line x1="9" y1="1" x2="9" y2="4" stroke="currentColor" stroke-width="1.5"/><line x1="15" y1="1" x2="15" y2="4" stroke="currentColor" stroke-width="1.5"/><line x1="9" y1="20" x2="9" y2="23" stroke="currentColor" stroke-width="1.5"/><line x1="15" y1="20" x2="15" y2="23" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="9" x2="4" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="15" x2="4" y2="15" stroke="currentColor" stroke-width="1.5"/><line x1="20" y1="9" x2="23" y2="9" stroke="currentColor" stroke-width="1.5"/><line x1="20" y1="15" x2="23" y2="15" stroke="currentColor" stroke-width="1.5"/></svg>
-            </div>
-            <div class="stat-info">
-              <span class="stat-label">CPU Cores</span>
-              <span class="stat-value" id="stat-cpu">—</span>
+        <section class="ntp-section" aria-labelledby="quick-links-heading">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Start here</p>
+              <h2 id="quick-links-heading">Workspace shortcuts</h2>
             </div>
           </div>
-          <div class="sys-stat-card">
-            <div class="stat-icon ram-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="2" y="8" width="20" height="8" rx="1" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="8" x2="6" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="8" x2="10" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="14" y1="8" x2="14" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="18" y1="8" x2="18" y2="16" stroke="currentColor" stroke-width="1.5"/><line x1="6" y1="4" x2="6" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="4" x2="10" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="14" y1="4" x2="14" y2="8" stroke="currentColor" stroke-width="1.5"/><line x1="18" y1="4" x2="18" y2="8" stroke="currentColor" stroke-width="1.5"/></svg>
-            </div>
-            <div class="stat-info">
-              <span class="stat-label">Total RAM</span>
-              <span class="stat-value" id="stat-ram">—</span>
-            </div>
+          <div class="quick-links" id="quick-links">
+            <button class="quick-link" type="button" data-url="https://docs.google.com">
+              <span class="quick-link-icon icon-blue" aria-hidden="true">D</span>
+              <span>Google Docs</span>
+            </button>
+            <button class="quick-link" type="button" data-url="https://github.com">
+              <span class="quick-link-icon icon-neutral" aria-hidden="true">GH</span>
+              <span>GitHub</span>
+            </button>
+            <button class="quick-link" type="button" data-url="https://www.notion.so">
+              <span class="quick-link-icon icon-white" aria-hidden="true">N</span>
+              <span>Notion</span>
+            </button>
+            <button class="quick-link" type="button" data-url="https://www.figma.com">
+              <span class="quick-link-icon icon-warm" aria-hidden="true">F</span>
+              <span>Figma</span>
+            </button>
+            <button class="quick-link" type="button" data-url="https://app.slack.com">
+              <span class="quick-link-icon icon-purple" aria-hidden="true">S</span>
+              <span>Slack</span>
+            </button>
+            <button class="quick-link" type="button" data-url="https://stackoverflow.com">
+              <span class="quick-link-icon icon-orange" aria-hidden="true">SO</span>
+              <span>Stack Overflow</span>
+            </button>
           </div>
-          <div class="sys-stat-card">
-            <div class="stat-icon fps-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><path d="M12 7v5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </section>
+
+        <div class="ntp-columns">
+          <section class="ntp-section ntp-card" id="bookmarks-section" aria-labelledby="bookmarks-heading">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Saved</p>
+                <h2 id="bookmarks-heading">Bookmarks</h2>
+              </div>
+              <button class="text-button" id="clear-bookmarks-btn" type="button">Clear all</button>
             </div>
-            <div class="stat-info">
-              <span class="stat-label">FPS</span>
-              <span class="stat-value" id="stat-fps-ntp">—</span>
+            <div class="bookmark-grid" id="bookmarks-grid"></div>
+            <p class="empty-state" id="bookmarks-empty">Bookmark a page to see it here.</p>
+          </section>
+
+          <section class="ntp-section ntp-card" aria-labelledby="recent-heading">
+            <div class="section-heading compact">
+              <div>
+                <p class="eyebrow">Continue</p>
+                <h2 id="recent-heading">Recent browsing</h2>
+              </div>
+              <button class="text-button" id="open-history-btn" type="button">View all</button>
             </div>
-          </div>
-          <div class="sys-stat-card">
-            <div class="stat-icon net-icon">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M1 6s4-4 11-4 11 4 11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 10s2.5-2.5 7-2.5 7 2.5 7 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M9 14s1-1 3-1 3 1 3 1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="18" r="1.5" fill="currentColor"/></svg>
-            </div>
-            <div class="stat-info">
-              <span class="stat-label">Network</span>
-              <span class="stat-value" id="stat-net">—</span>
-            </div>
-          </div>
+            <div class="recent-list" id="recent-list"></div>
+            <p class="empty-state" id="recent-empty">Your recent pages will appear here.</p>
+          </section>
         </div>
       </div>
+    </section>
 
-      <!-- Performance Mode Cards -->
-      <div class="ntp-section section-gaming">
-        <h2 class="ntp-section-title">🎮 Performance Mode</h2>
-        <div class="perf-mode-cards">
-          <button class="perf-card" id="perf-normal" data-mode="0">
-            <span class="perf-card-icon">🖥️</span>
-            <div class="perf-card-title">Normal</div>
-            <div class="perf-card-desc">Standard browsing. All features enabled, balanced performance.</div>
-            <span class="perf-card-badge badge-normal">Default</span>
-          </button>
-          <button class="perf-card" id="perf-gaming" data-mode="1">
-            <span class="perf-card-icon">🎮</span>
-            <div class="perf-card-title">Gaming Mode</div>
-            <div class="perf-card-desc">Prevents sleep, boosts GPU + CPU priority, display wake lock, TCP optimized.</div>
-            <span class="perf-card-badge badge-gaming">AboveNormal Priority</span>
-          </button>
-          <button class="perf-card" id="perf-ultra" data-mode="2">
-            <span class="perf-card-icon">⚡</span>
-            <div class="perf-card-title">Ultra Gaming</div>
-            <div class="perf-card-desc">Kills all background apps, HIGH priority for CPU+GPU+Renderer, strips all animations and blur.</div>
-            <span class="perf-card-badge badge-ultra">🔴 Max Performance</span>
-          </button>
-        </div>
+    <section class="page-error hidden" id="page-error" role="alert" aria-labelledby="page-error-title">
+      <div class="error-icon" aria-hidden="true">!</div>
+      <h1 id="page-error-title">This page stopped responding</h1>
+      <p id="page-error-message">Reload the page or open it in a new tab.</p>
+      <div class="error-actions">
+        <button class="primary-button" id="btn-error-reload" type="button">Reload</button>
+        <button class="secondary-button" id="btn-error-new-tab" type="button">New tab</button>
       </div>
+    </section>
+  </main>
 
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════ HUD OVERLAY -->
-  <div id="hud-overlay" class="hud-overlay hidden">
-    <div class="hud-panel">
-      <div class="hud-item">
-        <span class="hud-label">FPS</span>
-        <span class="hud-value fps-val" id="hud-fps">--</span>
-      </div>
-      <div class="hud-divider"></div>
-      <div class="hud-item">
-        <span class="hud-label">PING</span>
-        <span class="hud-value ping-val" id="hud-ping">--</span>
-      </div>
-      <div class="hud-divider"></div>
-      <div class="hud-item">
-        <span class="hud-label">MEM</span>
-        <span class="hud-value mem-val" id="hud-mem">--</span>
-      </div>
-      <div class="hud-divider"></div>
-      <div class="hud-item">
-        <span class="hud-label">GPU</span>
-        <span class="hud-value gpu-val" id="hud-gpu">ON</span>
-      </div>
-      <div class="hud-divider"></div>
-      <div class="hud-item">
-        <span class="hud-label">MODE</span>
-        <span class="hud-value mode-val" id="hud-mode">Normal</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════ DROPDOWN MENU -->
-  <div id="dropdown-menu" class="dropdown-menu hidden">
-    <div class="dropdown-header">Tools & Settings</div>
-    <button class="dropdown-item" id="dm-launch-gaming" style="color: var(--accent-1); font-weight: bold;">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Launch Gaming Window
-    </button>
-    <div class="dropdown-divider"></div>
-    <button class="dropdown-item" id="dm-clear-cache">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><polyline points="3,6 5,6 21,6" stroke="currentColor" stroke-width="1.5"/><path d="M19 6l-1 14H6L5 6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.5"/><path d="M9 6V4h6v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-      Clear Cache & Memory
-    </button>
-    <button class="dropdown-item" id="dm-pointer-lock">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="3" x2="12" y2="6" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="18" x2="12" y2="21" stroke="currentColor" stroke-width="1.5"/><line x1="3" y1="12" x2="6" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="18" y1="12" x2="21" y2="12" stroke="currentColor" stroke-width="1.5"/></svg>
-      Enable Pointer Lock
-    </button>
-    <button class="dropdown-item" id="dm-devtools">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><polyline points="16,18 22,12 16,6" stroke="currentColor" stroke-width="1.5"/><polyline points="8,6 2,12 8,18" stroke="currentColor" stroke-width="1.5"/></svg>
-      Open DevTools
-    </button>
-    <div class="dropdown-divider"></div>
-    <div class="dropdown-sub">Zoom</div>
-    <div class="zoom-controls">
-      <button class="zoom-btn" id="dm-zoom-out">−</button>
-      <span id="zoom-display">100%</span>
-      <button class="zoom-btn" id="dm-zoom-in">+</button>
-      <button class="zoom-btn zoom-reset" id="dm-zoom-reset">Reset</button>
-    </div>
-    <div class="dropdown-divider"></div>
-    <div class="dropdown-sub">Keyboard Shortcuts</div>
-    <div class="shortcuts-list">
-      <div class="shortcut-row"><span>New Tab</span><kbd>Ctrl+T</kbd></div>
-      <div class="shortcut-row"><span>Close Tab</span><kbd>Ctrl+W</kbd></div>
-      <div class="shortcut-row"><span>Gaming Mode</span><kbd>Ctrl+G</kbd></div>
-      <div class="shortcut-row"><span>Toggle HUD</span><kbd>Ctrl+H</kbd></div>
-      <div class="shortcut-row"><span>Address Bar</span><kbd>Ctrl+L</kbd></div>
-      <div class="shortcut-row"><span>Fullscreen</span><kbd>F11</kbd></div>
-      <div class="shortcut-row"><span>Reload</span><kbd>F5</kbd></div>
-      <div class="shortcut-row"><span>Find in Page</span><kbd>Ctrl+F</kbd></div>
-      <div class="shortcut-row"><span>Bookmark</span><kbd>Ctrl+D</kbd></div>
-      <div class="shortcut-row"><span>Mute Tab</span><kbd>Ctrl+M</kbd></div>
-      <div class="shortcut-row"><span>Screenshot</span><kbd>Ctrl+Shift+S</kbd></div>
-    </div>
-    <div class="dropdown-divider"></div>
-    <div class="dropdown-sub">About</div>
-    <div style="padding:6px 16px 10px;font-size:11px;color:var(--text-3)">
-      InvictaTill Browser <span id="about-version" style="color:var(--cyan)">v1.3.2</span><br>
-      <span id="about-update-status">Checking for updates...</span>
-    </div>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════ NOTIFICATIONS -->
-  <div id="notification-stack" class="notification-stack"></div>
-
-  <!-- ═══════════════════════════════════════════════════════ UPDATE BANNER -->
-  <div id="update-banner" class="update-banner hidden">
-    <div class="update-banner-icon">🔄</div>
-    <div class="update-banner-text">
-      <strong id="update-banner-title">Update Available</strong>
-      <span id="update-banner-sub">Downloading...</span>
-    </div>
-    <div class="update-progress-bar"><div id="update-progress-fill" class="update-progress-fill"></div></div>
-    <button id="btn-install-update" class="update-install-btn hidden">Restart to Update</button>
-    <button id="btn-dismiss-update" class="update-dismiss-btn">✕</button>
-  </div>
-
-  <!-- ═══════════════════════════════════════════════════════ WFH INVICTA AI SIDE DRAWER -->
-  <div id="wfh-ai-drawer" class="wfh-ai-drawer hidden">
+  <aside class="workspace-drawer hidden" id="workspace-drawer" aria-labelledby="drawer-title">
     <div class="drawer-header">
-      <div class="drawer-title-wrap">
-        <div class="drawer-ai-badge">🤖</div>
-        <div>
-          <h3 class="drawer-title">Invicta AI Workspace</h3>
-          <span class="drawer-subtitle">Self-Learning Work Assistant & Logger</span>
-        </div>
+      <div>
+        <p class="eyebrow">Page context off by default</p>
+        <h2 id="drawer-title">Invicta workspace</h2>
       </div>
-      <button class="drawer-close-btn" id="btn-close-ai-drawer">✕</button>
+      <button class="icon-button" id="btn-close-drawer" type="button" aria-label="Close workspace drawer">✕</button>
+    </div>
+    <div class="drawer-tabs" role="tablist" aria-label="Workspace sections">
+      <button class="drawer-tab active" id="drawer-tab-chat" type="button" role="tab" aria-selected="true" aria-controls="drawer-panel-chat" tabindex="0" data-panel="chat">Chat</button>
+      <button class="drawer-tab" id="drawer-tab-tasks" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-tasks" tabindex="-1" data-panel="tasks">Tasks <span class="count-badge" id="task-badge-count">0</span></button>
+      <button class="drawer-tab" id="drawer-tab-history" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-history" tabindex="-1" data-panel="history">History</button>
+      <button class="drawer-tab" id="drawer-tab-downloads" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-downloads" tabindex="-1" data-panel="downloads">Downloads <span class="count-badge hidden" id="download-badge-count">0</span></button>
+      <button class="drawer-tab" id="drawer-tab-settings" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-settings" tabindex="-1" data-panel="settings">Settings</button>
     </div>
 
-    <!-- Drawer Navigation Tabs -->
-    <div class="drawer-tabs">
-      <button class="drawer-tab active" data-tab="chat">🤖 AI Assistant</button>
-      <button class="drawer-tab" data-tab="tasks">✅ Pending Tasks <span id="task-badge-count" class="badge-count">0</span></button>
-      <button class="drawer-tab" data-tab="records">📊 Work Records</button>
-    </div>
-
-    <!-- Drawer Content Sections -->
     <div class="drawer-body">
-
-      <!-- SECTION 1: INVICTA AI CHAT -->
-      <div id="drawer-sec-chat" class="drawer-section active">
-        <div class="ai-quick-actions">
-          <button class="quick-act-btn" id="btn-ai-summarize">⚡ Summarize Page</button>
-          <button class="quick-act-btn" id="btn-ai-explain">🧠 Explain Context</button>
-          <button class="quick-act-btn" id="btn-ai-extract-task">📌 Extract Task</button>
-          <button class="quick-act-btn" id="btn-ai-report">📈 Work Summary</button>
+      <section class="drawer-panel active" id="drawer-panel-chat" role="tabpanel" aria-labelledby="drawer-tab-chat" data-panel="chat">
+        <div class="ai-privacy-row">
+          <span class="provider-badge local" id="ai-provider-badge">Local</span>
+          <label class="toggle-row compact-toggle" for="ai-context-toggle">
+            <input id="ai-context-toggle" type="checkbox">
+            <span class="toggle-control" aria-hidden="true"></span>
+            <span>Share this page for this message</span>
+          </label>
         </div>
-        <div id="ai-chat-messages" class="ai-chat-messages">
-          <div class="chat-msg msg-ai">
-            <div class="msg-avatar">🤖</div>
-            <div class="msg-content">
-              <strong>Hello! I am Invicta AI.</strong><br>
-              I am keeping track of your productivity, logging active browser context, and organizing your pending tasks across Days, Weeks, Months, and Years.
+        <p class="privacy-note" id="ai-context-note">Page context is off. Invicta AI receives only what you type.</p>
+        <div class="quick-actions" aria-label="AI quick actions">
+          <button class="chip-button" type="button" data-ai-action="Summarize this page clearly.">Summarize</button>
+          <button class="chip-button" type="button" data-ai-action="Explain the key ideas on this page.">Explain</button>
+          <button class="chip-button" type="button" data-ai-action="Extract useful tasks from this page.">Extract tasks</button>
+        </div>
+        <div class="ai-chat-messages" id="ai-chat-messages" role="log" aria-live="polite" aria-relevant="additions">
+          <div class="chat-message assistant">
+            <span class="message-avatar" aria-hidden="true">✦</span>
+            <div class="message-bubble">
+              <p>Hi, I’m Invicta AI. Page access is off until you enable it for a message.</p>
             </div>
           </div>
         </div>
-        <div class="ai-chat-input-wrap">
-          <input type="text" id="ai-chat-input" placeholder="Ask Invicta AI or give command..." />
-          <button id="btn-send-ai-chat" class="ai-send-btn">Send</button>
-        </div>
-      </div>
-
-      <!-- SECTION 2: PENDING TASKS CHECKLIST -->
-      <div id="drawer-sec-tasks" class="drawer-section">
-        <div class="task-add-bar">
-          <input type="text" id="new-task-input" placeholder="Add a new pending task..." />
-          <button id="btn-add-task">+</button>
-        </div>
-        <div id="pending-tasks-list" class="pending-tasks-list"></div>
-      </div>
-
-      <!-- SECTION 3: WORK RECORDS & HISTORICAL ANALYTICS (Days, Weeks, Months, Years) -->
-      <div id="drawer-sec-records" class="drawer-section">
-        <div class="records-timeframe-bar">
-          <button class="timeframe-btn active" data-tf="day">Today</button>
-          <button class="timeframe-btn" data-tf="week">This Week</button>
-          <button class="timeframe-btn" data-tf="month">This Month</button>
-          <button class="timeframe-btn" data-tf="year">This Year</button>
-        </div>
-        <div class="records-summary-cards">
-          <div class="rec-card">
-            <span class="rec-label">Total Time</span>
-            <strong id="rec-total-time" class="rec-val">0m</strong>
-          </div>
-          <div class="rec-card">
-            <span class="rec-label">Logged Sites</span>
-            <strong id="rec-total-sites" class="rec-val">0</strong>
-          </div>
-          <div class="rec-card">
-            <span class="rec-label">Focus Score</span>
-            <strong id="rec-focus-score" class="rec-val">100%</strong>
+        <div class="ai-composer">
+          <label class="visually-hidden" for="ai-chat-input">Message Invicta AI</label>
+          <textarea id="ai-chat-input" rows="2" placeholder="Ask Invicta AI…" maxlength="12000"></textarea>
+          <div class="composer-actions">
+            <span class="composer-status" id="ai-composer-status" role="status" aria-live="polite"></span>
+            <button class="secondary-button compact hidden" id="btn-stop-ai" type="button">Stop</button>
+            <button class="primary-button compact" id="btn-send-ai" type="button">Send</button>
           </div>
         </div>
-        <div class="records-history-list" id="records-history-list"></div>
-      </div>
+      </section>
 
+      <section class="drawer-panel" id="drawer-panel-tasks" role="tabpanel" aria-labelledby="drawer-tab-tasks" data-panel="tasks" hidden>
+        <form class="inline-form" id="task-form">
+          <label class="visually-hidden" for="new-task-input">New task</label>
+          <input id="new-task-input" type="text" maxlength="500" placeholder="Add a task">
+          <button class="primary-button compact" id="btn-add-task" type="submit">Add</button>
+        </form>
+        <div class="list-toolbar">
+          <p id="task-summary">0 open tasks</p>
+        </div>
+        <div class="data-list" id="pending-tasks-list"></div>
+        <p class="empty-state" id="tasks-empty">No tasks yet.</p>
+      </section>
+
+      <section class="drawer-panel" id="drawer-panel-history" role="tabpanel" aria-labelledby="drawer-tab-history" data-panel="history" hidden>
+        <div class="search-row">
+          <label class="visually-hidden" for="history-search">Search history</label>
+          <input id="history-search" type="search" placeholder="Search history">
+          <button class="danger-text-button" id="btn-clear-history" type="button">Clear</button>
+        </div>
+        <div class="segmented-control" role="group" aria-label="History range">
+          <button class="segment active" type="button" data-history-range="day" aria-pressed="true">Today</button>
+          <button class="segment" type="button" data-history-range="week" aria-pressed="false">Week</button>
+          <button class="segment" type="button" data-history-range="month" aria-pressed="false">Month</button>
+          <button class="segment" type="button" data-history-range="all" aria-pressed="false">All</button>
+        </div>
+        <div class="data-list" id="history-list"></div>
+        <p class="empty-state" id="history-empty">No history for this range.</p>
+      </section>
+
+      <section class="drawer-panel" id="drawer-panel-downloads" role="tabpanel" aria-labelledby="drawer-tab-downloads" data-panel="downloads" hidden>
+        <div class="list-toolbar">
+          <p id="downloads-summary">No active downloads</p>
+          <button class="text-button" id="btn-clear-downloads" type="button">Clear finished</button>
+        </div>
+        <div class="data-list" id="downloads-list" aria-live="polite"></div>
+        <p class="empty-state" id="downloads-empty">Downloads will appear here.</p>
+      </section>
+
+      <section class="drawer-panel settings-panel" id="drawer-panel-settings" role="tabpanel" aria-labelledby="drawer-tab-settings" data-panel="settings" hidden>
+        <form id="browser-settings-form">
+          <fieldset class="settings-group">
+            <legend>Browsing</legend>
+            <label class="field-label" for="setting-search-engine">Search engine</label>
+            <select id="setting-search-engine">
+              <option value="google">Google</option>
+              <option value="bing">Bing</option>
+              <option value="duckduckgo">DuckDuckGo</option>
+              <option value="brave">Brave Search</option>
+            </select>
+            <label class="field-label" for="setting-homepage">Homepage</label>
+            <input id="setting-homepage" type="url" placeholder="https://example.com">
+            <label class="toggle-row" for="setting-restore-session">
+              <input id="setting-restore-session" type="checkbox">
+              <span class="toggle-control" aria-hidden="true"></span>
+              <span>Restore tabs on startup</span>
+            </label>
+            <label class="toggle-row" for="setting-activity-tracking">
+              <input id="setting-activity-tracking" type="checkbox">
+              <span class="toggle-control" aria-hidden="true"></span>
+              <span>Enable activity tracking</span>
+            </label>
+            <p class="field-help">Off by default. Logged URLs have query strings and fragments removed.</p>
+            <button class="primary-button" id="btn-save-browser-settings" type="submit">Save browser settings</button>
+          </fieldset>
+        </form>
+
+        <form id="ai-settings-form">
+          <fieldset class="settings-group">
+            <legend>Invicta AI provider</legend>
+            <label class="field-label" for="setting-ai-provider">Mode</label>
+            <select id="setting-ai-provider">
+              <option value="local">Local</option>
+              <option value="invicta">InvictaTill AI API</option>
+              <option value="cloud">OpenAI Responses API</option>
+            </select>
+            <label class="field-label" for="setting-ai-endpoint">API base URL</label>
+            <input id="setting-ai-endpoint" type="url" placeholder="https://api.openai.com/v1">
+            <label class="field-label" for="setting-ai-model">Model</label>
+            <input id="setting-ai-model" type="text" autocomplete="off" placeholder="Model name">
+            <label class="field-label" for="setting-ai-key">API key</label>
+            <input id="setting-ai-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key">
+            <p class="field-help">Saved keys are never read back into this page.</p>
+            <div class="button-row">
+              <button class="primary-button" id="btn-save-ai-settings" type="submit">Save</button>
+              <button class="secondary-button" id="btn-test-ai-settings" type="button">Test connection</button>
+            </div>
+            <p class="settings-status" id="ai-settings-status" role="status" aria-live="polite"></p>
+          </fieldset>
+        </form>
+
+        <fieldset class="settings-group">
+          <legend>Tools and privacy</legend>
+          <div class="settings-actions">
+            <button class="secondary-button" id="btn-private-window" type="button">Open private window</button>
+            <button class="secondary-button" id="btn-print-page" type="button">Print page</button>
+            <button class="secondary-button" id="btn-save-pdf" type="button">Save page as PDF</button>
+            <button class="danger-button" id="btn-clear-browsing-data" type="button">Clear browsing data…</button>
+          </div>
+        </fieldset>
+      </section>
     </div>
+  </aside>
+
+  <div class="browser-menu hidden" id="browser-menu" role="menu" aria-label="Browser menu">
+    <button role="menuitem" type="button" id="menu-new-tab">New tab <kbd>Ctrl+T</kbd></button>
+    <button role="menuitem" type="button" id="menu-duplicate-tab">Duplicate tab</button>
+    <button role="menuitem" type="button" id="menu-reopen-tab">Reopen closed tab <kbd>Ctrl+Shift+T</kbd></button>
+    <div class="menu-separator" role="separator"></div>
+    <button role="menuitem" type="button" id="menu-print">Print… <kbd>Ctrl+P</kbd></button>
+    <button role="menuitem" type="button" id="menu-save-pdf">Save as PDF…</button>
+    <button role="menuitem" type="button" id="menu-devtools">Developer tools</button>
+    <div class="menu-separator" role="separator"></div>
+    <div class="menu-zoom" aria-label="Page zoom">
+      <span>Zoom</span>
+      <button id="menu-zoom-out" type="button" aria-label="Zoom out">−</button>
+      <output id="zoom-display">100%</output>
+      <button id="menu-zoom-in" type="button" aria-label="Zoom in">+</button>
+      <button id="menu-zoom-reset" type="button">Reset</button>
+    </div>
+    <div class="menu-separator" role="separator"></div>
+    <button role="menuitem" type="button" id="menu-private-window">New private window</button>
+    <button role="menuitem" type="button" id="menu-settings">Settings</button>
+    <button role="menuitem" type="button" id="menu-release-notes">Release notes</button>
+    <p class="menu-version">InvictaTill Browser <span id="about-version"></span></p>
   </div>
 
-  <!-- ═══════════════════════════════════════════════════════ INTERACTIVE RELEASE UPDATE POPUP MODAL -->
-  <div id="update-modal-backdrop" class="modal-backdrop hidden">
-    <div class="update-modal">
-      <div class="modal-header">
-        <div class="modal-title-wrap">
-          <div class="modal-icon">🚀</div>
-          <div>
-            <div class="modal-ver-badge" id="modal-ver-badge">v1.3.2 Release</div>
-            <h2 class="modal-title" id="modal-release-title">InvictaTill Browser Dual Engine Update</h2>
-          </div>
-        </div>
-        <button class="modal-close-btn" id="btn-close-update-modal">✕</button>
-      </div>
+  <div class="notification-stack" id="notification-stack" role="status" aria-live="polite" aria-atomic="false"></div>
 
-      <div class="modal-body">
-        <p class="modal-intro">A new version of InvictaTill Browser is ready to transform your gaming and WFH workspace experience.</p>
-        
-        <div class="modal-section-title">✨ What's New & Feature Highlights</div>
-        <ul class="release-feature-list" id="modal-feature-list">
-          <li>🎮 <strong>Dual Engine Switcher</strong>: Instantly switch between Ultra Gaming Mode and AI-powered WFH Mode.</li>
-          <li>🤖 <strong>Invicta AI Assistant</strong>: Embedded self-learning AI for page summaries, task extraction, and work assist.</li>
-          <li>📊 <strong>Work Activity Records</strong>: Keeps full records of daily work performance across Days, Weeks, Months, and Years.</li>
-          <li>🔊 <strong>Individual Tab Muting</strong>: Mute tabs separately with one click.</li>
-        </ul>
-
-        <div class="modal-section-title">🛠️ Bug Fixes & Optimizations</div>
-        <ul class="release-bug-list" id="modal-bug-list">
-          <li>Fixed audio state synchronization across multiple tab views.</li>
-          <li>Optimized background process RAM reclamation.</li>
-        </ul>
-
-        <div id="modal-progress-wrap" class="modal-progress-wrap hidden">
-          <div class="modal-progress-text" id="modal-progress-text">Downloading Update... 0%</div>
-          <div class="modal-progress-bar"><div id="modal-progress-fill" class="modal-progress-fill"></div></div>
-        </div>
-      </div>
-
-      <div class="modal-footer">
-        <button id="btn-modal-install" class="btn-primary-action">Restart & Update Now</button>
-        <button id="btn-modal-later" class="btn-secondary-action">Remind Me Later</button>
-      </div>
+  <section class="update-banner hidden" id="update-banner" aria-labelledby="update-banner-title">
+    <span class="update-icon" aria-hidden="true">↻</span>
+    <div class="update-copy">
+      <strong id="update-banner-title">Checking for updates</strong>
+      <span id="update-banner-sub">Please wait…</span>
+      <progress id="update-progress" max="100" value="0" class="hidden">0%</progress>
     </div>
+    <button class="primary-button compact hidden" id="btn-install-update" type="button" disabled>Restart to update</button>
+    <button class="icon-button" id="btn-dismiss-update" type="button" aria-label="Dismiss update message">✕</button>
+  </section>
+
+  <div class="modal-backdrop hidden" id="update-modal-backdrop">
+    <section class="update-modal" id="update-modal" role="dialog" aria-modal="true" aria-labelledby="modal-release-title" aria-describedby="modal-release-intro" tabindex="-1">
+      <header class="modal-header">
+        <div>
+          <p class="eyebrow" id="modal-version-label">Release notes</p>
+          <h2 id="modal-release-title">InvictaTill Browser update</h2>
+        </div>
+        <button class="icon-button" id="btn-close-update-modal" type="button" aria-label="Close release notes">✕</button>
+      </header>
+      <div class="modal-body">
+        <p id="modal-release-intro">Review what changed in this release.</p>
+        <h3>Highlights</h3>
+        <ul id="modal-feature-list"></ul>
+        <h3>Fixes</h3>
+        <ul id="modal-bug-list"></ul>
+      </div>
+      <footer class="modal-footer">
+        <button class="secondary-button" id="btn-modal-later" type="button">Later</button>
+        <button class="primary-button hidden" id="btn-modal-install" type="button" disabled>Restart and update</button>
+      </footer>
+    </section>
   </div>
 
   <script src="renderer.js"></script>
