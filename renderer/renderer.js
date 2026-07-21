@@ -1266,4 +1266,4 @@ if (launchGamingBtn) {
   });
 }
 
-notify('🚀 InvictaTill Browser v1.3.2 Ready! AI Engine Active ⚡', 'success', 5000);
+notify('🚀 InvictaTill Browser v1.3.4 Ready! AI Engine Active ⚡', 'success', 5000);
