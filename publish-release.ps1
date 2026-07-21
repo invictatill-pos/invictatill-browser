@@ -123,8 +123,14 @@ try {
         }
         Invoke-Checked -Command $gh -CommandArgs @('auth', 'status') -Description 'Verify GitHub CLI authentication'
 
-        & $gh release view $tagName --json isDraft 1>$null 2>$null
-        if ($LASTEXITCODE -eq 0) {
+        $existingRelease = $false
+        try {
+            & $gh release view $tagName --json isDraft 1>$null 2>$null
+            if ($LASTEXITCODE -eq 0) { $existingRelease = $true }
+        } catch {
+            # Release not found, safe to proceed
+        }
+        if ($existingRelease) {
             throw "A GitHub release already exists for $tagName. Refusing to replace or mutate it."
         }
     }
