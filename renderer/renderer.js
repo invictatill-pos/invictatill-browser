@@ -1460,7 +1460,7 @@ function syncAiConfigFormAvailability(applyProviderDefault) {
     endpoint.value = 'https://api.openai.com/v1';
   }
   endpoint.placeholder = provider === 'invicta'
-    ? 'http://127.0.0.1:7860/api/v1'
+    ? 'https://ai.invictatill.shop/api/v1 (or http://127.0.0.1:7860/api/v1)'
     : 'https://api.openai.com/v1';
   $('setting-ai-endpoint').disabled = local;
   $('setting-ai-model').disabled = provider !== 'cloud';
