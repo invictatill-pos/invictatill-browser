@@ -500,6 +500,35 @@ body.mode-ultra .title-mode-pill .pill-dot { background: var(--purple-light); bo
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   WEBVIEWS CONTAINER
+   ═══════════════════════════════════════════════════════════════════════════ */
+.webviews-container {
+  position: fixed;
+  top: var(--chrome-h);
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  background: var(--bg-0);
+  z-index: 5;
+}
+.browser-webview {
+  flex: 1;
+  display: none;
+  height: 100%;
+  border: none;
+  background: #fff; /* White background for sites loading */
+}
+.browser-webview.active {
+  display: flex;
+}
+.split-screen-mode .browser-webview.active {
+  display: flex;
+  border-right: 2px solid var(--border-bright);
+}
+.split-screen-mode .browser-webview.active:last-child {
+  border-right: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    NEW TAB PAGE
    ═══════════════════════════════════════════════════════════════════════════ */
 .new-tab-page {

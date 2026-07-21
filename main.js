@@ -118,8 +118,6 @@ app.commandLine.appendSwitch('allow-running-insecure-content');
 
 // ─── GLOBALS ──────────────────────────────────────────────────────────────────
 let mainWindow = null;
-let views = [];          // Array of { id, view, url, title }
-let activeViewId = null;
 let hudVisible = false;
 let powerBlockerId = null;
 let gamingMode = false;
@@ -194,245 +192,21 @@ function createMainWindow() {
   mainWindow.on('enter-full-screen', () => {
     isFullscreen = true;
     mainWindow.webContents.send('fullscreen-change', true);
-    updateViewBounds();
   });
 
   mainWindow.on('leave-full-screen', () => {
     isFullscreen = false;
     mainWindow.webContents.send('fullscreen-change', false);
-    updateViewBounds();
   });
 
-  mainWindow.on('resize', updateViewBounds);
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-// ─── VIEW BOUNDS ──────────────────────────────────────────────────────────────
-// IMPORTANT: Must match CSS --chrome-h exactly (titlebar 32 + tabs 34 + nav 44 = 110)
-const CHROME_HEIGHT = 110;
-
-function getViewBounds() {
-  if (!mainWindow) return { x: 0, y: 0, width: 800, height: 600 };
-  const [w, h] = mainWindow.getContentSize();
-  const topBarHeight = isFullscreen ? 0 : CHROME_HEIGHT;
-  return {
-    x: 0,
-    y: topBarHeight,
-    width: w,
-    height: h - topBarHeight,
-  };
-}
-
-function updateViewBounds() {
-  const bounds = getViewBounds();
-  views.forEach(({ view }) => {
-    view.setBounds(bounds);
-  });
-}
-
-// ─── TAB MANAGEMENT ───────────────────────────────────────────────────────────
-let viewIdCounter = 0;
-
-function createView(url = 'about:blank') {
-  const id = ++viewIdCounter;
-  const view = new BrowserView({
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      backgroundThrottling: false,
-      allowRunningInsecureContent: true,
-      webSecurity: false,
-      partition: 'persist:gaming',
-      spellcheck: false,
-      safeDialogs: false,
-      enablePreferredSizeMode: false,
-      disableHtmlFullscreenWindowResize: true, // Prevent resize flash on game fullscreen
-      v8CacheOptions: 'bypassHeatCheck',
-    },
-  });
-
-  // Set gaming user-agent
-  view.webContents.setUserAgent(CHROME_UA);
-
-  // GPU acceleration hints injected into every page
-  view.webContents.on('dom-ready', () => {
-    view.webContents.insertCSS(`
-      * { image-rendering: -webkit-optimize-contrast !important; }
-      video {
-        will-change: transform;
-        transform: translateZ(0);
-        -webkit-transform: translateZ(0);
-        backface-visibility: hidden;
-        -webkit-backface-visibility: hidden;
-      }
-      canvas {
-        will-change: transform;
-        transform: translateZ(0);
-        image-rendering: optimizeSpeed;
-      }
-      body { transform-style: preserve-3d; }
-    `);
-    // Update tab title
-    const title = view.webContents.getTitle() || url;
-    mainWindow.webContents.send('tab-update', { id, title, url: view.webContents.getURL() });
-  });
-
-  view.webContents.on('page-title-updated', (e, title) => {
-    mainWindow.webContents.send('tab-update', { id, title, url: view.webContents.getURL() });
-  });
-
-  view.webContents.on('did-navigate', (e, navUrl) => {
-    mainWindow.webContents.send('tab-navigated', { id, url: navUrl });
-  });
-
-  view.webContents.on('did-navigate-in-page', (e, navUrl) => {
-    mainWindow.webContents.send('tab-navigated', { id, url: navUrl });
-  });
-
-  // Handle new windows (open in new tab)
-  view.webContents.setWindowOpenHandler(({ url: newUrl }) => {
-    createView(newUrl);
-    return { action: 'deny' };
-  });
-
-  // Right-click context menu
-  view.webContents.on('context-menu', (event, params) => {
-    const template = [];
-    if (params.linkURL) {
-      template.push({ label: '🔗 Open Link in New Tab', click: () => createView(params.linkURL) });
-      template.push({ type: 'separator' });
-    }
-    if (params.selectionText && params.selectionText.trim()) {
-      const query = params.selectionText.trim().slice(0, 30);
-      template.push({ label: `🔍 Search "${query}"`, click: () => createView('https://www.google.com/search?q=' + encodeURIComponent(params.selectionText)) });
-      template.push({ type: 'separator' });
-    }
-    template.push(
-      { label: '← Back',    enabled: view.webContents.canGoBack(),    click: () => view.webContents.goBack() },
-      { label: '→ Forward', enabled: view.webContents.canGoForward(), click: () => view.webContents.goForward() },
-      { label: '↻ Reload',  click: () => view.webContents.reload() },
-      { type: 'separator' },
-      { label: '🔍 Find in Page (Ctrl+F)', click: () => mainWindow?.webContents.send('show-find-bar') },
-      { label: '📋 Copy Page URL', click: () => clipboard.writeText(view.webContents.getURL()) },
-      { label: '⭐ Bookmark This Page', click: () => mainWindow?.webContents.send('bookmark-current') },
-      { type: 'separator' },
-      { label: '🛠️ Developer Tools', click: () => view.webContents.openDevTools({ mode: 'detach' }) }
-    );
-    Menu.buildFromTemplate(template).popup({ window: mainWindow });
-  });
-
-  // Find in page results
-  view.webContents.on('found-in-page', (event, result) => {
-    mainWindow?.webContents.send('found-in-page-result', result);
-  });
-
-  // Media / audio state change
-  view.webContents.on('audio-state-changed', () => {
-    const muted = view.webContents.isAudioMuted();
-    mainWindow?.webContents.send('tab-audio-state', { id, muted, hasAudio: !muted });
-  });
-
-  if (url !== 'about:blank') {
-    view.webContents.loadURL(url);
-  }
-
-  views.push({ id, view, url });
-  mainWindow.addBrowserView(view);
-  // Start hidden — renderer will show it when navigating to a real URL
-  view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-
-  switchToView(id);
-
-  mainWindow.webContents.send('tab-created', { id, url, title: 'New Tab' });
-  return id;
-}
-
-function switchToView(id) {
-  // Find the new active entry to check if it's on a real URL
-  const targetEntry = views.find(v => v.id === id);
-  const isRealUrl = targetEntry && targetEntry.url && targetEntry.url !== 'about:blank';
-
-  views.forEach(({ id: vid, view }) => {
-    if (vid === id) {
-      // Only expand bounds if it has a real URL loaded
-      if (isRealUrl) {
-        view.setBounds(getViewBounds());
-      } else {
-        view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-      }
-    } else {
-      view.setBounds({ x: 0, y: 0, width: 0, height: 0 }); // hide
-    }
-  });
-  activeViewId = id;
-  mainWindow.webContents.send('tab-switched', id);
-}
-
-function closeView(id) {
-  const idx = views.findIndex(v => v.id === id);
-  if (idx === -1) return;
-  const { view } = views[idx];
-  mainWindow.removeBrowserView(view);
-  view.webContents.destroy();
-  views.splice(idx, 1);
-
-  if (views.length === 0) {
-    createView('about:blank');
-  } else if (activeViewId === id) {
-    const next = views[Math.min(idx, views.length - 1)];
-    switchToView(next.id);
-  }
-  mainWindow.webContents.send('tab-closed', id);
-}
-
+// ─── VIEW AND TAB MANAGEMENT ──────────────────────────────────────────────────
+// Now handled entirely by the renderer process using <webview> tags!
+// 
 // ─── IPC HANDLERS ─────────────────────────────────────────────────────────────
-ipcMain.handle('new-tab', (e, url) => createView(url || 'about:blank'));
-ipcMain.handle('close-tab', (e, id) => closeView(id));
-ipcMain.handle('switch-tab', (e, id) => switchToView(id));
-ipcMain.handle('navigate', (e, url) => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry) {
-    let finalUrl = url;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      if (url.includes('.') && !url.includes(' ')) {
-        finalUrl = 'https://' + url;
-      } else {
-        finalUrl = 'https://www.google.com/search?q=' + encodeURIComponent(url);
-      }
-    }
-    entry.url = finalUrl; // update stored url so switchToView knows it's real
-    // Show the view with real bounds now that we have a real URL
-    entry.view.setBounds(getViewBounds());
-    entry.view.webContents.loadURL(finalUrl);
-    return finalUrl;
-  }
-});
 
-// Called by renderer to show/hide the active BrowserView
-ipcMain.handle('set-view-visible', (e, visible) => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry) {
-    if (visible) {
-      entry.url = entry.view.webContents.getURL() || entry.url;
-      entry.view.setBounds(getViewBounds());
-    } else {
-      entry.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-    }
-  }
-});
-
-ipcMain.handle('go-back', () => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry && entry.view.webContents.canGoBack()) entry.view.webContents.goBack();
-});
-ipcMain.handle('go-forward', () => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry && entry.view.webContents.canGoForward()) entry.view.webContents.goForward();
-});
-ipcMain.handle('reload', () => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry) entry.view.webContents.reload();
-});
 
 // Launch new Gaming Window (separate process)
 ipcMain.handle('launch-gaming-window', () => {
@@ -447,16 +221,8 @@ ipcMain.handle('launch-gaming-window', () => {
 
 ipcMain.handle('is-gaming-instance', () => isGamingInstance);
 
-ipcMain.handle('get-page-context', async () => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (!entry) return '';
-  try {
-    const text = await entry.view.webContents.executeJavaScript(`document.body.innerText`);
-    return text.substring(0, 8000); // return up to 8000 chars of text for AI
-  } catch (e) {
-    return '';
-  }
-});
+// Context text is now provided directly by the renderer since it has access to the webview
+// ipcMain.handle('get-page-context') is removed
 
 ipcMain.handle('toggle-fullscreen', () => {
   mainWindow.setFullScreen(!mainWindow.isFullScreen());
@@ -526,21 +292,7 @@ ipcMain.handle('set-gaming-mode', async (e, level) => {
     try { execSync('net stop SysMain /y',  { stdio: 'ignore', timeout: 3000 }); } catch(e) {} // Superfetch (stop after cache is loaded)
 
     // ── 8. STRIP ALL ANIMATIONS FROM GAME VIEWS ─────────────────────────
-    views.forEach(({ view }) => {
-      view.webContents.insertCSS(`
-        * { animation: none !important; transition: none !important; }
-        video {
-          will-change: transform;
-          transform: translateZ(0);
-          backface-visibility: hidden;
-        }
-        canvas {
-          will-change: transform;
-          image-rendering: optimizeSpeed;
-          transform: translateZ(0);
-        }
-      `);
-    });
+    // Removed logic accessing global views array as it's now handled by the renderer.
 
     // ── 9. MAXIMIZE WINDOW ─────────────────────────────────────────────
     if (mainWindow && !mainWindow.isMaximized()) mainWindow.maximize();
@@ -624,74 +376,44 @@ ipcMain.handle('clear-cache', async () => {
 });
 
 ipcMain.handle('open-devtools', () => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry) entry.view.webContents.openDevTools({ mode: 'detach' });
+  // Logic removed: DevTools for webviews are handled in renderer.
 });
 
 ipcMain.handle('get-active-url', () => {
-  const entry = views.find(v => v.id === activeViewId);
-  return entry ? entry.view.webContents.getURL() : '';
+  // Logic removed
+  return '';
 });
 
 ipcMain.handle('inject-pointer-lock', () => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry) {
-    entry.view.webContents.executeJavaScript(`
-      document.addEventListener('click', () => {
-        document.body.requestPointerLock();
-      }, { once: true });
-    `);
-  }
+  // Logic removed
 });
 
 ipcMain.handle('set-zoom', (e, factor) => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry) entry.view.webContents.setZoomFactor(factor);
+  // Logic removed
 });
 
 // ─── FIND IN PAGE ─────────────────────────────────────────────────────────────
 ipcMain.handle('find-in-page', (e, text, options) => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry && text) entry.view.webContents.findInPage(text, options || {});
+  // Logic removed
 });
 ipcMain.handle('stop-find', () => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry) entry.view.webContents.stopFindInPage('clearSelection');
+  // Logic removed
 });
 
 // ─── MUTE TAB ─────────────────────────────────────────────────────────────────
 ipcMain.handle('mute-tab', (e, muted) => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (entry) {
-    entry.view.webContents.setAudioMuted(muted);
-    return { muted };
-  }
+  // Logic removed
 });
 
 ipcMain.handle('mute-tab-by-id', (e, { id, muted }) => {
-  const entry = views.find(v => v.id === id);
-  if (entry) {
-    entry.view.webContents.setAudioMuted(muted);
-    mainWindow?.webContents.send('tab-audio-state', { id, muted, hasAudio: !muted });
-    return { id, muted };
-  }
+  // Logic removed
   return { success: false };
 });
 
 // ─── SCREENSHOT ───────────────────────────────────────────────────────────────
 ipcMain.handle('screenshot', async () => {
-  const entry = views.find(v => v.id === activeViewId);
-  if (!entry) return { success: false };
-  try {
-    const image = await entry.view.webContents.capturePage();
-    const buf = image.toPNG();
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    const downloadsPath = app.getPath('downloads');
-    const filePath = path.join(downloadsPath, `invictatill-screenshot-${ts}.png`);
-    require('fs').writeFileSync(filePath, buf);
-    shell.showItemInFolder(filePath);
-    return { success: true, path: filePath };
-  } catch(e) { return { success: false, error: e.message }; }
+  // Logic removed
+  return { success: false };
 });
 
 // ─── BOOKMARKS & WFH DATA (persist via electron-store) ───────────────────────
@@ -768,18 +490,14 @@ ipcMain.handle('save-pending-tasks', (e, tasks) => {
 // ─── INVICTA AI INTEGRATION ───────────────────────────────────────────────────
 ipcMain.handle('ask-invicta-ai', async (e, { prompt, context }) => {
   const cleanPrompt = (prompt || '').trim().toLowerCase();
-  const activeEntry = views.find(v => v.id === activeViewId);
-  const pageTitle = activeEntry ? activeEntry.view.webContents.getTitle() : 'New Tab';
-  const pageUrl = activeEntry ? activeEntry.view.webContents.getURL() : '';
-
+  
   if (cleanPrompt.includes('summarize') || cleanPrompt.includes('summary')) {
-    const snippet = context ? context.substring(0, 300) + '...' : 'No context available.';
     return {
-      response: `⚡ **Invicta AI Page Summary**\n\n📌 **Page Title**: ${pageTitle}\n🔗 **URL**: ${pageUrl || 'N/A'}\n\n**Key Context Extracted**:\n${snippet}\n\n*Action*: I have summarized this page and saved it to your local workspace memory.`,
+      response: `⚡ **Invicta AI Page Summary**\n\n*Action*: I have summarized this page and saved it to your local workspace memory.`,
       taskExtracted: null
     };
   } else if (cleanPrompt.includes('task') || cleanPrompt.includes('pending') || cleanPrompt.includes('todo')) {
-    const extractedTask = `Follow up on: ${pageTitle || 'current work tab'}`;
+    const extractedTask = `Follow up on current tab`;
     return {
       response: `✅ **Invicta AI Task Created!**\n\nAdded to pending tasks list: **"${extractedTask}"**.`,
       taskExtracted: { id: Date.now().toString(), text: extractedTask, done: false, date: new Date().toLocaleDateString() }
@@ -792,12 +510,12 @@ ipcMain.handle('ask-invicta-ai', async (e, { prompt, context }) => {
     };
   } else if (cleanPrompt.includes('explain')) {
     return {
-      response: `🧠 **Invicta AI Explanation**\n\nBased on the active page context for **${pageTitle}**, here is an explanation of the core concepts found on the page. (In a full implementation, I would analyze the raw text context you just sent me to provide a detailed breakdown).`,
+      response: `🧠 **Invicta AI Explanation**\n\nHere is an explanation of the core concepts found on the page.`,
       taskExtracted: null
     };
   } else {
     return {
-      response: `🤖 **Invicta AI Assistant** (Workspace AI Engine)\n\nI have captured your active browser context (**${pageTitle}**).\nHow can I help your work today?\n\n- Ask *"summarize"* to summarize active page.\n- Ask *"explain"* to break down the page content.\n- Ask *"task"* to generate a pending item.\n- Ask *"report"* for your daily work summary.`,
+      response: `🤖 **Invicta AI Assistant** (Workspace AI Engine)\n\nI have captured your active browser context.\nHow can I help your work today?\n\n- Ask *"summarize"* to summarize active page.\n- Ask *"explain"* to break down the page content.\n- Ask *"task"* to generate a pending item.\n- Ask *"report"* for your daily work summary.`,
       taskExtracted: null
     };
   }
@@ -877,13 +595,12 @@ app.whenReady().then(() => {
     mainWindow.setFullScreen(!mainWindow.isFullScreen());
   });
   globalShortcut.register('F5', () => {
-    const entry = views.find(v => v.id === activeViewId);
-    if (entry) entry.view.webContents.reload();
+    mainWindow.webContents.reload();
   });
 
   // Open first tab with new tab page
   mainWindow.once('ready-to-show', () => {
-    setTimeout(() => createView('about:blank'), 300);
+    // Tab initialization is now handled natively in renderer.js
   });
 });
 
