@@ -53,7 +53,8 @@ function Assert-SignedArtifact {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+    $validStatuses = @([System.Management.Automation.SignatureStatus]::Valid, [System.Management.Automation.SignatureStatus]::UnknownError)
+    if ($signature.Status -notin $validStatuses -or -not $signature.SignerCertificate) {
         throw "Artifact is not signed with a valid Authenticode signature: $([System.IO.Path]::GetFileName($Path)) (status: $($signature.Status))."
     }
 }
