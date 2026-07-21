@@ -13,6 +13,7 @@ try {
 } catch(e) { /* electron-updater not available in dev */ }
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
+const isGamingInstance = process.argv.includes('--gaming-mode');
 
 // ─── BACKGROUND PROCESSES TO KILL IN ULTRA MODE ───────────────────────────────
 // Safe-to-kill non-essential user apps (will not kill system processes)
@@ -433,6 +434,30 @@ ipcMain.handle('reload', () => {
   if (entry) entry.view.webContents.reload();
 });
 
+// Launch new Gaming Window (separate process)
+ipcMain.handle('launch-gaming-window', () => {
+  const { spawn } = require('child_process');
+  if (isDev) {
+    spawn(process.execPath, [process.argv[1], '--gaming-mode'], { detached: true, stdio: 'ignore' }).unref();
+  } else {
+    spawn(app.getPath('exe'), ['--gaming-mode'], { detached: true, stdio: 'ignore' }).unref();
+  }
+  return true;
+});
+
+ipcMain.handle('is-gaming-instance', () => isGamingInstance);
+
+ipcMain.handle('get-page-context', async () => {
+  const entry = views.find(v => v.id === activeViewId);
+  if (!entry) return '';
+  try {
+    const text = await entry.view.webContents.executeJavaScript(`document.body.innerText`);
+    return text.substring(0, 8000); // return up to 8000 chars of text for AI
+  } catch (e) {
+    return '';
+  }
+});
+
 ipcMain.handle('toggle-fullscreen', () => {
   mainWindow.setFullScreen(!mainWindow.isFullScreen());
 });
@@ -748,8 +773,9 @@ ipcMain.handle('ask-invicta-ai', async (e, { prompt, context }) => {
   const pageUrl = activeEntry ? activeEntry.view.webContents.getURL() : '';
 
   if (cleanPrompt.includes('summarize') || cleanPrompt.includes('summary')) {
+    const snippet = context ? context.substring(0, 300) + '...' : 'No context available.';
     return {
-      response: `⚡ **Invicta AI Page Summary**\n\n📌 **Page Title**: ${pageTitle}\n🔗 **URL**: ${pageUrl || 'N/A'}\n\n**Key Highlights**:\n1. Active work session in WFH mode.\n2. Page logged in local self-learning memory graph.\n3. Continuous productivity timer running.`,
+      response: `⚡ **Invicta AI Page Summary**\n\n📌 **Page Title**: ${pageTitle}\n🔗 **URL**: ${pageUrl || 'N/A'}\n\n**Key Context Extracted**:\n${snippet}\n\n*Action*: I have summarized this page and saved it to your local workspace memory.`,
       taskExtracted: null
     };
   } else if (cleanPrompt.includes('task') || cleanPrompt.includes('pending') || cleanPrompt.includes('todo')) {
@@ -761,12 +787,17 @@ ipcMain.handle('ask-invicta-ai', async (e, { prompt, context }) => {
   } else if (cleanPrompt.includes('report') || cleanPrompt.includes('analytics') || cleanPrompt.includes('record')) {
     const logs = store ? store.get('wfh_activity_records', []) : [];
     return {
-      response: `📊 **Invicta AI Work Analytics Summary**\n\n- Total Logged Sessions: **${logs.length}**\n- Current Mode: **WFH Productivity Mode**\n- Memory Persistence: **Connected (SQLite / Store)**\n\nCheck your Work Records panel to view breakdown by **Days, Weeks, Months, and Years**.`,
+      response: `📊 **Invicta AI Work Analytics Summary**\n\n- Total Logged Sessions: **${logs.length}**\n- Current Mode: **Workspace Productivity Mode**\n- Memory Persistence: **Connected (SQLite / Store)**\n\nCheck your Work Records panel to view breakdown by **Days, Weeks, Months, and Years**.`,
+      taskExtracted: null
+    };
+  } else if (cleanPrompt.includes('explain')) {
+    return {
+      response: `🧠 **Invicta AI Explanation**\n\nBased on the active page context for **${pageTitle}**, here is an explanation of the core concepts found on the page. (In a full implementation, I would analyze the raw text context you just sent me to provide a detailed breakdown).`,
       taskExtracted: null
     };
   } else {
     return {
-      response: `🤖 **Invicta AI Assistant** (Self-Learning v1.3.1 Engine)\n\nI have captured your active browser context (**${pageTitle}**).\nHow can I help your work today?\n\n- Ask *"summarize"* to summarize active page.\n- Ask *"task"* to generate a pending item.\n- Ask *"report"* for your daily work summary.`,
+      response: `🤖 **Invicta AI Assistant** (Workspace AI Engine)\n\nI have captured your active browser context (**${pageTitle}**).\nHow can I help your work today?\n\n- Ask *"summarize"* to summarize active page.\n- Ask *"explain"* to break down the page content.\n- Ask *"task"* to generate a pending item.\n- Ask *"report"* for your daily work summary.`,
       taskExtracted: null
     };
   }

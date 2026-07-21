@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDevTools:      ()       => ipcRenderer.invoke('open-devtools'),
   injectPointerLock: ()       => ipcRenderer.invoke('inject-pointer-lock'),
   setZoom:           (factor) => ipcRenderer.invoke('set-zoom', factor),
+  launchGamingWindow:()       => ipcRenderer.invoke('launch-gaming-window'),
+  isGamingInstance:  ()       => ipcRenderer.invoke('is-gaming-instance'),
+  getPageContext:    ()       => ipcRenderer.invoke('get-page-context'),
 
   // ── New: Find in Page ────────────────────────────────────────────────────
   findInPage: (text, options) => ipcRenderer.invoke('find-in-page', text, options),

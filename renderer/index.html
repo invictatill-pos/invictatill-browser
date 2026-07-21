@@ -35,9 +35,10 @@
         </svg>
       </div>
       <span class="logo-text">InvictaTill<span class="logo-accent"> Browser</span></span>
-      <div class="title-mode-pill" id="title-mode-pill">
-        <div class="pill-dot"></div>
-        <span id="title-mode-text">WFH AI</span>
+      <!-- Title Mode Pill -->
+      <div class="title-mode-pill mode-workspace" id="title-mode-pill">
+        <span class="pulse-dot"></span>
+        <span id="title-mode-text">Workspace</span>
       </div>
     </div>
 
@@ -108,15 +109,7 @@
       </button>
 
       <!-- Mode Switcher Pill -->
-      <div class="main-mode-toggle-group">
-        <button class="mode-toggle-btn" id="btn-mode-gaming" title="Switch to Gaming Engine">
-          🎮 Gaming
-        </button>
-        <button class="mode-toggle-btn active-wfh" id="btn-mode-wfh" title="Switch to WFH AI Engine">
-          💼 WFH
-        </button>
-      </div>
-
+      <!-- Mode toggle removed (Gaming moved to separate dedicated window via Settings menu) -->
       <!-- Invicta AI Assistant Drawer Toggle (WFH Mode) -->
       <button class="nav-icon-btn ai-drawer-btn" id="btn-ai-drawer" title="Invicta AI Assistant & Work Records">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
@@ -484,6 +477,11 @@
   <!-- ═══════════════════════════════════════════════════════ DROPDOWN MENU -->
   <div id="dropdown-menu" class="dropdown-menu hidden">
     <div class="dropdown-header">Tools & Settings</div>
+    <button class="dropdown-item" id="dm-launch-gaming" style="color: var(--accent-1); font-weight: bold;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L2 7l10 5 10-5-10-5z" fill="currentColor"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Launch Gaming Window
+    </button>
+    <div class="dropdown-divider"></div>
     <button class="dropdown-item" id="dm-clear-cache">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><polyline points="3,6 5,6 21,6" stroke="currentColor" stroke-width="1.5"/><path d="M19 6l-1 14H6L5 6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.5"/><path d="M9 6V4h6v2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
       Clear Cache & Memory
@@ -569,6 +567,7 @@
       <div id="drawer-sec-chat" class="drawer-section active">
         <div class="ai-quick-actions">
           <button class="quick-act-btn" id="btn-ai-summarize">⚡ Summarize Page</button>
+          <button class="quick-act-btn" id="btn-ai-explain">🧠 Explain Context</button>
           <button class="quick-act-btn" id="btn-ai-extract-task">📌 Extract Task</button>
           <button class="quick-act-btn" id="btn-ai-report">📈 Work Summary</button>
         </div>
@@ -577,7 +576,7 @@
             <div class="msg-avatar">🤖</div>
             <div class="msg-content">
               <strong>Hello! I am Invicta AI.</strong><br>
-              I am keeping track of your WFH productivity, logging active browser context, and organizing your pending tasks across Days, Weeks, Months, and Years.
+              I am keeping track of your productivity, logging active browser context, and organizing your pending tasks across Days, Weeks, Months, and Years.
             </div>
           </div>
         </div>
