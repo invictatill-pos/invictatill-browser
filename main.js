@@ -1933,9 +1933,27 @@ function extractiveSummary(text, maxSentences) {
 }
 
 function localAiAnswer(prompt, pageContext) {
-  const request = prompt.toLowerCase();
+  const request = prompt.toLowerCase().trim();
   const hasContext = pageContext && pageContext.text && pageContext.text.trim();
-  if (request.includes('report') || request.includes('analytics')) {
+
+  if (request.includes('shortcut') || request.includes('key') || request.includes('help')) {
+    return {
+      response:
+        'InvictaTill Browser Core Shortcuts:\n\n' +
+        '• Ctrl+T: New Tab\n' +
+        '• Ctrl+W: Close Tab\n' +
+        '• Ctrl+Shift+T: Reopen Closed Tab\n' +
+        '• Ctrl+R: Reload Page\n' +
+        '• Ctrl+F: Find in Page\n' +
+        '• Ctrl+D: Bookmark Page\n' +
+        '• Ctrl+Shift+S: Page Screenshot\n' +
+        '• Ctrl+M: Mute/Unmute Tab\n' +
+        '• Alt+Left / Alt+Right: Navigate Back / Forward',
+      taskExtracted: null,
+    };
+  }
+
+  if (request.includes('report') || request.includes('analytics') || request.includes('activity')) {
     const records = privateInstance
       ? historyRecords
       : (store ? store.get('wfh_activity_records', []) : []);
@@ -1947,51 +1965,59 @@ function localAiAnswer(prompt, pageContext) {
     }).length;
     return {
       response:
-        'Local work report\n\n' +
-        '- Records available: ' + valid.length + '\n' +
-        '- Records from today: ' + todayCount + '\n' +
-        '- Private window: ' + (privateInstance ? 'yes; this data is not persisted' : 'no'),
+        'InvictaTill Activity & Analytics Report\n\n' +
+        '• Total history records: ' + valid.length + '\n' +
+        '• Total pages visited today: ' + todayCount + '\n' +
+        '• Private Session: ' + (privateInstance ? 'Enabled (data ephemeral)' : 'Standard Persistent Mode') + '\n' +
+        '• Active Open Tabs: ' + tabs.size,
       taskExtracted: null,
     };
   }
 
-  if (!hasContext) {
+  if (hasContext) {
+    const points = extractiveSummary(pageContext.text, 6);
+    if (request.includes('task') || request.includes('todo') || request.includes('pending') || request.includes('extract')) {
+      const source = points[0] || pageContext.title || 'Review active page content';
+      const taskText = ('Review: ' + source).slice(0, 240);
+      const suggestedTask = {
+        id: 'ai-task-' + Date.now(),
+        text: taskText,
+        done: false,
+        date: new Date().toLocaleDateString(),
+      };
+      return {
+        response:
+          'Extracted Action Item:\n\n' +
+          '• ' + taskText + '\n\n' +
+          'Key Context Highlights:\n' +
+          (points.slice(1, 4).map((pt) => '  - ' + pt).join('\n') || '  - Complete review of page details.') + '\n\n' +
+          'Source: ' + pageContext.url,
+        suggestedTask,
+        taskExtracted: suggestedTask,
+      };
+    }
+
+    const heading = request.includes('explain')
+      ? 'Invicta Native Intelligence — Deep Technical Breakdown'
+      : 'Invicta Native Intelligence — Page Analysis';
+    const bullets = points.length
+      ? points.map((point) => '• ' + point).join('\n\n')
+      : '• No readable textual content detected on this page.';
     return {
       response:
-        'Page context was not shared. Enable page sharing for this request if you want a ' +
-        'summary or explanation. I can still help with a question that does not require page content.',
+        heading + '\n\n' +
+        (pageContext.title ? 'Title: ' + pageContext.title + '\n\n' : '') +
+        bullets + '\n\nSource: ' + pageContext.url,
       taskExtracted: null,
     };
   }
 
-  const points = extractiveSummary(pageContext.text, 5);
-  if (request.includes('task') || request.includes('todo') || request.includes('pending')) {
-    const source = points[0] || pageContext.title || 'Review the current page';
-    const taskText = ('Review: ' + source).slice(0, 240);
-    const suggestedTask = {
-      id: 'ai-task-' + Date.now(),
-      text: taskText,
-      done: false,
-      date: new Date().toLocaleDateString(),
-    };
-    return {
-      response:
-        'Suggested task: ' + taskText + '\n\n' +
-        'Review and confirm it before adding it to your task list.',
-      suggestedTask,
-      taskExtracted: suggestedTask,
-    };
-  }
-
-  const heading = request.includes('explain') ? 'Local page explanation' : 'Local page summary';
-  const bullets = points.length
-    ? points.map((point) => '- ' + point).join('\n')
-    : '- No substantial readable text was found.';
   return {
     response:
-      heading + '\n\n' +
-      (pageContext.title ? pageContext.title + '\n\n' : '') +
-      bullets + '\n\nSource: ' + pageContext.url,
+      'Invicta Native AI Intelligence:\n\n' +
+      'I am active and ready! Enable "Share this page for this message" above to get instant deep summaries, technical explanations, or task extractions from your current web page.\n\n' +
+      'User Prompt: "' + prompt + '"\n\n' +
+      'Zero API key required for built-in page intelligence.',
     taskExtracted: null,
   };
 }
