@@ -108,11 +108,15 @@ function configureScreenSharePicker(targetSession) {
   try {
     if (typeof targetSession.setDisplayMediaRequestHandler === 'function') {
       targetSession.setDisplayMediaRequestHandler((request, callback) => {
+        console.log("setDisplayMediaRequestHandler TRIGGERED for:", request);
         pendingScreenShareCallback = callback;
         desktopCapturer.getSources({
           types: ['screen', 'window'],
-          fetchWindowIcons: true,
-          thumbnailSize: { width: 320, height: 200 },
+          fetchWindowIcons: false,
+          thumbnailSize: { width: 0, height: 0 },
+        }).catch((err) => {
+          console.error("Screen Share getSources error:", err);
+          return [];
         }).then((sources) => {
           const tabList = Array.from(tabs.values()).map((t) => ({
             id: t.id,
@@ -125,14 +129,14 @@ function configureScreenSharePicker(targetSession) {
           const screenSources = (sources || []).filter((s) => s.id && s.id.startsWith('screen:')).map((s) => ({
             id: s.id,
             name: s.name || 'Entire Screen',
-            thumbnail: s.thumbnail ? s.thumbnail.toDataURL() : null,
+            thumbnail: null,
           }));
 
           const windowSources = (sources || []).filter((s) => s.id && s.id.startsWith('window:')).map((s) => ({
             id: s.id,
             name: s.name || 'Application Window',
-            thumbnail: s.thumbnail ? s.thumbnail.toDataURL() : null,
-            appIcon: s.appIcon ? s.appIcon.toDataURL() : null,
+            thumbnail: null,
+            appIcon: null,
           }));
 
           sendToShell('show-screen-picker', {
@@ -140,11 +144,6 @@ function configureScreenSharePicker(targetSession) {
             windows: windowSources,
             tabs: tabList,
           });
-        }).catch(() => {
-          if (pendingScreenShareCallback) {
-            pendingScreenShareCallback({});
-            pendingScreenShareCallback = null;
-          }
         });
       });
     }
@@ -3021,7 +3020,7 @@ function registerIpcHandlers() {
         if (tab && tab.view && tab.view.webContents && tab.view.webContents.mainFrame) {
           console.log('Passing mainFrame for tab screen share');
           const payload = { video: tab.view.webContents.mainFrame };
-          if (selection.audio) payload.audio = tab.view.webContents.mainFrame;
+          if (selection.audio) payload.audio = 'loopback';
           pendingScreenShareCallback(payload);
         } else {
           console.log('Tab or webContents missing, failing screen share');

@@ -9,6 +9,13 @@ app.whenReady().then(() => {
   });
 
   win.loadFile(__dirname + '/test-screenshare.html');
+  
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.executeJavaScript(`
+      document.getElementById("b").click();
+      console.log("Clicked share button");
+    `);
+  });
 
   const tab = new BrowserWindow({ show: false });
   tab.loadURL('https://example.com');
