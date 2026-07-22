@@ -1,0 +1,19 @@
+<html>
+<body>
+<button id="b">Share</button>
+<script>
+const {ipcRenderer} = require("electron"); 
+document.getElementById("b").onclick = async () => { 
+  try { 
+    const stream = await navigator.mediaDevices.getDisplayMedia({video: true, audio: true}); 
+    console.log("Stream", stream.id); 
+    ipcRenderer.send("success"); 
+  } catch(e) { 
+    console.error("Error:", e); 
+    ipcRenderer.send("fail", e.toString()); 
+  } 
+}; 
+setTimeout(() => document.getElementById("b").click(), 500);
+</script>
+</body>
+</html>

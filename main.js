@@ -102,16 +102,10 @@ function getWorkspaceDetails(workspaceId) {
 
 let pendingScreenShareCallback = null;
 
-function configurePermissions(targetSession) {
+function configureScreenSharePicker(targetSession) {
   if (!targetSession) return;
 
   try {
-    targetSession.setPermissionRequestHandler((webContents, permission, callback) => {
-      callback(true);
-    });
-
-    targetSession.setPermissionCheckHandler(() => true);
-
     if (typeof targetSession.setDisplayMediaRequestHandler === 'function') {
       targetSession.setDisplayMediaRequestHandler((request, callback) => {
         pendingScreenShareCallback = callback;
@@ -174,6 +168,7 @@ function getWorkspaceSession(workspaceId) {
   }
 
   configurePermissions(sess);
+  configureScreenSharePicker(sess);
   configureDownloads(sess);
   workspaceSessionsMap.set(cleanId, sess);
   return sess;
@@ -1810,9 +1805,9 @@ function getReleaseDetails() {
       'Visible Tab Titles & Drag-and-Drop Reordering: Complete tab visibility and custom reordering.',
     ],
     bugFixes: [
+      'Google Meet Screenshare: Fixed JavaScript function overriding that completely broke the custom screen picker UI.',
       'Google Meet Screenshare: Fixed tab capture ID mapping and WebRTC audio constraints breaking stream.',
       'Workspace Tab Segregation on Restart: Fixed background tabs appearing in the Default workspace on application startup.',
-      'Password Manager Validation Error: Fixed a DOM binding bug that prevented passwords from being saved correctly.',
     ],
   };
 }
@@ -3276,7 +3271,9 @@ app.whenReady().then(() => {
   });
   browserSession.setSpellCheckerEnabled(true);
   configurePermissions(session.defaultSession);
+  configureScreenSharePicker(session.defaultSession);
   configurePermissions(browserSession);
+  configureScreenSharePicker(browserSession);
   configureDownloads(browserSession);
   loadPersistentBrowserData();
   registerIpcHandlers();
