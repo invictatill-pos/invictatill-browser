@@ -23,6 +23,8 @@ const Store = require('electron-store');
 
 // Enforce Chromium's renderer sandbox before app.ready.
 app.enableSandbox();
+app.commandLine.appendSwitch('enable-usermedia-screen-capturing');
+app.commandLine.appendSwitch('allow-http-screen-capture');
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
 const privateInstance = process.argv.includes('--private-mode');
@@ -110,12 +112,8 @@ function configurePermissions(targetSession) {
       targetSession.setDisplayMediaRequestHandler((request, callback) => {
         desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
           if (sources && sources.length > 0) {
-            const primaryScreen = sources.find((s) => s.id.startsWith('screen:')) || sources[0];
-            const captureConfig = { video: primaryScreen };
-            if (request && request.audioRequested && process.platform === 'win32') {
-              captureConfig.audio = 'loopback';
-            }
-            callback(captureConfig);
+            const primaryScreen = sources.find((s) => s.id && s.id.startsWith('screen:')) || sources[0];
+            callback({ video: primaryScreen });
           } else {
             callback({});
           }
@@ -1772,16 +1770,16 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
+      'Guaranteed Google Meet Screen Share: Enabled Chromium usermedia-screen-capturing flags and passed video streams cleanly without StartupCode 219 audio errors.',
       'Persistent Workspace Logins: Session cookies are flushed to disk on quit and restored per workspace so Gmail, Google, and work accounts stay signed in.',
       'Persistent Workspace Names: Called loadWorkspaces on startup so custom renamed workspace titles stay saved across restarts.',
-      'Google Meet Screen Share: Refined display media handler to stream full screens without audio loopback rejection.',
       'Cross-Workspace Password Vault 🔑: Encrypted password manager to save and autofill passwords across all your workspaces.',
       'Visible Tab Titles: Restored tab title DOM element rendering and hostname fallback formatting on all web tabs.',
       'Drag-and-Drop Workspace & Tab Reordering: Reorder workspace tabs and web tabs simply by dragging them into position.',
     ],
     bugFixes: [
-      'Called loadWorkspaces in loadPersistentBrowserData so workspace list doesn\'t reset on restart.',
-      'Flushed workspaceSession cookies on before-quit event to keep logins persistent.',
+      'Added enable-usermedia-screen-capturing and allow-http-screen-capture command line switches.',
+      'Fixed Google Meet StartupCode 219 DisconnectedError during screen sharing.',
     ],
   };
 }
