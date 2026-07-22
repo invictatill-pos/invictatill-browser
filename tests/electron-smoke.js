@@ -83,6 +83,15 @@ async function main() {
     log('Browser shell loaded');
     assert.equal(await window.title(), 'InvictaTill Browser');
     await window.locator('#tabs-container').waitFor({ state: 'visible' });
+    const modalParents = await window.evaluate(() => [
+      'update-modal-backdrop',
+      'site-info-modal-backdrop',
+      'add-workspace-modal-backdrop',
+      'passwords-modal-backdrop',
+      'screen-picker-modal-backdrop',
+    ].map((id) => ({ id, parent: document.getElementById(id).parentElement.tagName })));
+    assert.ok(modalParents.every((item) => item.parent === 'BODY'),
+      `Expected top-level modal backdrops, received ${JSON.stringify(modalParents)}`);
 
     const initial = await window.evaluate(() => window.electronAPI.getBrowserState());
     assert.ok(initial.tabs.length >= 1, 'Expected an initial browser tab');
@@ -104,6 +113,100 @@ async function main() {
     const active = loaded.tabs.find((tab) => tab.id === loaded.activeTabId);
     assert.equal(active.url, pageUrl);
     assert.equal(active.canGoBack, false);
+
+    log('Requesting a real display-media stream from the active page');
+    const displayMediaResult = electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) return { success: false, error: 'Target web contents not found' };
+      return target.executeJavaScript(`(async () => {
+        try {
+          window.__invictaTestDisplayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true
+          });
+          const videoTrack = window.__invictaTestDisplayStream.getVideoTracks()[0];
+          return {
+            success: Boolean(videoTrack),
+            videoTracks: window.__invictaTestDisplayStream.getVideoTracks().length,
+            audioTracks: window.__invictaTestDisplayStream.getAudioTracks().length,
+            readyState: videoTrack ? videoTrack.readyState : null
+          };
+        } catch (error) {
+          return { success: false, error: String(error && (error.stack || error.message) || error) };
+        }
+      })()`, true);
+    }, pageUrl).catch((error) => ({ success: false, error: error.stack || String(error) }));
+
+    const picker = window.locator('#screen-picker-modal-backdrop');
+    const requestOutcome = await Promise.race([
+      picker.waitFor({ state: 'visible', timeout: 15_000 }).then(
+        () => ({ pickerVisible: true }),
+        (error) => ({ pickerVisible: false, waitError: error.message }),
+      ),
+      displayMediaResult.then((result) => ({ pickerVisible: false, result })),
+    ]);
+    assert.equal(requestOutcome.pickerVisible, true,
+      `Display-media picker did not open: ${JSON.stringify(requestOutcome)}`);
+    assert.match(await window.locator('#screen-picker-origin').textContent(), /127\.0\.0\.1/);
+    assert.equal(await window.locator('#chk-share-audio').isEnabled(), true);
+    const pageSource = window.locator('#screen-picker-list-pane .screen-picker-item')
+      .filter({ hasText: 'Invicta smoke page' })
+      .first();
+    await pageSource.click();
+    assert.equal(await window.locator('#btn-submit-screen-picker').isEnabled(), true);
+    await window.locator('#btn-submit-screen-picker').click();
+    const stream = await displayMediaResult;
+    assert.deepEqual(
+      {
+        success: stream.success,
+        videoTracks: stream.videoTracks,
+        audioTracks: stream.audioTracks,
+        readyState: stream.readyState,
+      },
+      { success: true, videoTracks: 1, audioTracks: 1, readyState: 'live' },
+      stream.error || 'Display-media stream did not become live',
+    );
+    await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) return;
+      await target.executeJavaScript(`(() => {
+        if (window.__invictaTestDisplayStream) {
+          window.__invictaTestDisplayStream.getTracks().forEach((track) => track.stop());
+          window.__invictaTestDisplayStream = null;
+        }
+      })()`);
+    }, pageUrl);
+    await picker.waitFor({ state: 'hidden' });
+    log('Display-media tab capture verified');
+
+    const cancelledDisplayRequest = electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) return { cancelled: false, error: 'Target web contents not found' };
+      return target.executeJavaScript(`(async () => {
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          stream.getTracks().forEach((track) => track.stop());
+          return { cancelled: false };
+        } catch (error) {
+          return { cancelled: true, name: error.name, message: error.message };
+        }
+      })()`, true);
+    }, pageUrl).catch((error) => ({ cancelled: false, error: error.stack || String(error) }));
+    await picker.waitFor({ state: 'visible', timeout: 15_000 });
+    assert.equal(await window.locator('#chk-share-audio').isDisabled(), true);
+    await window.keyboard.press('Escape');
+    await picker.waitFor({ state: 'hidden' });
+    const cancellation = await cancelledDisplayRequest;
+    assert.equal(cancellation.cancelled, true, cancellation.error || 'Display-media cancellation did not reject the request');
+    assert.ok(['AbortError', 'NotAllowedError'].includes(cancellation.name),
+      `Unexpected display-media cancellation error: ${cancellation.name}`);
+    log('Display-media cancellation verified');
+
+    const originalOrder = loaded.tabs.map((tab) => tab.id);
+    const requestedOrder = originalOrder.slice().reverse();
+    const reordered = await window.evaluate((ids) => window.electronAPI.reorderTabs(ids), requestedOrder);
+    assert.deepEqual(reordered.tabs.map((tab) => tab.id).slice(0, requestedOrder.length), requestedOrder);
+    log('Tab reordering verified');
 
     const aiResult = await window.evaluate(() => window.electronAPI.askInvictaAI(
       'Summarize this page in one sentence',

@@ -33,6 +33,11 @@ test('the browser core keeps Chromium security boundaries enabled', () => {
   assert.match(main, /setPermissionCheckHandler/);
   assert.match(main, /'camera'/);
   assert.match(main, /'microphone'/);
+  assert.match(main, /setDisplayMediaRequestHandler/);
+  assert.match(main, /pendingScreenShareRequest/);
+  assert.match(main, /isDisplayMediaPipeline/);
+  assert.match(main, /details\.mediaTypes\.length === 0/);
+  assert.match(main, /enableLocalEcho/);
   assert.match(main, /setWindowOpenHandler/);
 });
 
@@ -55,4 +60,12 @@ test('cloud AI secrets stay behind the main-process bridge', () => {
   assert.match(main, /raw\.provider === 'openai' \? 'openai' : 'local'|raw\.provider === 'openai'/);
   assert.ok(!/Authorization\s*:/i.test(preload));
   assert.ok(!/Authorization\s*:/i.test(renderer));
+  assert.ok(!/invicta_sk_[A-Za-z0-9_-]+/.test(main), 'Embedded InvictaTill service credential remains');
+});
+
+test('saved passwords never fall back to plaintext persistence', () => {
+  const main = read('main.js');
+  assert.match(main, /Secure OS key storage is not available; passwords/);
+  assert.doesNotMatch(main, /password:\s*encrypted\s*\?/);
+  assert.doesNotMatch(main, /password:\s*item\.password/);
 });

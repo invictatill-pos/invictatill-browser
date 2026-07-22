@@ -110,6 +110,8 @@ const els = {
   screenPickerPreviewImg: $('screen-picker-preview-img'),
   screenPickerPreviewTitle: $('screen-picker-preview-title'),
   screenPickerPreviewPrompt: $('screen-picker-preview-prompt'),
+  screenPickerOrigin: $('screen-picker-origin'),
+  screenPickerAudioLabel: $('screen-picker-audio-label'),
   btnCancelScreenPicker: $('btn-cancel-screen-picker'),
   btnCancelScreenPickerX: $('btn-cancel-screen-picker-x'),
   btnSubmitScreenPicker: $('btn-submit-screen-picker'),
@@ -182,6 +184,40 @@ function setHidden(node, hidden) {
   node.classList.toggle('hidden', Boolean(hidden));
   if (hidden) node.setAttribute('hidden', '');
   else node.removeAttribute('hidden');
+}
+
+function visibleModalSurface() {
+  const surfaces = [
+    [els.screenPickerBackdrop, els.screenPickerModal],
+    [els.siteInfoModalBackdrop, els.siteInfoModal],
+    [els.addWorkspaceModalBackdrop, els.addWorkspaceModal],
+    [els.passwordsModalBackdrop, els.passwordsModal],
+    [els.updateModalBackdrop, els.updateModal],
+  ];
+  for (const surface of surfaces) {
+    if (surface[0] && !surface[0].classList.contains('hidden')) return surface;
+  }
+  return null;
+}
+
+function openModalSurface(backdrop, dialog) {
+  if (!backdrop || !dialog) return;
+  if (!state.modalOpen) state.previousModalFocus = document.activeElement;
+  setHidden(backdrop, false);
+  state.modalOpen = true;
+  scheduleLayout();
+  window.setTimeout(function () { dialog.focus(); }, 0);
+}
+
+function closeModalSurface(backdrop) {
+  if (!backdrop) return;
+  setHidden(backdrop, true);
+  state.modalOpen = Boolean(visibleModalSurface());
+  scheduleLayout();
+  if (!state.modalOpen && state.previousModalFocus && typeof state.previousModalFocus.focus === 'function') {
+    state.previousModalFocus.focus();
+  }
+  if (!state.modalOpen) state.previousModalFocus = null;
 }
 
 function clamp(value, min, max) {
@@ -743,15 +779,11 @@ async function openSiteInfoModal() {
     els.sitePermissionsList.appendChild(row);
   });
 
-  setHidden(els.siteInfoModalBackdrop, false);
-  state.modalOpen = true;
-  scheduleLayout();
+  openModalSurface(els.siteInfoModalBackdrop, els.siteInfoModal);
 }
 
 function closeSiteInfoModal() {
-  setHidden(els.siteInfoModalBackdrop, true);
-  state.modalOpen = false;
-  scheduleLayout();
+  closeModalSurface(els.siteInfoModalBackdrop);
 }
 
 function renderWorkspaces() {
@@ -912,15 +944,11 @@ function openAddWorkspaceModal() {
     });
   }
 
-  setHidden(els.addWorkspaceModalBackdrop, false);
-  state.modalOpen = true;
-  scheduleLayout();
+  openModalSurface(els.addWorkspaceModalBackdrop, els.addWorkspaceModal);
 }
 
 function closeAddWorkspaceModal() {
-  setHidden(els.addWorkspaceModalBackdrop, true);
-  state.modalOpen = false;
-  scheduleLayout();
+  closeModalSurface(els.addWorkspaceModalBackdrop);
 }
 
 async function renderPasswordsList() {
@@ -994,16 +1022,12 @@ function openPasswordsModal() {
     } catch (e) {}
   }
   renderPasswordsList();
-  setHidden(els.passwordsModalBackdrop, false);
-  state.modalOpen = true;
-  scheduleLayout();
+  openModalSurface(els.passwordsModalBackdrop, els.passwordsModal);
 }
 
 function closePasswordsModal() {
   if (!els.passwordsModalBackdrop) return;
-  setHidden(els.passwordsModalBackdrop, true);
-  state.modalOpen = false;
-  scheduleLayout();
+  closeModalSurface(els.passwordsModalBackdrop);
 }
 
 function renderScreenPickerList() {
@@ -1018,7 +1042,7 @@ function renderScreenPickerList() {
       return {
         id: t.id,
         title: t.title || t.url,
-        subtitle: t.workspaceId ? 'Workspace: ' + t.workspaceId : t.url,
+        subtitle: 'Workspace: ' + (t.workspaceName || t.workspaceId || 'Default'),
         thumbnail: null,
         type: 'tab',
       };
@@ -1042,13 +1066,20 @@ function renderScreenPickerList() {
   }
 
   if (!items.length) {
-    els.screenPickerListPane.appendChild(createElement('p', 'empty-text', 'No items available in this section'));
+    const discovering = cat !== 'tabs' && state.screenPickerData.desktopSourcesLoading;
+    els.screenPickerListPane.appendChild(createElement(
+      'p',
+      'empty-text',
+      discovering ? 'Finding available screens and windows…' : 'No items available in this section'
+    ));
     return;
   }
 
   items.forEach(function (item) {
     const isSelected = state.selectedScreenSource && state.selectedScreenSource.id === item.id;
-    const card = createElement('div', 'screen-picker-item');
+    const card = createElement('button', 'screen-picker-item');
+    card.type = 'button';
+    card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
     card.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:${isSelected ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)'};border:1px solid ${isSelected ? '#10b981' : 'rgba(255,255,255,0.1)'};cursor:pointer;transition:all 0.15s ease;`;
 
     const icon = createElement('span', '', item.type === 'tab' ? '🌐' : item.type === 'window' ? '💻' : '🖥️');
@@ -1073,11 +1104,26 @@ function renderScreenPickerList() {
   });
 }
 
+function updateScreenPickerAudioOption() {
+  const requested = Boolean(state.screenPickerData && state.screenPickerData.audioRequested);
+  if (els.chkShareAudio) {
+    els.chkShareAudio.disabled = !requested;
+    if (!requested) els.chkShareAudio.checked = false;
+  }
+  if (els.screenPickerAudioLabel) {
+    if (!requested) els.screenPickerAudioLabel.textContent = 'The site did not request shared audio';
+    else if (state.screenPickerCategory === 'tabs') els.screenPickerAudioLabel.textContent = 'Also share this tab’s audio';
+    else els.screenPickerAudioLabel.textContent = 'Also share system audio';
+  }
+}
+
 function updateScreenPickerPreview() {
   const item = state.selectedScreenSource;
   if (!item) {
     setHidden(els.screenPickerPreviewPrompt, false);
     setHidden(els.screenPickerPreviewImg, true);
+    if (els.screenPickerPreviewImg) els.screenPickerPreviewImg.removeAttribute('src');
+    if (els.screenPickerPreviewPrompt) els.screenPickerPreviewPrompt.textContent = 'Select an item on the left to preview';
     if (els.screenPickerPreviewTitle) els.screenPickerPreviewTitle.textContent = '';
     if (els.btnSubmitScreenPicker) els.btnSubmitScreenPicker.disabled = true;
     return;
@@ -1091,6 +1137,7 @@ function updateScreenPickerPreview() {
     setHidden(els.screenPickerPreviewImg, false);
     setHidden(els.screenPickerPreviewPrompt, true);
   } else {
+    if (els.screenPickerPreviewImg) els.screenPickerPreviewImg.removeAttribute('src');
     setHidden(els.screenPickerPreviewImg, true);
     setHidden(els.screenPickerPreviewPrompt, false);
     if (els.screenPickerPreviewPrompt) els.screenPickerPreviewPrompt.textContent = item.title;
@@ -1098,20 +1145,17 @@ function updateScreenPickerPreview() {
 }
 
 function openScreenPickerModal(data) {
-  if (!els.screenPickerBackdrop) return;
+  if (!els.screenPickerBackdrop || !data || !data.requestId) return;
   state.screenPickerData = data;
   state.screenPickerCategory = 'tabs';
-  
-  if (data.screens && data.screens.length > 0) {
-    const firstTab = (data.tabs || [])[0];
-    state.selectedScreenSource = {
-      id: data.screens[0].id,
-      title: firstTab ? firstTab.title : data.screens[0].name,
-      thumbnail: data.screens[0].thumbnail
-    };
-  } else {
-    state.selectedScreenSource = null;
+  state.selectedScreenSource = null;
+  if (els.screenPickerOrigin) {
+    els.screenPickerOrigin.textContent = data.origin
+      ? 'Request from ' + data.origin
+      : 'Request from the active page';
   }
+  if (els.chkShareAudio) els.chkShareAudio.checked = Boolean(data.audioRequested);
+  updateScreenPickerAudioOption();
 
   if (els.screenPickerTabs) {
     els.screenPickerTabs.querySelectorAll('.screen-picker-tab-btn').forEach(function (btn) {
@@ -1124,16 +1168,23 @@ function openScreenPickerModal(data) {
 
   renderScreenPickerList();
   updateScreenPickerPreview();
-  setHidden(els.screenPickerBackdrop, false);
-  state.modalOpen = true;
-  scheduleLayout();
+  openModalSurface(els.screenPickerBackdrop, els.screenPickerModal);
 }
 
-function closeScreenPickerModal() {
+function closeScreenPickerModal(requestId) {
   if (!els.screenPickerBackdrop) return;
-  setHidden(els.screenPickerBackdrop, true);
-  state.modalOpen = false;
-  scheduleLayout();
+  if (requestId && state.screenPickerData && requestId !== state.screenPickerData.requestId) return;
+  state.screenPickerData = null;
+  state.selectedScreenSource = null;
+  closeModalSurface(els.screenPickerBackdrop);
+}
+
+async function cancelScreenPickerModal() {
+  const requestId = state.screenPickerData && state.screenPickerData.requestId;
+  try {
+    if (typeof api.cancelScreenShare === 'function') await api.cancelScreenShare(requestId);
+  } catch (error) {}
+  closeScreenPickerModal(requestId);
 }
 
 async function handleAddWorkspaceSubmit(event) {
@@ -2475,29 +2526,22 @@ async function openUpdateModal() {
   populateList(els.modalFixes, notes.bugFixes || notes.fixes);
   els.modalInstall.disabled = !state.updateReady;
   setHidden(els.modalInstall, !state.updateReady);
-  state.previousModalFocus = document.activeElement;
-  state.modalOpen = true;
-  setHidden(els.updateModalBackdrop, false);
-  scheduleLayout();
-  window.setTimeout(function () { els.updateModal.focus(); }, 0);
+  openModalSurface(els.updateModalBackdrop, els.updateModal);
 }
 
 function closeUpdateModal() {
-  if (!state.modalOpen) return;
-  state.modalOpen = false;
-  setHidden(els.updateModalBackdrop, true);
-  scheduleLayout();
-  if (state.previousModalFocus && typeof state.previousModalFocus.focus === 'function') {
-    state.previousModalFocus.focus();
-  }
+  closeModalSurface(els.updateModalBackdrop);
 }
 
 function trapModalFocus(event) {
   if (!state.modalOpen || event.key !== 'Tab') return;
-  const focusable = Array.from(els.updateModal.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])'));
+  const surface = visibleModalSurface();
+  const dialog = surface && surface[1];
+  if (!dialog) return;
+  const focusable = Array.from(dialog.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'));
   if (!focusable.length) {
     event.preventDefault();
-    els.updateModal.focus();
+    dialog.focus();
     return;
   }
   const first = focusable[0];
@@ -2598,7 +2642,7 @@ function wireUi() {
   let currentSuggestions = [];
 
   function renderSuggestions() {
-    els.addressSuggestions.innerHTML = '';
+    clearNode(els.addressSuggestions);
     if (currentSuggestions.length === 0) {
       setHidden(els.addressSuggestions, true);
       return;
@@ -2694,7 +2738,7 @@ function wireUi() {
   const ntpSuggestionsContainer = $('ntp-suggestions');
 
   function renderNtpSuggestions() {
-    ntpSuggestionsContainer.innerHTML = '';
+    clearNode(ntpSuggestionsContainer);
     if (currentNtpSuggestions.length === 0) {
       setHidden(ntpSuggestionsContainer, true);
       return;
@@ -2974,40 +3018,57 @@ function wireUi() {
       state.selectedScreenSource = null;
       renderScreenPickerList();
       updateScreenPickerPreview();
+      updateScreenPickerAudioOption();
     });
   }
 
-  bindClick('btn-cancel-screen-picker', async function () {
-    try {
-      if (typeof api.cancelScreenShare === 'function') await api.cancelScreenShare();
-    } catch (e) {}
-    closeScreenPickerModal();
-  });
-
-  bindClick('btn-cancel-screen-picker-x', async function () {
-    try {
-      if (typeof api.cancelScreenShare === 'function') await api.cancelScreenShare();
-    } catch (e) {}
-    closeScreenPickerModal();
-  });
+  bindClick('btn-cancel-screen-picker', cancelScreenPickerModal);
+  bindClick('btn-cancel-screen-picker-x', cancelScreenPickerModal);
 
   bindClick('btn-submit-screen-picker', async function () {
-    if (!state.selectedScreenSource) return;
+    if (!state.selectedScreenSource || !state.screenPickerData) return;
+    const selection = state.selectedScreenSource;
+    const requestId = state.screenPickerData.requestId;
     try {
       if (typeof api.selectScreenShareSource === 'function') {
         const shareAudio = els.chkShareAudio ? els.chkShareAudio.checked : false;
-        await api.selectScreenShareSource({ sourceId: state.selectedScreenSource.id, audio: shareAudio });
-        notify('Started screen share: ' + state.selectedScreenSource.title, 'success', 3000);
+        const result = await api.selectScreenShareSource({
+          requestId,
+          sourceId: selection.id,
+          audio: shareAudio,
+        });
+        if (!result || result.success !== true) {
+          throw new Error(result && result.error ? result.error : 'The page rejected the selected source');
+        }
+        notify('Started screen share: ' + selection.title, 'success', 3000);
       }
     } catch (err) {
       notify('Screen share failed: ' + errorMessage(err), 'error');
     }
-    closeScreenPickerModal();
+    closeScreenPickerModal(requestId);
   });
 
   if (typeof api.onShowScreenPicker === 'function') {
     api.onShowScreenPicker(function (data) {
       openScreenPickerModal(data);
+    });
+  }
+  if (typeof api.onUpdateScreenPickerSources === 'function') {
+    api.onUpdateScreenPickerSources(function (data) {
+      if (!data || !state.screenPickerData || data.requestId !== state.screenPickerData.requestId) return;
+      state.screenPickerData.desktopSourcesLoading = Boolean(data.desktopSourcesLoading);
+      state.screenPickerData.screens = Array.isArray(data.screens) ? data.screens : [];
+      state.screenPickerData.windows = Array.isArray(data.windows) ? data.windows : [];
+      if (state.screenPickerCategory !== 'tabs') {
+        state.selectedScreenSource = null;
+        renderScreenPickerList();
+        updateScreenPickerPreview();
+      }
+    });
+  }
+  if (typeof api.onCloseScreenPicker === 'function') {
+    api.onCloseScreenPicker(function (data) {
+      closeScreenPickerModal(data && data.requestId);
     });
   }
 
@@ -3023,8 +3084,7 @@ function wireUi() {
     if (event.target === els.addWorkspaceModalBackdrop) closeAddWorkspaceModal();
     if (event.target === els.passwordsModalBackdrop) closePasswordsModal();
     if (event.target === els.screenPickerBackdrop) {
-      try { if (typeof api.cancelScreenShare === 'function') api.cancelScreenShare(); } catch (e) {}
-      closeScreenPickerModal();
+      cancelScreenPickerModal();
     }
   });
   els.menu.addEventListener('keydown', function (event) {
@@ -3049,10 +3109,19 @@ function handleGlobalShortcuts(event) {
   const ctrl = event.ctrlKey || event.metaKey;
   const key = String(event.key || '').toLowerCase();
   if (event.key === 'Escape') {
-    if (!els.siteInfoModalBackdrop.classList.contains('hidden')) {
+    if (!els.screenPickerBackdrop.classList.contains('hidden')) {
+      event.preventDefault();
+      cancelScreenPickerModal();
+    } else if (!els.siteInfoModalBackdrop.classList.contains('hidden')) {
       event.preventDefault();
       closeSiteInfoModal();
-    } else if (state.modalOpen) {
+    } else if (!els.addWorkspaceModalBackdrop.classList.contains('hidden')) {
+      event.preventDefault();
+      closeAddWorkspaceModal();
+    } else if (!els.passwordsModalBackdrop.classList.contains('hidden')) {
+      event.preventDefault();
+      closePasswordsModal();
+    } else if (!els.updateModalBackdrop.classList.contains('hidden')) {
       event.preventDefault();
       closeUpdateModal();
     } else if (state.menuOpen) {

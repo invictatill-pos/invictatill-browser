@@ -57,8 +57,8 @@ const MAX_URL_LENGTH = 8192;
 const MAX_PAGE_CONTEXT = 50000;
 const DEFAULT_AI_BASE_URL = 'https://api.openai.com/v1';
 const DEFAULT_INVICTA_AI_BASE_URL = 'https://invictatill.shop';
-const DEFAULT_INVICTA_API_KEY = 'invicta_sk_X9zz51Mt-qru97Z6u15flS8VJWBvfpLZKJ8t4ATyGmE';
 const DEFAULT_AI_MODEL = 'invicta-ai-v1';
+const SCREEN_SHARE_REQUEST_TIMEOUT_MS = 120000;
 
 let mainWindow = null;
 let browserSession = null;
@@ -100,55 +100,117 @@ function getWorkspaceDetails(workspaceId) {
   return { id: targetId, name: targetId, icon: '📂', color: '#6366f1' };
 }
 
-let pendingScreenShareCallback = null;
+let pendingScreenShareRequest = null;
+let nextScreenShareRequestId = 1;
+
+function completeScreenShareRequest(streams, expectedRequestId) {
+  const pending = pendingScreenShareRequest;
+  if (!pending || (expectedRequestId && pending.id !== expectedRequestId)) return false;
+  pendingScreenShareRequest = null;
+  clearTimeout(pending.timeout);
+  sendToShell('close-screen-picker', { requestId: pending.id });
+  try {
+    pending.callback(streams || {});
+  } catch (error) {
+    return false;
+  }
+  return true;
+}
+
+function screenShareTabs() {
+  return Array.from(tabs.values())
+    .filter((tab) => tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed())
+    .map((tab) => ({
+      id: 'tab:' + tab.id,
+      title: tab.title || tab.url || 'Untitled tab',
+      url: tab.url,
+      workspaceId: tab.workspaceId || 'default',
+      workspaceName: getWorkspaceDetails(tab.workspaceId).name,
+      favicon: tab.favicon || null,
+      active: tab.id === activeTabId,
+    }));
+}
 
 function configureScreenSharePicker(targetSession) {
   if (!targetSession) return;
 
   try {
     if (typeof targetSession.setDisplayMediaRequestHandler === 'function') {
-      targetSession.setDisplayMediaRequestHandler((request, callback) => {
-        console.log("setDisplayMediaRequestHandler TRIGGERED for:", request);
-        pendingScreenShareCallback = callback;
-        desktopCapturer.getSources({
-          types: ['screen', 'window'],
-          fetchWindowIcons: false,
-          thumbnailSize: { width: 0, height: 0 },
-        }).catch((err) => {
-          console.error("Screen Share getSources error:", err);
-          return [];
-        }).then((sources) => {
-          const tabList = Array.from(tabs.values()).map((t) => ({
-            id: t.id,
-            title: t.title || t.url,
-            url: t.url,
-            workspaceId: t.workspaceId || 'default',
-            favicon: t.favicon || null,
-          }));
+      targetSession.setDisplayMediaRequestHandler(async (request, callback) => {
+        if (!request || !request.videoRequested || !request.frame || request.frame.isDestroyed()) {
+          callback({});
+          return;
+        }
 
-          const screenSources = (sources || []).filter((s) => s.id && s.id.startsWith('screen:')).map((s) => ({
-            id: s.id,
-            name: s.name || 'Entire Screen',
-            thumbnail: null,
-          }));
+        completeScreenShareRequest({}, null);
+        const requestId = 'share-' + nextScreenShareRequestId++;
+        const pending = {
+          id: requestId,
+          callback,
+          requestFrame: request.frame,
+          origin: permissionOrigin(null, { securityOrigin: request.securityOrigin }, null) || '',
+          audioRequested: Boolean(request.audioRequested),
+          desktopSources: new Map(),
+          timeout: null,
+        };
+        pending.timeout = setTimeout(() => {
+          completeScreenShareRequest({}, requestId);
+        }, SCREEN_SHARE_REQUEST_TIMEOUT_MS);
+        pendingScreenShareRequest = pending;
 
-          const windowSources = (sources || []).filter((s) => s.id && s.id.startsWith('window:')).map((s) => ({
-            id: s.id,
-            name: s.name || 'Application Window',
-            thumbnail: null,
-            appIcon: null,
-          }));
+        if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+          completeScreenShareRequest({}, requestId);
+          return;
+        }
+        // Show tab choices immediately. Windows source enumeration can stall on
+        // certain DXGI/GDI driver combinations and must not block the consent UI.
+        sendToShell('show-screen-picker', {
+          requestId,
+          origin: pending.origin,
+          audioRequested: pending.audioRequested,
+          desktopSourcesLoading: true,
+          screens: [],
+          windows: [],
+          tabs: screenShareTabs(),
+        });
 
-          sendToShell('show-screen-picker', {
-            screens: screenSources,
-            windows: windowSources,
-            tabs: tabList,
+        let sources = [];
+        try {
+          sources = await desktopCapturer.getSources({
+            types: ['screen', 'window'],
+            fetchWindowIcons: false,
+            // Native thumbnail capture is unstable on some Windows/GDI drivers.
+            thumbnailSize: { width: 0, height: 0 },
           });
+        } catch (error) {
+          sources = [];
+        }
+        if (!pendingScreenShareRequest || pendingScreenShareRequest.id !== requestId) return;
+
+        const screens = [];
+        const windows = [];
+        sources.forEach((source, index) => {
+          if (!source || !source.id) return;
+          const pickerId = 'desktop:' + index;
+          pending.desktopSources.set(pickerId, source);
+          const item = {
+            id: pickerId,
+            name: source.name || (source.id.startsWith('screen:') ? 'Entire Screen' : 'Application Window'),
+            thumbnail: null,
+          };
+          if (source.id.startsWith('screen:')) screens.push(item);
+          else if (source.id.startsWith('window:')) windows.push(item);
+        });
+        sendToShell('update-screen-picker-sources', {
+          requestId,
+          desktopSourcesLoading: false,
+          screens,
+          windows,
         });
       });
     }
   } catch (error) {
-    // Ignore permissions setup errors
+    // Older Electron builds may not expose custom display-media handlers.
   }
 }
 
@@ -1377,6 +1439,7 @@ function clearDownloads() {
 function permissionOrigin(webContents, details, fallbackOrigin) {
   const candidates = [
     details && details.securityOrigin,
+    details && details.requestingUrl,
     fallbackOrigin,
     webContents && !webContents.isDestroyed() ? webContents.getURL() : '',
   ];
@@ -1415,9 +1478,10 @@ function permissionKeys(origin, permission, details) {
     return [origin + '|microphone', origin + '|media:audio'];
   }
   if (permission === 'media') {
-    const types = details && Array.isArray(details.mediaTypes)
+    const requestedTypes = details && Array.isArray(details.mediaTypes)
       ? details.mediaTypes
       : (details && typeof details.mediaType === 'string' ? [details.mediaType] : []);
+    const types = requestedTypes.filter((type) => type === 'video' || type === 'audio');
     const keys = [];
     if (types.length === 0 || types.includes('video')) {
       keys.push(origin + '|camera', origin + '|media:video');
@@ -1468,7 +1532,9 @@ function configurePermissions(targetSession) {
     if (keys.some((key) => permissionGrants[key] === false)) {
       return false;
     }
-    return true;
+    // Source selection is the per-request consent prompt for display capture.
+    if (permission === 'display-capture') return true;
+    return keys.every((key) => permissionGrants[key] === true);
   });
 
   targetSession.setPermissionRequestHandler(async (webContents, permission, callback, details) => {
@@ -1489,13 +1555,29 @@ function configurePermissions(targetSession) {
         finish(false);
         return;
       }
-      const keys = permissionKeys(origin, permission, details);
+      // Electron 43 performs a generic `media` permission request with an empty
+      // mediaTypes array before dispatching the display-media source handler.
+      const isDisplayMediaPipeline = permission === 'display-capture' || (
+        permission === 'media' &&
+        details && Array.isArray(details.mediaTypes) && details.mediaTypes.length === 0
+      );
+      const keys = permissionKeys(
+        origin,
+        isDisplayMediaPipeline ? 'display-capture' : permission,
+        details
+      );
       if (!keys.length) {
         finish(false);
         return;
       }
       if (keys.some((key) => permissionGrants[key] === false)) {
         finish(false);
+        return;
+      }
+      if (isDisplayMediaPipeline) {
+        // The source picker is the per-request permission prompt. Avoid a second
+        // native dialog that can open behind the frameless browser window.
+        finish(true);
         return;
       }
       if (keys.every((key) => permissionGrants[key] === true)) {
@@ -1566,19 +1648,32 @@ function sanitizeDownloadRecord(value) {
 
 let savedPasswords = [];
 
+function secureStorageAvailable() {
+  return Boolean(safeStorage && safeStorage.isEncryptionAvailable());
+}
+
 function loadSavedPasswords() {
   if (!store || privateInstance) return;
+  if (!secureStorageAvailable()) {
+    savedPasswords = [];
+    return;
+  }
   const raw = store.get('workspace_passwords_v1', []);
   if (Array.isArray(raw)) {
+    let needsMigration = false;
     savedPasswords = raw.map((item) => {
       if (!isPlainObject(item)) return null;
-      let pass = item.password || '';
-      if (item.encrypted && safeStorage && safeStorage.isEncryptionAvailable()) {
+      let pass = '';
+      if (typeof item.encrypted === 'string' && item.encrypted) {
         try {
           pass = safeStorage.decryptString(Buffer.from(item.encrypted, 'hex'));
-        } catch (e) {
-          pass = item.password || '';
+        } catch (error) {
+          return null;
         }
+      } else if (typeof item.password === 'string' && item.password) {
+        // Migrate legacy plaintext entries immediately into OS-backed encryption.
+        pass = item.password;
+        needsMigration = true;
       }
       return {
         id: typeof item.id === 'string' ? item.id : 'pwd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
@@ -1588,23 +1683,21 @@ function loadSavedPasswords() {
         updatedAt: Number.isFinite(item.updatedAt) ? item.updatedAt : Date.now(),
       };
     }).filter((p) => p && p.domain);
+    if (needsMigration) savePasswordsToStore();
   }
 }
 
 function savePasswordsToStore() {
   if (!store || privateInstance) return;
+  if (!secureStorageAvailable()) {
+    throw new Error('Secure OS key storage is not available; passwords were not saved');
+  }
   const toSave = savedPasswords.map((item) => {
-    let encrypted = null;
-    if (safeStorage && safeStorage.isEncryptionAvailable()) {
-      try {
-        encrypted = safeStorage.encryptString(item.password).toString('hex');
-      } catch (e) {}
-    }
+    const encrypted = safeStorage.encryptString(item.password).toString('hex');
     return {
       id: item.id,
       domain: item.domain,
       username: item.username,
-      password: encrypted ? '' : item.password,
       encrypted,
       updatedAt: item.updatedAt,
     };
@@ -1796,17 +1889,20 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Opera-Style Interactive Screen Share Modal: Beautiful picker overlay showing InvictaTill Tabs, Application Windows, and Entire Screen displays with live thumbnails.',
-      'Tab, Window & Screen Choice: Choose specific web tabs from any workspace or application windows to present in Google Meet, Zoom, or Teams.',
-      'Tab Audio Sharing Toggle: Optional tab audio capture switch included in the screen share picker.',
+      'Reliable Meeting Screen Share: Choose an InvictaTill tab, application window, or entire screen in Google Meet, Zoom, Teams, and other WebRTC meeting sites.',
+      'Source-Aware Audio Sharing: Tab audio stays scoped to the selected tab, while screen and window sharing can include Windows system audio when requested.',
+      'Accessible Screen Picker: Keyboard navigation, correct focus trapping, requesting-site identity, safe cancellation, and request-expiry handling.',
       'Persistent Workspace Logins: Session cookies are flushed to disk on quit and restored per workspace so Gmail, Google, and work accounts stay signed in.',
       'Cross-Workspace Password Vault 🔑: Encrypted password manager to save and autofill passwords across all your workspaces.',
       'Visible Tab Titles & Drag-and-Drop Reordering: Complete tab visibility and custom reordering.',
     ],
     bugFixes: [
-      'Google Meet Screenshare: Fixed JavaScript function overriding that completely broke the custom screen picker UI.',
-      'Google Meet Screenshare: Fixed tab capture ID mapping and WebRTC audio constraints breaking stream.',
-      'Workspace Tab Segregation on Restart: Fixed background tabs appearing in the Default workspace on application startup.',
+      'Screen picker visibility: Fixed malformed modal markup that left the picker trapped inside hidden dialogs.',
+      'Screen-share handoff: Removed wrong-source fallbacks, stale callback races, and invalid audio constraints.',
+      'Site permissions: Undecided camera and microphone requests now prompt instead of being silently pre-approved.',
+      'Tab ordering: Fixed a runtime error when saving a drag-and-drop tab order.',
+      'Security: Removed an embedded service credential and prohibited plaintext password-vault fallback storage.',
+      'Address suggestions: Restored the renderer DOM-safety contract and passing test suite.',
     ],
   };
 }
@@ -1957,7 +2053,7 @@ function decryptAiKey(rawConfig) {
       if (decrypted) return decrypted;
     } catch (error) {}
   }
-  return DEFAULT_INVICTA_API_KEY;
+  return '';
 }
 
 function saveAiConfig(input) {
@@ -2092,7 +2188,7 @@ function invictaChatEndpoint(baseUrl) {
 }
 
 async function callInvictaAi(config, apiKey, prompt, pageContext, controller, timeoutMs) {
-  const effectiveKey = apiKey || DEFAULT_INVICTA_API_KEY;
+  if (!apiKey) throw new Error('No encrypted InvictaTill AI API key is configured');
   const contextBlock = pageContext
     ? '\n\n<untrusted_page_content>\nTitle: ' + pageContext.title +
       '\nURL: ' + pageContext.url + '\n\n' + pageContext.text +
@@ -2106,7 +2202,7 @@ async function callInvictaAi(config, apiKey, prompt, pageContext, controller, ti
     const response = await fetch(invictaChatEndpoint(config.baseUrl), {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer ' + effectiveKey,
+        Authorization: 'Bearer ' + apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ message, stream: false, session_id: null }),
@@ -2931,19 +3027,21 @@ function registerIpcHandlers() {
     if (!Array.isArray(tabIds)) {
       throw new TypeError('tabIds must be an array');
     }
-    const newMap = new Map();
+    const reorderedTabs = new Map();
     for (const id of tabIds) {
       const numId = Number(id);
       if (tabs.has(numId)) {
-        newMap.set(numId, tabs.get(numId));
+        reorderedTabs.set(numId, tabs.get(numId));
       }
     }
     for (const [id, tab] of tabs.entries()) {
-      if (!newMap.has(id)) {
-        newMap.set(id, tab);
+      if (!reorderedTabs.has(id)) {
+        reorderedTabs.set(id, tab);
       }
     }
-    tabs = newMap;
+    tabs.clear();
+    for (const [id, tab] of reorderedTabs) tabs.set(id, tab);
+    scheduleSessionSave();
     return getBrowserState();
   });
 
@@ -2951,6 +3049,9 @@ function registerIpcHandlers() {
 
   registerHandler('save-password', (event, payload) => {
     assertPlainObject(payload, 'password payload');
+    if (!secureStorageAvailable()) {
+      throw new Error('Secure OS key storage is not available; passwords cannot be saved safely');
+    }
     const domain = boundedString(payload.domain, 'domain', 250, false);
     const username = boundedString(payload.username || '', 'username', 250, true);
     const password = boundedString(payload.password || '', 'password', 500, false);
@@ -3005,62 +3106,61 @@ function registerIpcHandlers() {
   });
 
   registerHandler('select-screen-share-source', async (event, selection) => {
-    if (!pendingScreenShareCallback) return false;
-    if (!selection || !selection.sourceId) {
-      pendingScreenShareCallback({});
-      pendingScreenShareCallback = null;
-      return false;
+    assertPlainObject(selection, 'screen share selection');
+    const pending = pendingScreenShareRequest;
+    if (!pending) return { success: false, error: 'The screen-share request has expired' };
+    const requestId = boundedString(selection.requestId, 'screen share request id', 100, false);
+    const sourceId = boundedString(selection.sourceId, 'screen share source id', 100, false);
+    if (requestId !== pending.id) {
+      return { success: false, error: 'The screen-share request is no longer active' };
+    }
+    if (pending.requestFrame.isDestroyed()) {
+      completeScreenShareRequest({}, requestId);
+      return { success: false, error: 'The requesting page is no longer available' };
     }
 
-    try {
-      console.log('select-screen-share-source selection:', selection);
-      if (typeof selection.sourceId === 'number' || String(selection.sourceId).match(/^\d+$/)) {
-        const tab = tabs.get(Number(selection.sourceId));
-        console.log('Tab selected for screen share:', tab ? tab.id : 'not found');
-        if (tab && tab.view && tab.view.webContents && tab.view.webContents.mainFrame) {
-          console.log('Passing mainFrame for tab screen share');
-          const payload = { video: tab.view.webContents.mainFrame };
-          if (selection.audio) payload.audio = 'loopback';
-          pendingScreenShareCallback(payload);
-        } else {
-          console.log('Tab or webContents missing, failing screen share');
-          pendingScreenShareCallback({});
+    let video = null;
+    let audio = null;
+    let enableLocalEcho = false;
+    if (sourceId.startsWith('tab:')) {
+      const tabId = Number(sourceId.slice(4));
+      const tab = Number.isInteger(tabId) ? tabs.get(tabId) : null;
+      if (tab && tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+        video = tab.view.webContents.mainFrame;
+        if (selection.audio === true && pending.audioRequested) {
+          audio = tab.view.webContents.mainFrame;
+          enableLocalEcho = true;
         }
-        pendingScreenShareCallback = null;
-        return true;
       }
-
-      const sources = await desktopCapturer.getSources({
-        types: ['screen', 'window'],
-        fetchWindowIcons: false,
-        thumbnailSize: { width: 0, height: 0 },
-      });
-      const matched = (sources || []).find((s) => s.id === selection.sourceId) || (sources && sources[0]);
-      if (pendingScreenShareCallback) {
-        if (matched) {
-          const payload = { video: matched };
-          if (selection.audio) payload.audio = 'loopback';
-          pendingScreenShareCallback(payload);
-        } else {
-          pendingScreenShareCallback({});
-        }
-        pendingScreenShareCallback = null;
-      }
-    } catch (e) {
-      if (pendingScreenShareCallback) {
-        pendingScreenShareCallback({});
-        pendingScreenShareCallback = null;
+    } else {
+      video = pending.desktopSources.get(sourceId) || null;
+      if (video && selection.audio === true && pending.audioRequested && process.platform === 'win32') {
+        audio = 'loopback';
       }
     }
-    return true;
+
+    if (!video) {
+      return { success: false, error: 'The selected screen-share source is no longer available' };
+    }
+    const streams = { video };
+    if (audio) streams.audio = audio;
+    if (enableLocalEcho) streams.enableLocalEcho = true;
+    const success = completeScreenShareRequest(streams, requestId);
+    return success
+      ? { success: true }
+      : { success: false, error: 'The screen-share request could not be completed' };
   });
 
-  registerHandler('cancel-screen-share', () => {
-    if (pendingScreenShareCallback) {
-      pendingScreenShareCallback({});
-      pendingScreenShareCallback = null;
+  registerHandler('cancel-screen-share', (event, requestId) => {
+    if (!pendingScreenShareRequest) return { success: true, cancelled: false };
+    if (requestId !== undefined && requestId !== null) {
+      const expected = boundedString(requestId, 'screen share request id', 100, false);
+      if (expected !== pendingScreenShareRequest.id) {
+        return { success: false, error: 'The screen-share request is no longer active' };
+      }
     }
-    return true;
+    const id = pendingScreenShareRequest.id;
+    return { success: completeScreenShareRequest({}, id), cancelled: true };
   });
 
   registerHandler('zoom-in', () => {
@@ -3290,6 +3390,7 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
+  completeScreenShareRequest({}, null);
   flushSessionState();
   for (const sess of workspaceSessionsMap.values()) {
     try {

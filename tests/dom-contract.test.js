@@ -31,6 +31,9 @@ test('find-in-page controls and accessible landmarks exist', () => {
   }
   assert.match(html, /role=["']tablist["']/);
   assert.match(html, /aria-live=/);
+  assert.match(html, /id=["']screen-picker-modal["'][^>]*aria-labelledby=["']screen-picker-title["']/);
+  assert.ok(idSet.has('screen-picker-origin'));
+  assert.ok(idSet.has('screen-picker-audio-label'));
 });
 
 test('renderer avoids executable HTML and dynamic code sinks', () => {

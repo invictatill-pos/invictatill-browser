@@ -1,4 +1,4 @@
-# InvictaTill Browser 2.0
+# InvictaTill Browser
 
 InvictaTill Browser is a Windows productivity browser with an opt-in AI workspace. It combines a familiar multi-tab Chromium experience with private-by-default page assistance, task capture, browsing tools, and a release process designed around verification rather than silent production publishing.
 
@@ -15,6 +15,7 @@ Regular tabs share the normal persistent browser session. Private windows use an
 - Managed downloads with progress and completed-download controls.
 - Private windows backed by an isolated, non-persistent session.
 - Per-site permission prompts for capabilities such as camera, microphone, notifications, and location.
+- In-app tab, window, and entire-screen sharing with optional requested audio for WebRTC meeting sites.
 - Find in page, per-tab mute, page zoom, screenshots, printing, and save-to-PDF.
 - Split view for working with two tabs side by side.
 - Clear-browsing-data controls and visible update status.

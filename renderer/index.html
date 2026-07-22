@@ -447,6 +447,7 @@
         <button class="secondary-button" id="btn-modal-later" type="button">Later</button>
         <button class="primary-button hidden" id="btn-modal-install" type="button" disabled>Restart and update</button>
       </footer>
+    </section>
   </div>
 
   <div class="modal-backdrop hidden" id="site-info-modal-backdrop">
@@ -513,6 +514,7 @@
         </form>
       </div>
     </section>
+  </div>
   <div class="modal-backdrop hidden" id="passwords-modal-backdrop">
     <section class="update-modal" id="passwords-modal" role="dialog" aria-modal="true" aria-labelledby="passwords-title" tabindex="-1">
       <header class="modal-header">
@@ -537,12 +539,14 @@
         <button class="secondary-button" id="btn-close-passwords-done" type="button">Close</button>
       </footer>
     </section>
+  </div>
   <div class="modal-backdrop hidden" id="screen-picker-modal-backdrop" style="z-index:99999;">
-    <section class="update-modal" id="screen-picker-modal" role="dialog" aria-modal="true" style="max-width:740px;width:92vw;background:#181622;border:1px solid #332d46;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.8);color:#fff;overflow:hidden;padding:0;">
+    <section class="update-modal" id="screen-picker-modal" role="dialog" aria-modal="true" aria-labelledby="screen-picker-title" aria-describedby="screen-picker-description screen-picker-origin" tabindex="-1" style="max-width:740px;width:92vw;background:#181622;border:1px solid #332d46;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.8);color:#fff;overflow:hidden;padding:0;">
       <header style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#201c2e;border-bottom:1px solid #2e2840;">
         <div>
           <h2 style="font-size:16px;font-weight:700;margin:0;color:#fff;" id="screen-picker-title">Choose what to share</h2>
-          <p style="font-size:12px;color:rgba(255,255,255,0.6);margin:2px 0 0 0;">The site will be able to see the contents of your selection</p>
+          <p id="screen-picker-description" style="font-size:12px;color:rgba(255,255,255,0.6);margin:2px 0 0 0;">The site will be able to see the contents of your selection</p>
+          <p id="screen-picker-origin" style="font-size:11px;color:#10b981;margin:3px 0 0 0;"></p>
         </div>
         <button class="icon-button" id="btn-cancel-screen-picker-x" type="button" aria-label="Cancel screen share">✕</button>
       </header>
@@ -567,7 +571,7 @@
         <div id="screen-picker-preview-pane" style="padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#100e18;text-align:center;">
           <div id="screen-picker-preview-box" style="width:100%;height:220px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:12px;">
             <p style="color:rgba(255,255,255,0.4);font-size:13px;" id="screen-picker-preview-prompt">Select an item on the left to preview</p>
-            <img id="screen-picker-preview-img" style="max-width:100%;max-height:100%;object-fit:contain;display:none;">
+            <img id="screen-picker-preview-img" alt="Selected screen-share preview" style="max-width:100%;max-height:100%;object-fit:contain;display:none;">
           </div>
           <p id="screen-picker-preview-title" style="font-size:12px;font-weight:600;color:var(--cyan);margin:0;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></p>
         </div>
@@ -576,7 +580,7 @@
       <footer style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:#181622;border-top:1px solid #2a243a;">
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.8);cursor:pointer;">
           <input type="checkbox" id="chk-share-audio" checked style="accent-color:#10b981;cursor:pointer;">
-          <span>Also share tab audio</span>
+          <span id="screen-picker-audio-label">Also share tab audio</span>
         </label>
         <div style="display:flex;gap:10px;">
           <button class="secondary-button" id="btn-cancel-screen-picker" type="button" style="padding:8px 16px;font-size:12px;">Cancel</button>

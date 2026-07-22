@@ -24,6 +24,7 @@ test('browser uses a supported Chromium baseline and safe release defaults', () 
   assert.equal(packageJson.build.publish.releaseType, 'draft');
   assert.ok(!packageJson.build.files.some((entry) => entry.includes('node_modules')));
   assert.ok(packageJson.build.files.includes('LICENSE'));
+  assert.equal(packageJson.overrides['fast-uri'], '3.1.4');
 });
 
 test('verification scripts are release prerequisites', () => {

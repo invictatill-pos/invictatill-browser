@@ -21,6 +21,9 @@ const allowedEvents = new Set([
   'focus-address-bar',
   'show-find-bar',
   'bookmark-current',
+  'show-screen-picker',
+  'update-screen-picker-sources',
+  'close-screen-picker',
 ]);
 
 const eventWrappers = new Map();
@@ -128,10 +131,12 @@ const api = {
   deletePassword: (id) => ipcRenderer.invoke('delete-password', id),
   autofillCredentials: (credentials) => ipcRenderer.invoke('autofill-credentials', credentials),
   onShowScreenPicker: (callback) => {
-    ipcRenderer.on('show-screen-picker', (event, data) => callback(data));
+    return subscribe('show-screen-picker', callback);
   },
+  onUpdateScreenPickerSources: (callback) => subscribe('update-screen-picker-sources', callback),
+  onCloseScreenPicker: (callback) => subscribe('close-screen-picker', callback),
   selectScreenShareSource: (selection) => ipcRenderer.invoke('select-screen-share-source', selection),
-  cancelScreenShare: () => ipcRenderer.invoke('cancel-screen-share'),
+  cancelScreenShare: (requestId) => ipcRenderer.invoke('cancel-screen-share', requestId),
   zoomIn: () => ipcRenderer.invoke('zoom-in'),
   zoomOut: () => ipcRenderer.invoke('zoom-out'),
   resetZoom: () => ipcRenderer.invoke('reset-zoom'),

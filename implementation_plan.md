@@ -1,30 +1,26 @@
-# Autocomplete in Address Bar
+# InvictaTill Browser 2.1.11 Hardening
 
-The goal is to provide intelligent address bar suggestions based on the user's browsing history as they type.
+## Completed scope
 
-## User Review Required
+- Restored Google Meet and WebRTC screen sharing with a visible, accessible source picker.
+- Added race-safe request IDs, expiry, cancellation, exact source matching, and source-aware audio capture.
+- Decoupled the picker from Windows screen/window enumeration so slow graphics drivers cannot block tab sharing.
+- Fixed modal markup, focus trapping, Escape handling, tab reordering, and address-suggestion DOM safety.
+- Corrected undecided site-permission behavior while treating the custom screen picker as display-capture consent.
+- Removed the embedded AI service credential and plaintext password-vault fallback.
+- Updated Electron to 43.2.0 and pinned the vulnerable `fast-uri` transitive dependency to 3.1.4.
 
-- **Suggestion UI**: We will display a dropdown below the address bar when the user types. It will list matching history items.
-- **Search vs Navigation**: If the user presses Enter and the text is not a valid URL, it defaults to a Google search (which is already implemented). If they click a suggestion, it will immediately navigate to that URL.
+## Verification completed
 
-## Open Questions
+- `npm run check`
+- `npm test`
+- `npm run test:e2e`, including three consecutive display-media passes
+- `npm audit --omit=dev`
+- `npm run build`
+- Normal launch and clean shutdown of the packaged executable
+- ASAR content/version and embedded-credential inspection
+- Installer, portable executable, update metadata, and SHA-256 inspection
 
-- None at the moment.
+## Release requirement
 
-## Proposed Changes
-
-### `renderer.js`
-- **Address Bar Input Listener**: Add an `input` event listener to the `#address-input` element to capture keystrokes.
-- **Suggestion Engine**: Filter `state.history` based on the typed query. Match against the URL and the page Title.
-- **Dropdown Rendering**: Create a dropdown container positioned absolutely below the address bar.
-- **Keyboard Navigation**: Add Arrow Up/Down and Enter key support to navigate and select suggestions without using the mouse.
-
-### `style.css`
-- **Dropdown Styling**: Add CSS for `.address-suggestions-dropdown` and `.address-suggestion-item` to match the dark, sleek UI of InvictaTill Browser. It will include hover effects and highlighted states.
-
-## Verification Plan
-
-### Manual Verification
-- Type a known history URL into the address bar and verify the dropdown appears.
-- Verify Arrow keys can navigate the dropdown.
-- Verify clicking a suggestion navigates to that page.
+The generated installer and portable executable are not Authenticode-signed. Sign them with the approved production certificate before publishing a public release.
