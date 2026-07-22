@@ -1014,12 +1014,11 @@ function renderScreenPickerList() {
 
   if (cat === 'tabs') {
     items = (state.screenPickerData.tabs || []).map((t) => {
-      const screenSource = (state.screenPickerData.screens || [])[0];
       return {
-        id: screenSource ? screenSource.id : 'tab-' + t.id,
+        id: t.id,
         title: t.title || t.url,
         subtitle: t.workspaceId ? 'Workspace: ' + t.workspaceId : t.url,
-        thumbnail: screenSource ? screenSource.thumbnail : null,
+        thumbnail: null,
         type: 'tab',
       };
     });

@@ -1810,7 +1810,7 @@ function getReleaseDetails() {
       'Visible Tab Titles & Drag-and-Drop Reordering: Complete tab visibility and custom reordering.',
     ],
     bugFixes: [
-      'Google Meet Screenshare: Hotfix for WebRTC pipeline dropping WebContents objects by explicitly passing mainFrame.',
+      'Google Meet Screenshare: Fixed tab capture ID mapping and WebRTC audio constraints breaking stream.',
       'Workspace Tab Segregation on Restart: Fixed background tabs appearing in the Default workspace on application startup.',
       'Password Manager Validation Error: Fixed a DOM binding bug that prevented passwords from being saved correctly.',
     ],
@@ -3019,14 +3019,17 @@ function registerIpcHandlers() {
     }
 
     try {
+      console.log('select-screen-share-source selection:', selection);
       if (typeof selection.sourceId === 'number' || String(selection.sourceId).match(/^\d+$/)) {
         const tab = tabs.get(Number(selection.sourceId));
+        console.log('Tab selected for screen share:', tab ? tab.id : 'not found');
         if (tab && tab.view && tab.view.webContents && tab.view.webContents.mainFrame) {
-          pendingScreenShareCallback({
-            video: tab.view.webContents.mainFrame,
-            audio: selection.audio ? 'loopback' : 'local'
-          });
+          console.log('Passing mainFrame for tab screen share');
+          const payload = { video: tab.view.webContents.mainFrame };
+          if (selection.audio) payload.audio = tab.view.webContents.mainFrame;
+          pendingScreenShareCallback(payload);
         } else {
+          console.log('Tab or webContents missing, failing screen share');
           pendingScreenShareCallback({});
         }
         pendingScreenShareCallback = null;
@@ -3041,10 +3044,9 @@ function registerIpcHandlers() {
       const matched = (sources || []).find((s) => s.id === selection.sourceId) || (sources && sources[0]);
       if (pendingScreenShareCallback) {
         if (matched) {
-          pendingScreenShareCallback({
-            video: matched,
-            audio: selection.audio ? 'loopback' : 'local'
-          });
+          const payload = { video: matched };
+          if (selection.audio) payload.audio = 'loopback';
+          pendingScreenShareCallback(payload);
         } else {
           pendingScreenShareCallback({});
         }
