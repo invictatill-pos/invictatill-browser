@@ -116,6 +116,13 @@ const api = {
     ipcRenderer.invoke('set-site-permission', { originUrl: url, permission, state }),
   get24HReport: () => ipcRenderer.invoke('get-24h-report'),
   extractEmailTasks: () => ipcRenderer.invoke('extract-email-tasks'),
+  getWorkspaces: () => ipcRenderer.invoke('get-workspaces'),
+  setActiveWorkspace: (workspaceId) => ipcRenderer.invoke('set-active-workspace', workspaceId),
+  addWorkspace: (details) => ipcRenderer.invoke('add-workspace', details),
+  deleteWorkspace: (workspaceId) => ipcRenderer.invoke('delete-workspace', workspaceId),
+  zoomIn: () => ipcRenderer.invoke('zoom-in'),
+  zoomOut: () => ipcRenderer.invoke('zoom-out'),
+  resetZoom: () => ipcRenderer.invoke('reset-zoom'),
 
   // Compatible download aliases used by older/newer renderer surfaces.
   clearDownloads: () => ipcRenderer.invoke('clear-downloads'),

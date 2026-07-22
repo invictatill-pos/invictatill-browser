@@ -78,6 +78,25 @@ const els = {
   btnCloseSiteInfo: $('btn-close-site-info'),
   btnCloseSiteInfoDone: $('btn-close-site-info-done'),
   btnResetSitePermissions: $('btn-reset-site-permissions'),
+  btnZoomOut: $('btn-zoom-out'),
+  btnZoomIn: $('btn-zoom-in'),
+  btnZoomReset: $('btn-zoom-reset'),
+  workspaceSelectorShell: $('workspace-selector-shell'),
+  btnWorkspaceSelector: $('btn-workspace-selector'),
+  wsActiveDot: $('ws-active-dot'),
+  wsActiveIcon: $('ws-active-icon'),
+  wsActiveName: $('ws-active-name'),
+  workspaceDropdownMenu: $('workspace-dropdown-menu'),
+  workspaceMenuList: $('workspace-menu-list'),
+  btnAddWorkspaceOpen: $('btn-add-workspace-open'),
+  addWorkspaceModalBackdrop: $('add-workspace-modal-backdrop'),
+  addWorkspaceModal: $('add-workspace-modal'),
+  btnCloseAddWs: $('btn-close-add-ws'),
+  btnCancelAddWs: $('btn-cancel-add-ws'),
+  addWorkspaceForm: $('add-workspace-form'),
+  wsInputName: $('ws-input-name'),
+  wsIconPicker: $('ws-icon-picker'),
+  wsColorPicker: $('ws-color-picker'),
 };
 
 const state = {
@@ -88,6 +107,10 @@ const state = {
   secondaryTabId: null,
   zoomFactor: 1,
   isPrivate: false,
+  workspaces: [],
+  activeWorkspaceId: 'default',
+  selectedWsIcon: '🏢',
+  selectedWsColor: '#3b82f6',
   engineMode: 'workspace',
   drawerOpen: false,
   menuOpen: false,
@@ -301,6 +324,10 @@ function normalizeTab(raw) {
     crashed: Boolean(tab.crashed || tab.status === 'crashed'),
     canGoBack: Boolean(tab.canGoBack),
     canGoForward: Boolean(tab.canGoForward),
+    workspaceId: tab.workspaceId || 'default',
+    workspaceName: tab.workspaceName || 'Default',
+    workspaceIcon: tab.workspaceIcon || '🌐',
+    workspaceColor: tab.workspaceColor || '#6366f1',
     active: Boolean(tab.active),
     status: tab.status || ''
   };
@@ -322,7 +349,10 @@ function applyBrowserState(browserState) {
   if (Number.isFinite(Number(next.zoomFactor))) state.zoomFactor = Number(next.zoomFactor);
   state.isPrivate = Boolean(next.isPrivate);
   state.engineMode = next.engineMode === 'gaming' ? 'gaming' : 'workspace';
+  if (Array.isArray(next.workspaces)) state.workspaces = next.workspaces;
+  if (next.activeWorkspaceId) state.activeWorkspaceId = next.activeWorkspaceId;
   setMode(state.isPrivate ? 'private' : state.engineMode);
+  renderWorkspaces();
   renderTabs();
   renderBrowserControls();
 }
@@ -429,6 +459,12 @@ function renderTabs() {
       closeTab(tab.id);
     });
 
+    if (tab.workspaceColor) {
+      const wsDot = createElement('span', 'tab-ws-dot');
+      wsDot.style.background = tab.workspaceColor;
+      wsDot.title = 'Workspace: ' + (tab.workspaceName || 'Default');
+      selectButton.prepend(wsDot);
+    }
     selectButton.append(faviconWrap, title);
     item.append(selectButton, audioButton, closeButton);
     selectButton.addEventListener('click', function () { switchTab(tab.id); });
@@ -483,6 +519,10 @@ function renderBrowserControls() {
   displayHostForTab(tab);
   if (els.addressBar && document.activeElement !== els.addressBar) {
     els.addressBar.value = tab && !isNewTabUrl(tab.url) ? tab.url : '';
+  }
+  if (els.btnZoomReset) {
+    const zoomPct = Math.round((state.zoomFactor || 1) * 100) + '%';
+    els.btnZoomReset.textContent = zoomPct;
   }
   els.backButton.disabled = !(tab && tab.canGoBack);
   els.forwardButton.disabled = !(tab && tab.canGoForward);
@@ -636,6 +676,173 @@ function closeSiteInfoModal() {
   setHidden(els.siteInfoModalBackdrop, true);
   state.modalOpen = false;
   scheduleLayout();
+}
+
+function renderWorkspaces() {
+  if (!els.wsActiveName) return;
+  const ws = state.workspaces && state.workspaces.length > 0 ? state.workspaces : [
+    { id: 'default', name: 'Default', icon: '🌐', color: '#6366f1' },
+    { id: 'work', name: 'Work', icon: '🏢', color: '#3b82f6' },
+    { id: 'personal', name: 'Personal', icon: '🏠', color: '#10b981' }
+  ];
+  const activeWs = ws.find(function (item) { return item.id === state.activeWorkspaceId; }) || ws[0];
+
+  if (els.wsActiveDot) els.wsActiveDot.style.background = activeWs.color || '#6366f1';
+  if (els.wsActiveIcon) els.wsActiveIcon.textContent = activeWs.icon || '🌐';
+  if (els.wsActiveName) els.wsActiveName.textContent = activeWs.name || 'Default';
+
+  if (els.workspaceMenuList) {
+    clearNode(els.workspaceMenuList);
+    ws.forEach(function (w) {
+      const item = createElement('div', 'ws-item');
+      if (w.id === activeWs.id) item.classList.add('active');
+
+      const left = createElement('div');
+      left.style.display = 'flex';
+      left.style.alignItems = 'center';
+      left.style.gap = '6px';
+      const dot = createElement('span', 'ws-dot');
+      dot.style.background = w.color;
+      const text = createElement('span', '', w.icon + ' ' + w.name);
+      left.append(dot, text);
+
+      const actions = createElement('div');
+      actions.style.display = 'flex';
+      actions.style.alignItems = 'center';
+      actions.style.gap = '6px';
+
+      if (w.id === activeWs.id) {
+        actions.appendChild(createElement('span', '', '✓ Active'));
+      }
+
+      item.append(left, actions);
+      item.addEventListener('click', async function () {
+        try {
+          setWorkspaceDropdownVisible(false);
+          if (typeof api.setActiveWorkspace === 'function') {
+            const res = await api.setActiveWorkspace(w.id);
+            applyBrowserState(res);
+            notify('Switched to workspace: ' + w.name + ' (Isolated logins)', 'success', 3000);
+          }
+        } catch (err) {
+          notify('Failed to switch workspace: ' + errorMessage(err), 'error');
+        }
+      });
+      els.workspaceMenuList.appendChild(item);
+    });
+  }
+}
+
+function setWorkspaceDropdownVisible(visible) {
+  if (!els.workspaceDropdownMenu) return;
+  const isVisible = Boolean(visible);
+  setHidden(els.workspaceDropdownMenu, !isVisible);
+  if (els.btnWorkspaceSelector) {
+    els.btnWorkspaceSelector.setAttribute('aria-expanded', isVisible ? 'true' : 'false');
+  }
+}
+
+function toggleWorkspaceDropdown() {
+  if (!els.workspaceDropdownMenu) return;
+  const hidden = els.workspaceDropdownMenu.classList.contains('hidden');
+  setWorkspaceDropdownVisible(hidden);
+}
+
+function openAddWorkspaceModal() {
+  setWorkspaceDropdownVisible(false);
+  if (els.wsInputName) els.wsInputName.value = '';
+  state.selectedWsIcon = '🏢';
+  state.selectedWsColor = '#3b82f6';
+
+  if (els.wsIconPicker) {
+    els.wsIconPicker.querySelectorAll('.ws-icon-opt').forEach(function (btn) {
+      btn.classList.toggle('active', btn.dataset.icon === state.selectedWsIcon);
+    });
+  }
+  if (els.wsColorPicker) {
+    els.wsColorPicker.querySelectorAll('.ws-color-opt').forEach(function (btn) {
+      btn.style.borderColor = btn.dataset.color === state.selectedWsColor ? '#fff' : 'transparent';
+    });
+  }
+
+  setHidden(els.addWorkspaceModalBackdrop, false);
+  state.modalOpen = true;
+  scheduleLayout();
+}
+
+function closeAddWorkspaceModal() {
+  setHidden(els.addWorkspaceModalBackdrop, true);
+  state.modalOpen = false;
+  scheduleLayout();
+}
+
+async function handleAddWorkspaceSubmit(event) {
+  event.preventDefault();
+  const name = els.wsInputName ? els.wsInputName.value.trim() : '';
+  if (!name) return;
+
+  try {
+    if (typeof api.addWorkspace === 'function') {
+      const res = await api.addWorkspace({
+        name,
+        icon: state.selectedWsIcon,
+        color: state.selectedWsColor
+      });
+      closeAddWorkspaceModal();
+      applyBrowserState(res);
+      notify('Created workspace: ' + name + '! New tabs will use this session.', 'success', 4000);
+    }
+  } catch (err) {
+    notify('Failed to create workspace: ' + errorMessage(err), 'error');
+  }
+}
+
+async function zoomIn() {
+  try {
+    if (typeof api.zoomIn === 'function') {
+      const res = await api.zoomIn();
+      if (res && res.zoom) {
+        state.zoomFactor = res.zoom;
+        renderBrowserControls();
+      }
+    } else {
+      setZoom(state.zoomFactor + 0.1);
+    }
+  } catch (err) {
+    setZoom(state.zoomFactor + 0.1);
+  }
+}
+
+async function zoomOut() {
+  try {
+    if (typeof api.zoomOut === 'function') {
+      const res = await api.zoomOut();
+      if (res && res.zoom) {
+        state.zoomFactor = res.zoom;
+        renderBrowserControls();
+      }
+    } else {
+      setZoom(state.zoomFactor - 0.1);
+    }
+  } catch (err) {
+    setZoom(state.zoomFactor - 0.1);
+  }
+}
+
+async function resetZoom() {
+  try {
+    if (typeof api.resetZoom === 'function') {
+      const res = await api.resetZoom();
+      if (res && res.zoom) {
+        state.zoomFactor = res.zoom;
+        renderBrowserControls();
+      }
+    } else {
+      setZoom(1.0);
+    }
+  } catch (err) {
+    setZoom(1.0);
+  }
 }
 
 async function resetSitePermissions() {
@@ -2160,8 +2367,37 @@ function wireUi() {
   bindClick('btn-ai-gmail-tasks', triggerEmailTaskExtraction);
   bindClick('btn-ai-24h-report', trigger24HReport);
   bindClick('btn-tasks-24h-report', trigger24HReport);
-  bindClick('btn-tasks-extract-email', triggerEmailTaskExtraction);
-  bindClick('btn-settings-install-update', installUpdate);
+  bindClick('btn-zoom-out', zoomOut);
+  bindClick('btn-zoom-in', zoomIn);
+  bindClick('btn-zoom-reset', resetZoom);
+
+  bindClick('btn-workspace-selector', toggleWorkspaceDropdown);
+  bindClick('btn-add-workspace-open', openAddWorkspaceModal);
+  bindClick('btn-close-add-ws', closeAddWorkspaceModal);
+  bindClick('btn-cancel-add-ws', closeAddWorkspaceModal);
+  $('add-workspace-form').addEventListener('submit', handleAddWorkspaceSubmit);
+
+  if (els.wsIconPicker) {
+    els.wsIconPicker.addEventListener('click', function (event) {
+      const btn = event.target.closest('.ws-icon-opt');
+      if (!btn) return;
+      state.selectedWsIcon = btn.dataset.icon || '🏢';
+      els.wsIconPicker.querySelectorAll('.ws-icon-opt').forEach(function (opt) {
+        opt.classList.toggle('active', opt === btn);
+      });
+    });
+  }
+
+  if (els.wsColorPicker) {
+    els.wsColorPicker.addEventListener('click', function (event) {
+      const btn = event.target.closest('.ws-color-opt');
+      if (!btn) return;
+      state.selectedWsColor = btn.dataset.color || '#3b82f6';
+      els.wsColorPicker.querySelectorAll('.ws-color-opt').forEach(function (opt) {
+        opt.style.borderColor = opt === btn ? '#fff' : 'transparent';
+      });
+    });
+  }
 
   bindClick('security-indicator', openSiteInfoModal);
   bindClick('btn-close-site-info', closeSiteInfoModal);
@@ -2176,6 +2412,10 @@ function wireUi() {
   document.addEventListener('click', function (event) {
     if (state.menuOpen && !els.menu.contains(event.target) && !els.menuButton.contains(event.target)) closeMenu();
     if (event.target === els.siteInfoModalBackdrop) closeSiteInfoModal();
+    if (event.target === els.addWorkspaceModalBackdrop) closeAddWorkspaceModal();
+    if (els.workspaceSelectorShell && !els.workspaceSelectorShell.contains(event.target)) {
+      setWorkspaceDropdownVisible(false);
+    }
   });
   els.menu.addEventListener('keydown', function (event) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;

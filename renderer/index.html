@@ -39,10 +39,26 @@
     </div>
 
     <div class="tabs-bar" id="tabs-bar">
+      <div class="workspace-selector-shell" id="workspace-selector-shell">
+        <button class="workspace-pill-button" id="btn-workspace-selector" type="button" aria-haspopup="true" aria-expanded="false" title="Active Multi-Login Workspace Container">
+          <span class="ws-dot" id="ws-active-dot" style="background:#6366f1;"></span>
+          <span class="ws-icon" id="ws-active-icon">🌐</span>
+          <span class="ws-name" id="ws-active-name">Default</span>
+          <span class="ws-chevron" aria-hidden="true">▾</span>
+        </button>
+        <div class="workspace-dropdown hidden" id="workspace-dropdown-menu" role="menu" aria-label="Workspaces">
+          <div class="ws-menu-header">
+            <span>MULTI-LOGIN WORKSPACES</span>
+            <button class="ws-add-btn" id="btn-add-workspace-open" type="button" title="Add New Workspace">+ Add</button>
+          </div>
+          <div class="ws-list" id="workspace-menu-list"></div>
+        </div>
+      </div>
+
       <div class="tabs-scroll">
         <div class="tabs-container" id="tabs-container" role="tablist" aria-label="Open tabs"></div>
       </div>
-      <button class="chrome-button new-tab-button" id="btn-new-tab" type="button" aria-label="New tab" title="New tab (Ctrl+T)">
+      <button class="chrome-button new-tab-button" id="btn-new-tab" type="button" aria-label="New tab" title="New tab in active workspace (Ctrl+T)">
         <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
       </button>
       <button class="chrome-button compact-action" id="btn-reopen-tab" type="button" aria-label="Reopen closed tab" title="Reopen closed tab (Ctrl+Shift+T)">
@@ -80,6 +96,11 @@
       </div>
 
       <div class="nav-actions">
+        <div class="zoom-controls-strip" id="zoom-controls-strip" title="Page Zoom Level">
+          <button class="chrome-button zoom-btn" id="btn-zoom-out" type="button" aria-label="Zoom out" title="Zoom out (Ctrl -)">−</button>
+          <button class="zoom-badge-btn" id="btn-zoom-reset" type="button" aria-label="Reset zoom" title="Reset zoom (100%)">100%</button>
+          <button class="chrome-button zoom-btn" id="btn-zoom-in" type="button" aria-label="Zoom in" title="Zoom in (Ctrl +)">+</button>
+        </div>
         <button class="chrome-button action-button" id="btn-mute" type="button" aria-label="Mute current tab" aria-pressed="false" title="Mute tab (Ctrl+M)">
           <span aria-hidden="true" id="mute-icon">🔊</span>
         </button>
@@ -459,6 +480,49 @@
     </section>
   </div>
 
+  <div class="modal-backdrop hidden" id="add-workspace-modal-backdrop">
+    <section class="update-modal" id="add-workspace-modal" role="dialog" aria-modal="true" aria-labelledby="add-ws-title" tabindex="-1">
+      <header class="modal-header">
+        <div>
+          <p class="eyebrow">Isolated Session Container</p>
+          <h2 id="add-ws-title">Create Multi-Login Workspace</h2>
+        </div>
+        <button class="icon-button" id="btn-close-add-ws" type="button" aria-label="Close modal">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="modal-intro">Each workspace runs in an isolated session container. You can log into the exact same website with completely different accounts in each workspace!</p>
+        <form id="add-workspace-form">
+          <label class="field-label" for="ws-input-name">Workspace Name</label>
+          <input id="ws-input-name" type="text" placeholder="e.g. Work, Personal, Client B" required maxlength="60">
+          
+          <label class="field-label">Icon Tag</label>
+          <div class="ws-icon-picker" id="ws-icon-picker" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+            <button class="chip-button ws-icon-opt active" type="button" data-icon="🏢">🏢 Work</button>
+            <button class="chip-button ws-icon-opt" type="button" data-icon="🏠">🏠 Home</button>
+            <button class="chip-button ws-icon-opt" type="button" data-icon="💼">💼 Business</button>
+            <button class="chip-button ws-icon-opt" type="button" data-icon="🛒">🛒 Shopping</button>
+            <button class="chip-button ws-icon-opt" type="button" data-icon="🔑">🔑 Private</button>
+            <button class="chip-button ws-icon-opt" type="button" data-icon="🔒">🔒 Admin</button>
+          </div>
+
+          <label class="field-label">Color Accent</label>
+          <div class="ws-color-picker" id="ws-color-picker" style="display:flex;gap:10px;margin-bottom:16px;">
+            <button class="ws-color-opt active" type="button" data-color="#3b82f6" style="width:24px;height:24px;border-radius:50%;background:#3b82f6;border:2px solid #fff;cursor:pointer;"></button>
+            <button class="ws-color-opt" type="button" data-color="#10b981" style="width:24px;height:24px;border-radius:50%;background:#10b981;border:2px solid transparent;cursor:pointer;"></button>
+            <button class="ws-color-opt" type="button" data-color="#6366f1" style="width:24px;height:24px;border-radius:50%;background:#6366f1;border:2px solid transparent;cursor:pointer;"></button>
+            <button class="ws-color-opt" type="button" data-color="#8b5cf6" style="width:24px;height:24px;border-radius:50%;background:#8b5cf6;border:2px solid transparent;cursor:pointer;"></button>
+            <button class="ws-color-opt" type="button" data-color="#f59e0b" style="width:24px;height:24px;border-radius:50%;background:#f59e0b;border:2px solid transparent;cursor:pointer;"></button>
+            <button class="ws-color-opt" type="button" data-color="#ef4444" style="width:24px;height:24px;border-radius:50%;background:#ef4444;border:2px solid transparent;cursor:pointer;"></button>
+          </div>
+
+          <div class="modal-footer" style="padding:0;margin-top:12px;">
+            <button class="secondary-button" id="btn-cancel-add-ws" type="button">Cancel</button>
+            <button class="primary-button" id="btn-submit-add-ws" type="submit">Create &amp; Switch Workspace</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
   <script src="renderer.js"></script>
 </body>
 </html>

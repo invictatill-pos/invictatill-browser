@@ -78,6 +78,58 @@ let historyRecords = [];
 let downloadRecords = [];
 let permissionGrants = {};
 
+const DEFAULT_WORKSPACES = [
+  { id: 'default', name: 'Default', icon: '🌐', color: '#6366f1' },
+  { id: 'work', name: 'Work', icon: '🏢', color: '#3b82f6' },
+  { id: 'personal', name: 'Personal', icon: '🏠', color: '#10b981' },
+];
+
+let workspaceList = [...DEFAULT_WORKSPACES];
+let activeWorkspaceId = 'default';
+const workspaceSessionsMap = new Map();
+
+function getWorkspaceDetails(workspaceId) {
+  const targetId = workspaceId || activeWorkspaceId || 'default';
+  const found = workspaceList.find((w) => w.id === targetId);
+  if (found) return found;
+  return { id: targetId, name: targetId, icon: '📂', color: '#6366f1' };
+}
+
+function getWorkspaceSession(workspaceId) {
+  const targetId = workspaceId || activeWorkspaceId || 'default';
+  const cleanId = String(targetId).replace(/[^a-zA-Z0-9_-]/g, '');
+  if (workspaceSessionsMap.has(cleanId)) {
+    return workspaceSessionsMap.get(cleanId);
+  }
+
+  let sess;
+  if (privateInstance) {
+    sess = session.fromPartition('workspace_priv_' + cleanId, { inMemory: true });
+  } else {
+    sess = session.fromPartition('persist:workspace_' + cleanId);
+  }
+
+  configurePermissions(sess);
+  setupDownloadHandlers(sess);
+  workspaceSessionsMap.set(cleanId, sess);
+  return sess;
+}
+
+function loadWorkspaces() {
+  if (store && !privateInstance) {
+    const saved = store.get('browser_workspaces_v2');
+    if (Array.isArray(saved) && saved.length > 0) {
+      workspaceList = saved;
+    }
+  }
+}
+
+function saveWorkspaces() {
+  if (store && !privateInstance) {
+    store.set('browser_workspaces_v2', workspaceList);
+  }
+}
+
 let autoUpdater = null;
 let updateState = { status: 'idle', version: null, error: null };
 try {
@@ -251,6 +303,7 @@ function publicTab(tab) {
   if (!tab) return null;
   const contents = tab.view.webContents;
   const active = tab.id === activeTabId;
+  const ws = getWorkspaceDetails(tab.workspaceId);
   return {
     id: tab.id,
     title: tab.title || 'New Tab',
@@ -265,6 +318,10 @@ function publicTab(tab) {
     audible: Boolean(tab.audible),
     zoom: tab.zoom,
     crashed: Boolean(tab.crashed),
+    workspaceId: tab.workspaceId || 'default',
+    workspaceName: ws.name,
+    workspaceIcon: ws.icon,
+    workspaceColor: ws.color,
     active,
   };
 }
@@ -281,6 +338,9 @@ function getBrowserState() {
     zoomFactor: getActiveTab() ? getActiveTab().zoom : 1,
     isPrivate: privateInstance,
     closedTabCount: closedTabs.length,
+    workspaces: workspaceList,
+    activeWorkspaceId,
+    activeWorkspace: getWorkspaceDetails(activeWorkspaceId),
   };
 }
 
@@ -736,9 +796,12 @@ function createTab(url, options) {
     : url;
   const normalizedUrl = normalizeNavigationUrl(requestedUrl);
   const id = nextTabId++;
+  const targetWorkspaceId = settings.workspaceId || activeWorkspaceId || 'default';
+  const targetSession = getWorkspaceSession(targetWorkspaceId);
+
   const view = new WebContentsView({
     webPreferences: {
-      session: browserSession,
+      session: targetSession,
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -756,6 +819,7 @@ function createTab(url, options) {
   const tab = {
     id,
     view,
+    workspaceId: targetWorkspaceId,
     title: 'New Tab',
     url: normalizedUrl,
     favicon: '',
@@ -1595,16 +1659,17 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Built-in Out-of-the-Box InvictaTill AI API Integration with zero manual key setup required.',
+      'Multi-Login Workspace Containers: Create and switch isolated workspace partitions at the top of the browser bar to log into the exact same website with different accounts concurrently!',
+      '1-Click Toolbar Zoom Controls: Quick Zoom In (+), Zoom Out (-), and Zoom Reset (100%) buttons on the main navigation bar.',
+      'Color-Coded Workspace Tabs: Visual workspace tags on each tab indicating session container ownership.',
+      'Built-in InvictaTill AI Cloud API integration with zero manual key setup required.',
       '24-Hour WFH Productivity & Activity Report generator built into AI & Workspace Tasks.',
       'Smart Gmail & Email Task Extractor: auto-detects incoming email tasks, subjects, and un-replied mail items.',
-      'Enhanced Auto-Updater with direct "Restart & Install Update" button in Settings, Banner, and Notification toasts.',
-      'Site & Security Permissions control modal accessible directly from the address bar security badge.',
     ],
     bugFixes: [
-      'Fixed update installation relaunch flow so updates can be installed with one click as soon as downloading completes.',
-      'Added fallback to local extractive intelligence whenever cloud endpoints are unreachable or offline.',
-      'Fixed camera and microphone permission queries for Google Meet, WebRTC, and web applications.',
+      'Isolated session partition cookies, localStorage, and authentication per workspace container.',
+      'Fixed update installation relaunch flow so updates can be installed with one click.',
+      'Added fallback to local extractive intelligence whenever cloud endpoints are unreachable.',
     ],
   };
 }
@@ -2641,6 +2706,61 @@ function registerIpcHandlers() {
       return { success: false, error: err.message };
     }
   });
+
+  registerHandler('get-workspaces', () => ({
+    workspaces: workspaceList,
+    activeWorkspaceId,
+    activeWorkspace: getWorkspaceDetails(activeWorkspaceId),
+  }));
+
+  registerHandler('set-active-workspace', (event, workspaceId) => {
+    const found = workspaceList.find((w) => w.id === workspaceId);
+    if (found) {
+      activeWorkspaceId = found.id;
+    }
+    return getBrowserState();
+  });
+
+  registerHandler('add-workspace', (event, payload) => {
+    assertPlainObject(payload, 'workspace details');
+    const name = boundedString(payload.name, 'workspace name', 100, true);
+    const icon = boundedString(payload.icon || '💼', 'workspace icon', 10, false);
+    const color = boundedString(payload.color || '#3b82f6', 'workspace color', 20, false);
+    const id = 'ws-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    const newWs = { id, name, icon, color };
+    workspaceList.push(newWs);
+    activeWorkspaceId = id;
+    saveWorkspaces();
+    return getBrowserState();
+  });
+
+  registerHandler('delete-workspace', (event, workspaceId) => {
+    if (workspaceId === 'default') {
+      throw new Error('Cannot delete the Default workspace');
+    }
+    workspaceList = workspaceList.filter((w) => w.id !== workspaceId);
+    if (activeWorkspaceId === workspaceId) {
+      activeWorkspaceId = 'default';
+    }
+    saveWorkspaces();
+    return getBrowserState();
+  });
+
+  registerHandler('zoom-in', () => {
+    const tab = getActiveTab();
+    if (!tab) return null;
+    const nextZoom = Math.min(3.0, Math.round((tab.zoom + 0.1) * 100) / 100);
+    return setActiveZoom(nextZoom);
+  });
+
+  registerHandler('zoom-out', () => {
+    const tab = getActiveTab();
+    if (!tab) return null;
+    const nextZoom = Math.max(0.25, Math.round((tab.zoom - 0.1) * 100) / 100);
+    return setActiveZoom(nextZoom);
+  });
+
+  registerHandler('reset-zoom', () => setActiveZoom(1.0));
 
   registerHandler('get-site-permissions', (event, originUrl) => {
     const origin = permissionOrigin(null, null, typeof originUrl === 'string' ? originUrl : '');
