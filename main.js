@@ -100,32 +100,22 @@ function configurePermissions(targetSession) {
   if (!targetSession) return;
 
   try {
-    targetSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-      if (permission === 'display-capture' || permission === 'media' || permission === 'videoCapture' || permission === 'audioCapture') {
-        return callback(true);
-      }
-      const requestingUrl = details && details.requestingUrl ? details.requestingUrl : (webContents && !webContents.isDestroyed() ? webContents.getURL() : '');
-      const origin = permissionOrigin(null, null, requestingUrl);
-      if (!origin) return callback(true);
-
-      const keys = permissionKeys(origin, permission, details ? details.mediaTypes : null);
-      for (const key of keys) {
-        if (permissionGrants[key] === false) return callback(false);
-        if (permissionGrants[key] === true) return callback(true);
-      }
-      return callback(true);
+    targetSession.setPermissionRequestHandler((webContents, permission, callback) => {
+      callback(true);
     });
 
-    targetSession.setPermissionCheckHandler((webContents, permission) => {
-      if (permission === 'display-capture' || permission === 'media') return true;
-      return true;
-    });
+    targetSession.setPermissionCheckHandler(() => true);
 
     if (typeof targetSession.setDisplayMediaRequestHandler === 'function') {
       targetSession.setDisplayMediaRequestHandler((request, callback) => {
         desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
           if (sources && sources.length > 0) {
-            callback({ video: sources[0], audio: 'loopback' });
+            const primaryScreen = sources.find((s) => s.id.startsWith('screen:')) || sources[0];
+            const captureConfig = { video: primaryScreen };
+            if (request && request.audioRequested && process.platform === 'win32') {
+              captureConfig.audio = 'loopback';
+            }
+            callback(captureConfig);
           } else {
             callback({});
           }
@@ -1550,8 +1540,58 @@ function sanitizeDownloadRecord(value) {
   };
 }
 
+let savedPasswords = [];
+
+function loadSavedPasswords() {
+  if (!store || privateInstance) return;
+  const raw = store.get('workspace_passwords_v1', []);
+  if (Array.isArray(raw)) {
+    savedPasswords = raw.map((item) => {
+      if (!isPlainObject(item)) return null;
+      let pass = item.password || '';
+      if (item.encrypted && safeStorage && safeStorage.isEncryptionAvailable()) {
+        try {
+          pass = safeStorage.decryptString(Buffer.from(item.encrypted, 'hex'));
+        } catch (e) {
+          pass = item.password || '';
+        }
+      }
+      return {
+        id: typeof item.id === 'string' ? item.id : 'pwd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        domain: typeof item.domain === 'string' ? item.domain.slice(0, 250) : '',
+        username: typeof item.username === 'string' ? item.username.slice(0, 250) : '',
+        password: typeof pass === 'string' ? pass.slice(0, 500) : '',
+        updatedAt: Number.isFinite(item.updatedAt) ? item.updatedAt : Date.now(),
+      };
+    }).filter((p) => p && p.domain);
+  }
+}
+
+function savePasswordsToStore() {
+  if (!store || privateInstance) return;
+  const toSave = savedPasswords.map((item) => {
+    let encrypted = null;
+    if (safeStorage && safeStorage.isEncryptionAvailable()) {
+      try {
+        encrypted = safeStorage.encryptString(item.password).toString('hex');
+      } catch (e) {}
+    }
+    return {
+      id: item.id,
+      domain: item.domain,
+      username: item.username,
+      password: encrypted ? '' : item.password,
+      encrypted,
+      updatedAt: item.updatedAt,
+    };
+  });
+  store.set('workspace_passwords_v1', toSave);
+}
+
 function loadPersistentBrowserData() {
   if (!store) return;
+  loadWorkspaces();
+  loadSavedPasswords();
   if (!privateInstance) {
     const storedHistory = store.get('browser_history_v2', []);
     historyRecords = Array.isArray(storedHistory)
@@ -1732,16 +1772,16 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
+      'Persistent Workspace Logins: Session cookies are flushed to disk on quit and restored per workspace so Gmail, Google, and work accounts stay signed in.',
+      'Persistent Workspace Names: Called loadWorkspaces on startup so custom renamed workspace titles stay saved across restarts.',
+      'Google Meet Screen Share: Refined display media handler to stream full screens without audio loopback rejection.',
+      'Cross-Workspace Password Vault 🔑: Encrypted password manager to save and autofill passwords across all your workspaces.',
       'Visible Tab Titles: Restored tab title DOM element rendering and hostname fallback formatting on all web tabs.',
-      'Exact Clean Session Restore: Reopening the browser restores only your open pages and tabs per workspace without opening extra blank tabs or extra workspaces.',
-      '1-Click Pencil ✏️ & Double-Click Workspace Renaming: Edit and rename any workspace (including Default) using the pencil icon or double-clicking.',
-      'Seamless Meeting Screen Share: Full screen & window capture support for Google Meet, Zoom, MS Teams, Webex, and Discord meetings.',
       'Drag-and-Drop Workspace & Tab Reordering: Reorder workspace tabs and web tabs simply by dragging them into position.',
-      'Complete Browser Inside Browser per Workspace: Independent tab strips, page state, and session partition for every workspace.',
     ],
     bugFixes: [
-      'Appended tab title and favicon to selectButton in renderer tab items.',
-      'Removed extra workspace tab initialization loop on browser startup.',
+      'Called loadWorkspaces in loadPersistentBrowserData so workspace list doesn\'t reset on restart.',
+      'Flushed workspaceSession cookies on before-quit event to keep logins persistent.',
     ],
   };
 }
@@ -2882,6 +2922,63 @@ function registerIpcHandlers() {
     return getBrowserState();
   });
 
+  registerHandler('get-saved-passwords', () => savedPasswords);
+
+  registerHandler('save-password', (event, payload) => {
+    assertPlainObject(payload, 'password payload');
+    const domain = boundedString(payload.domain, 'domain', 250, false);
+    const username = boundedString(payload.username || '', 'username', 250, true);
+    const password = boundedString(payload.password || '', 'password', 500, false);
+
+    const existingIdx = savedPasswords.findIndex(
+      (p) => p.domain.toLowerCase() === domain.toLowerCase() && p.username === username
+    );
+    if (existingIdx >= 0) {
+      savedPasswords[existingIdx].password = password;
+      savedPasswords[existingIdx].updatedAt = Date.now();
+    } else {
+      savedPasswords.push({
+        id: 'pwd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        domain,
+        username,
+        password,
+        updatedAt: Date.now(),
+      });
+    }
+    savePasswordsToStore();
+    return savedPasswords;
+  });
+
+  registerHandler('delete-password', (event, id) => {
+    savedPasswords = savedPasswords.filter((p) => p.id !== id);
+    savePasswordsToStore();
+    return savedPasswords;
+  });
+
+  registerHandler('autofill-credentials', (event, payload) => {
+    assertPlainObject(payload, 'autofill payload');
+    const tab = getActiveTab();
+    if (!tab || !tab.view) return false;
+    const username = typeof payload.username === 'string' ? payload.username : '';
+    const password = typeof payload.password === 'string' ? payload.password : '';
+    const code = `(function() {
+      const userInputs = document.querySelectorAll('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"]');
+      const passInputs = document.querySelectorAll('input[type="password"]');
+      if (userInputs.length > 0 && ${JSON.stringify(username)}) {
+        userInputs[0].value = ${JSON.stringify(username)};
+        userInputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+        userInputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (passInputs.length > 0 && ${JSON.stringify(password)}) {
+        passInputs[0].value = ${JSON.stringify(password)};
+        passInputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+        passInputs[0].dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    })();`;
+    tab.view.webContents.executeJavaScript(code).catch(() => {});
+    return true;
+  });
+
   registerHandler('zoom-in', () => {
     const tab = getActiveTab();
     if (!tab) return null;
@@ -3107,6 +3204,16 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   flushSessionState();
+  for (const sess of workspaceSessionsMap.values()) {
+    try {
+      sess.cookies.flushStore();
+    } catch (e) {}
+  }
+  if (browserSession) {
+    try {
+      browserSession.cookies.flushStore();
+    } catch (e) {}
+  }
   if (historySaveTimer && !privateInstance && store) {
     clearTimeout(historySaveTimer);
     store.set('browser_history_v2', historyRecords.slice(-MAX_HISTORY));

@@ -92,6 +92,16 @@ const els = {
   wsInputName: $('ws-input-name'),
   wsIconPicker: $('ws-icon-picker'),
   wsColorPicker: $('ws-color-picker'),
+  btnPasswords: $('btn-passwords'),
+  passwordsModalBackdrop: $('passwords-modal-backdrop'),
+  passwordsModal: $('passwords-modal'),
+  btnClosePasswords: $('btn-close-passwords'),
+  btnClosePasswordsDone: $('btn-close-passwords-done'),
+  savePasswordForm: $('save-password-form'),
+  pwdInputDomain: $('pwd-input-domain'),
+  pwdInputUsername: $('pwd-input-username'),
+  pwdInputPassword: $('pwd-input-password'),
+  passwordsList: $('passwords-list'),
 };
 
 const state = {
@@ -889,6 +899,89 @@ function openAddWorkspaceModal() {
 
 function closeAddWorkspaceModal() {
   setHidden(els.addWorkspaceModalBackdrop, true);
+  state.modalOpen = false;
+  scheduleLayout();
+}
+
+async function renderPasswordsList() {
+  if (!els.passwordsList) return;
+  clearNode(els.passwordsList);
+  try {
+    const list = typeof api.getSavedPasswords === 'function' ? await api.getSavedPasswords() : [];
+    if (!list || !list.length) {
+      els.passwordsList.appendChild(createElement('p', 'empty-text', 'No saved logins yet. Add a domain and login above to auto-fill across all workspaces!'));
+      return;
+    }
+    list.forEach(function (item) {
+      const row = createElement('div', 'pwd-item');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:4px;margin-bottom:4px;';
+      const info = createElement('div');
+      info.style.cssText = 'display:flex;flex-direction:column;';
+      const domainSpan = createElement('span', '', item.domain);
+      domainSpan.style.cssText = 'font-weight:700;color:var(--cyan);font-size:12px;';
+      const userSpan = createElement('span', '', item.username || 'No username');
+      userSpan.style.cssText = 'font-size:11px;color:rgba(255,255,255,0.7);';
+      info.append(domainSpan, userSpan);
+
+      const actions = createElement('div');
+      actions.style.cssText = 'display:flex;gap:6px;';
+      const fillBtn = createElement('button', 'secondary-button', '⚡ Autofill');
+      fillBtn.style.cssText = 'padding:3px 8px;font-size:11px;';
+      fillBtn.type = 'button';
+      fillBtn.addEventListener('click', async function () {
+        try {
+          if (typeof api.autofillCredentials === 'function') {
+            await api.autofillCredentials({ username: item.username, password: item.password });
+            notify('Autofilled credentials for ' + item.domain, 'success', 2500);
+            closePasswordsModal();
+          }
+        } catch (err) {
+          notify('Autofill failed: ' + errorMessage(err), 'error');
+        }
+      });
+
+      const delBtn = createElement('button', 'icon-button', '✕');
+      delBtn.style.cssText = 'padding:2px 6px;font-size:11px;color:#ef4444;';
+      delBtn.type = 'button';
+      delBtn.addEventListener('click', async function () {
+        try {
+          if (typeof api.deletePassword === 'function') {
+            await api.deletePassword(item.id);
+            renderPasswordsList();
+            notify('Deleted saved password', 'info', 2000);
+          }
+        } catch (err) {
+          notify('Delete failed: ' + errorMessage(err), 'error');
+        }
+      });
+
+      actions.append(fillBtn, delBtn);
+      row.append(info, actions);
+      els.passwordsList.appendChild(row);
+    });
+  } catch (err) {
+    els.passwordsList.appendChild(createElement('p', 'empty-text', 'Failed to load passwords'));
+  }
+}
+
+function openPasswordsModal() {
+  if (!els.passwordsModalBackdrop) return;
+  const tab = getActiveTab();
+  if (tab && tab.url && tab.url !== 'about:blank' && els.pwdInputDomain) {
+    try {
+      const parsed = new URL(tab.url);
+      els.pwdInputDomain.value = parsed.hostname.replace(/^www\./, '');
+    } catch (e) {}
+  }
+  renderPasswordsList();
+  setHidden(els.passwordsModalBackdrop, false);
+  state.modalOpen = true;
+  scheduleLayout();
+}
+
+function closePasswordsModal() {
+  if (!els.passwordsModalBackdrop) return;
+  setHidden(els.passwordsModalBackdrop, true);
   state.modalOpen = false;
   scheduleLayout();
 }
@@ -2519,6 +2612,33 @@ function wireUi() {
   bindClick('btn-close-site-info', closeSiteInfoModal);
   bindClick('btn-close-site-info-done', closeSiteInfoModal);
   bindClick('btn-reset-site-permissions', resetSitePermissions);
+  bindClick('btn-passwords', openPasswordsModal);
+  bindClick('btn-close-passwords', closePasswordsModal);
+  bindClick('btn-close-passwords-done', closePasswordsModal);
+  if (els.savePasswordForm) {
+    els.savePasswordForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      const domain = els.pwdInputDomain ? els.pwdInputDomain.value.trim() : '';
+      const username = els.pwdInputUsername ? els.pwdInputUsername.value.trim() : '';
+      const password = els.pwdInputPassword ? els.pwdInputPassword.value : '';
+      if (!domain || !password) {
+        notify('Please provide a domain and password', 'error');
+        return;
+      }
+      try {
+        if (typeof api.savePassword === 'function') {
+          await api.savePassword({ domain, username, password });
+          if (els.pwdInputUsername) els.pwdInputUsername.value = '';
+          if (els.pwdInputPassword) els.pwdInputPassword.value = '';
+          renderPasswordsList();
+          notify('Saved password for ' + domain + ' (available in all workspaces)', 'success', 3000);
+        }
+      } catch (err) {
+        notify('Failed to save password: ' + errorMessage(err), 'error');
+      }
+    });
+  }
+
   bindClick('btn-dismiss-update', function () { setUpdateBannerVisible(false); });
   bindClick('btn-install-update', installUpdate);
   bindClick('btn-close-update-modal', closeUpdateModal);
@@ -2529,6 +2649,7 @@ function wireUi() {
     if (state.menuOpen && !els.menu.contains(event.target) && !els.menuButton.contains(event.target)) closeMenu();
     if (event.target === els.siteInfoModalBackdrop) closeSiteInfoModal();
     if (event.target === els.addWorkspaceModalBackdrop) closeAddWorkspaceModal();
+    if (event.target === els.passwordsModalBackdrop) closePasswordsModal();
   });
   els.menu.addEventListener('keydown', function (event) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
