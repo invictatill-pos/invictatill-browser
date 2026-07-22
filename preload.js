@@ -127,6 +127,11 @@ const api = {
   savePassword: (credentials) => ipcRenderer.invoke('save-password', credentials),
   deletePassword: (id) => ipcRenderer.invoke('delete-password', id),
   autofillCredentials: (credentials) => ipcRenderer.invoke('autofill-credentials', credentials),
+  onShowScreenPicker: (callback) => {
+    ipcRenderer.on('show-screen-picker', (event, data) => callback(data));
+  },
+  selectScreenShareSource: (selection) => ipcRenderer.invoke('select-screen-share-source', selection),
+  cancelScreenShare: () => ipcRenderer.invoke('cancel-screen-share'),
   zoomIn: () => ipcRenderer.invoke('zoom-in'),
   zoomOut: () => ipcRenderer.invoke('zoom-out'),
   resetZoom: () => ipcRenderer.invoke('reset-zoom'),

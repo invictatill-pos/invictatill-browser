@@ -100,11 +100,24 @@ const els = {
   savePasswordForm: $('save-password-form'),
   pwdInputDomain: $('pwd-input-domain'),
   pwdInputUsername: $('pwd-input-username'),
-  pwdInputPassword: $('pwd-input-password'),
   passwordsList: $('passwords-list'),
+  screenPickerBackdrop: $('screen-picker-modal-backdrop'),
+  screenPickerModal: $('screen-picker-modal'),
+  screenPickerTabs: $('screen-picker-tabs'),
+  screenPickerListPane: $('screen-picker-list-pane'),
+  screenPickerPreviewImg: $('screen-picker-preview-img'),
+  screenPickerPreviewTitle: $('screen-picker-preview-title'),
+  screenPickerPreviewPrompt: $('screen-picker-preview-prompt'),
+  btnCancelScreenPicker: $('btn-cancel-screen-picker'),
+  btnCancelScreenPickerX: $('btn-cancel-screen-picker-x'),
+  btnSubmitScreenPicker: $('btn-submit-screen-picker'),
+  chkShareAudio: $('chk-share-audio'),
 };
 
 const state = {
+  screenPickerData: null,
+  screenPickerCategory: 'tabs',
+  selectedScreenSource: null,
   tabs: [],
   activeTabId: null,
   closedTabCount: 0,
@@ -982,6 +995,137 @@ function openPasswordsModal() {
 function closePasswordsModal() {
   if (!els.passwordsModalBackdrop) return;
   setHidden(els.passwordsModalBackdrop, true);
+  state.modalOpen = false;
+  scheduleLayout();
+}
+
+function renderScreenPickerList() {
+  if (!els.screenPickerListPane || !state.screenPickerData) return;
+  clearNode(els.screenPickerListPane);
+
+  let items = [];
+  const cat = state.screenPickerCategory || 'tabs';
+
+  if (cat === 'tabs') {
+    items = (state.screenPickerData.tabs || []).map((t) => {
+      const screenSource = (state.screenPickerData.screens || [])[0];
+      return {
+        id: screenSource ? screenSource.id : 'tab-' + t.id,
+        title: t.title || t.url,
+        subtitle: t.workspaceId ? 'Workspace: ' + t.workspaceId : t.url,
+        thumbnail: screenSource ? screenSource.thumbnail : null,
+        type: 'tab',
+      };
+    });
+  } else if (cat === 'windows') {
+    items = (state.screenPickerData.windows || []).map((w) => ({
+      id: w.id,
+      title: w.name,
+      subtitle: 'Application Window',
+      thumbnail: w.thumbnail,
+      type: 'window',
+    }));
+  } else {
+    items = (state.screenPickerData.screens || []).map((s) => ({
+      id: s.id,
+      title: s.name,
+      subtitle: 'Entire Screen Display',
+      thumbnail: s.thumbnail,
+      type: 'screen',
+    }));
+  }
+
+  if (!items.length) {
+    els.screenPickerListPane.appendChild(createElement('p', 'empty-text', 'No items available in this section'));
+    return;
+  }
+
+  items.forEach(function (item) {
+    const isSelected = state.selectedScreenSource && state.selectedScreenSource.id === item.id;
+    const card = createElement('div', 'screen-picker-item');
+    card.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:${isSelected ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)'};border:1px solid ${isSelected ? '#10b981' : 'rgba(255,255,255,0.1)'};cursor:pointer;transition:all 0.15s ease;`;
+
+    const icon = createElement('span', '', item.type === 'tab' ? '🌐' : item.type === 'window' ? '💻' : '🖥️');
+    icon.style.cssText = 'font-size:16px;';
+
+    const info = createElement('div');
+    info.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;';
+    const titleSpan = createElement('span', '', item.title);
+    titleSpan.style.cssText = 'font-weight:600;font-size:12px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    const subSpan = createElement('span', '', item.subtitle);
+    subSpan.style.cssText = 'font-size:11px;color:rgba(255,255,255,0.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    info.append(titleSpan, subSpan);
+    card.append(icon, info);
+
+    card.addEventListener('click', function () {
+      state.selectedScreenSource = item;
+      renderScreenPickerList();
+      updateScreenPickerPreview();
+    });
+
+    els.screenPickerListPane.appendChild(card);
+  });
+}
+
+function updateScreenPickerPreview() {
+  const item = state.selectedScreenSource;
+  if (!item) {
+    setHidden(els.screenPickerPreviewPrompt, false);
+    setHidden(els.screenPickerPreviewImg, true);
+    if (els.screenPickerPreviewTitle) els.screenPickerPreviewTitle.textContent = '';
+    if (els.btnSubmitScreenPicker) els.btnSubmitScreenPicker.disabled = true;
+    return;
+  }
+
+  if (els.btnSubmitScreenPicker) els.btnSubmitScreenPicker.disabled = false;
+  if (els.screenPickerPreviewTitle) els.screenPickerPreviewTitle.textContent = item.title;
+
+  if (item.thumbnail && els.screenPickerPreviewImg) {
+    els.screenPickerPreviewImg.src = item.thumbnail;
+    setHidden(els.screenPickerPreviewImg, false);
+    setHidden(els.screenPickerPreviewPrompt, true);
+  } else {
+    setHidden(els.screenPickerPreviewImg, true);
+    setHidden(els.screenPickerPreviewPrompt, false);
+    if (els.screenPickerPreviewPrompt) els.screenPickerPreviewPrompt.textContent = item.title;
+  }
+}
+
+function openScreenPickerModal(data) {
+  if (!els.screenPickerBackdrop) return;
+  state.screenPickerData = data;
+  state.screenPickerCategory = 'tabs';
+  
+  if (data.screens && data.screens.length > 0) {
+    const firstTab = (data.tabs || [])[0];
+    state.selectedScreenSource = {
+      id: data.screens[0].id,
+      title: firstTab ? firstTab.title : data.screens[0].name,
+      thumbnail: data.screens[0].thumbnail
+    };
+  } else {
+    state.selectedScreenSource = null;
+  }
+
+  if (els.screenPickerTabs) {
+    els.screenPickerTabs.querySelectorAll('.screen-picker-tab-btn').forEach(function (btn) {
+      const isAct = btn.dataset.target === state.screenPickerCategory;
+      btn.style.background = isAct ? '#201c2e' : 'transparent';
+      btn.style.color = isAct ? '#10b981' : 'rgba(255,255,255,0.6)';
+      btn.style.borderBottomColor = isAct ? '#10b981' : 'transparent';
+    });
+  }
+
+  renderScreenPickerList();
+  updateScreenPickerPreview();
+  setHidden(els.screenPickerBackdrop, false);
+  state.modalOpen = true;
+  scheduleLayout();
+}
+
+function closeScreenPickerModal() {
+  if (!els.screenPickerBackdrop) return;
+  setHidden(els.screenPickerBackdrop, true);
   state.modalOpen = false;
   scheduleLayout();
 }
@@ -2639,6 +2783,56 @@ function wireUi() {
     });
   }
 
+  if (els.screenPickerTabs) {
+    els.screenPickerTabs.addEventListener('click', function (event) {
+      const btn = event.target.closest('.screen-picker-tab-btn');
+      if (!btn) return;
+      state.screenPickerCategory = btn.dataset.target || 'tabs';
+      els.screenPickerTabs.querySelectorAll('.screen-picker-tab-btn').forEach(function (b) {
+        const isAct = b === btn;
+        b.style.background = isAct ? '#201c2e' : 'transparent';
+        b.style.color = isAct ? '#10b981' : 'rgba(255,255,255,0.6)';
+        b.style.borderBottomColor = isAct ? '#10b981' : 'transparent';
+      });
+      state.selectedScreenSource = null;
+      renderScreenPickerList();
+      updateScreenPickerPreview();
+    });
+  }
+
+  bindClick('btn-cancel-screen-picker', async function () {
+    try {
+      if (typeof api.cancelScreenShare === 'function') await api.cancelScreenShare();
+    } catch (e) {}
+    closeScreenPickerModal();
+  });
+
+  bindClick('btn-cancel-screen-picker-x', async function () {
+    try {
+      if (typeof api.cancelScreenShare === 'function') await api.cancelScreenShare();
+    } catch (e) {}
+    closeScreenPickerModal();
+  });
+
+  bindClick('btn-submit-screen-picker', async function () {
+    if (!state.selectedScreenSource) return;
+    try {
+      if (typeof api.selectScreenShareSource === 'function') {
+        await api.selectScreenShareSource({ sourceId: state.selectedScreenSource.id });
+        notify('Started screen share: ' + state.selectedScreenSource.title, 'success', 3000);
+      }
+    } catch (err) {
+      notify('Screen share failed: ' + errorMessage(err), 'error');
+    }
+    closeScreenPickerModal();
+  });
+
+  if (typeof api.onShowScreenPicker === 'function') {
+    api.onShowScreenPicker(function (data) {
+      openScreenPickerModal(data);
+    });
+  }
+
   bindClick('btn-dismiss-update', function () { setUpdateBannerVisible(false); });
   bindClick('btn-install-update', installUpdate);
   bindClick('btn-close-update-modal', closeUpdateModal);
@@ -2650,6 +2844,10 @@ function wireUi() {
     if (event.target === els.siteInfoModalBackdrop) closeSiteInfoModal();
     if (event.target === els.addWorkspaceModalBackdrop) closeAddWorkspaceModal();
     if (event.target === els.passwordsModalBackdrop) closePasswordsModal();
+    if (event.target === els.screenPickerBackdrop) {
+      try { if (typeof api.cancelScreenShare === 'function') api.cancelScreenShare(); } catch (e) {}
+      closeScreenPickerModal();
+    }
   });
   els.menu.addEventListener('keydown', function (event) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;

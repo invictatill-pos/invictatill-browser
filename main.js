@@ -100,6 +100,8 @@ function getWorkspaceDetails(workspaceId) {
   return { id: targetId, name: targetId, icon: '📂', color: '#6366f1' };
 }
 
+let pendingScreenShareCallback = null;
+
 function configurePermissions(targetSession) {
   if (!targetSession) return;
 
@@ -112,28 +114,43 @@ function configurePermissions(targetSession) {
 
     if (typeof targetSession.setDisplayMediaRequestHandler === 'function') {
       targetSession.setDisplayMediaRequestHandler((request, callback) => {
+        pendingScreenShareCallback = callback;
         desktopCapturer.getSources({
-          types: ['screen'],
-          fetchWindowIcons: false,
-          thumbnailSize: { width: 0, height: 0 },
+          types: ['screen', 'window'],
+          fetchWindowIcons: true,
+          thumbnailSize: { width: 320, height: 200 },
         }).then((sources) => {
-          if (sources && sources.length > 0) {
-            callback({ video: sources[0] });
-          } else {
-            desktopCapturer.getSources({
-              types: ['screen', 'window'],
-              fetchWindowIcons: false,
-              thumbnailSize: { width: 0, height: 0 },
-            }).then((allSources) => {
-              if (allSources && allSources.length > 0) {
-                callback({ video: allSources[0] });
-              } else {
-                callback({});
-              }
-            }).catch(() => callback({}));
-          }
+          const tabList = Array.from(tabs.values()).map((t) => ({
+            id: t.id,
+            title: t.title || t.url,
+            url: t.url,
+            workspaceId: t.workspaceId || 'default',
+            favicon: t.favicon || null,
+          }));
+
+          const screenSources = (sources || []).filter((s) => s.id && s.id.startsWith('screen:')).map((s) => ({
+            id: s.id,
+            name: s.name || 'Entire Screen',
+            thumbnail: s.thumbnail ? s.thumbnail.toDataURL() : null,
+          }));
+
+          const windowSources = (sources || []).filter((s) => s.id && s.id.startsWith('window:')).map((s) => ({
+            id: s.id,
+            name: s.name || 'Application Window',
+            thumbnail: s.thumbnail ? s.thumbnail.toDataURL() : null,
+            appIcon: s.appIcon ? s.appIcon.toDataURL() : null,
+          }));
+
+          sendToShell('show-screen-picker', {
+            screens: screenSources,
+            windows: windowSources,
+            tabs: tabList,
+          });
         }).catch(() => {
-          callback({});
+          if (pendingScreenShareCallback) {
+            pendingScreenShareCallback({});
+            pendingScreenShareCallback = null;
+          }
         });
       });
     }
@@ -1785,16 +1802,16 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Instantaneous Screen Capture: Used thumbnailSize {width:0, height:0} and fetchWindowIcons: false so desktop capture resolves in <2ms without timing out in Google Meet.',
-      'WebRTC & mDNS Fixes: Added ScreenCapture, WebRTCPipeWireCapturer features and disabled WebRtcHideLocalIpsWithMdns so peer-to-peer screen connections complete cleanly.',
+      'Opera-Style Interactive Screen Share Modal: Beautiful picker overlay showing InvictaTill Tabs, Application Windows, and Entire Screen displays with live thumbnails.',
+      'Tab, Window & Screen Choice: Choose specific web tabs from any workspace or application windows to present in Google Meet, Zoom, or Teams.',
+      'Tab Audio Sharing Toggle: Optional tab audio capture switch included in the screen share picker.',
       'Persistent Workspace Logins: Session cookies are flushed to disk on quit and restored per workspace so Gmail, Google, and work accounts stay signed in.',
-      'Persistent Workspace Names: Saved custom renamed workspace titles across restarts.',
       'Cross-Workspace Password Vault 🔑: Encrypted password manager to save and autofill passwords across all your workspaces.',
       'Visible Tab Titles & Drag-and-Drop Reordering: Complete tab visibility and custom reordering.',
     ],
     bugFixes: [
-      'Eliminated 3-second thumbnail generation bottleneck in desktopCapturer.getSources.',
-      'Configured defaultSession permissions for Google Meet and WebRTC video calls.',
+      'Added interactive IPC bridge (select-screen-share-source and cancel-screen-share) for user-driven screen selection.',
+      'Eliminated silent background stream selection failure in Google Meet.',
     ],
   };
 }
@@ -2989,6 +3006,46 @@ function registerIpcHandlers() {
       }
     })();`;
     tab.view.webContents.executeJavaScript(code).catch(() => {});
+    return true;
+  });
+
+  registerHandler('select-screen-share-source', async (event, selection) => {
+    if (!pendingScreenShareCallback) return false;
+    if (!selection || !selection.sourceId) {
+      pendingScreenShareCallback({});
+      pendingScreenShareCallback = null;
+      return false;
+    }
+
+    try {
+      const sources = await desktopCapturer.getSources({
+        types: ['screen', 'window'],
+        fetchWindowIcons: false,
+        thumbnailSize: { width: 0, height: 0 },
+      });
+      const matched = (sources || []).find((s) => s.id === selection.sourceId) || (sources && sources[0]);
+      if (pendingScreenShareCallback) {
+        if (matched) {
+          pendingScreenShareCallback({ video: matched });
+        } else {
+          pendingScreenShareCallback({});
+        }
+        pendingScreenShareCallback = null;
+      }
+    } catch (e) {
+      if (pendingScreenShareCallback) {
+        pendingScreenShareCallback({});
+        pendingScreenShareCallback = null;
+      }
+    }
+    return true;
+  });
+
+  registerHandler('cancel-screen-share', () => {
+    if (pendingScreenShareCallback) {
+      pendingScreenShareCallback({});
+      pendingScreenShareCallback = null;
+    }
     return true;
   });
 

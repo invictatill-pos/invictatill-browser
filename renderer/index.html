@@ -535,6 +535,53 @@
         <button class="secondary-button" id="btn-close-passwords-done" type="button">Close</button>
       </footer>
     </section>
+  <div class="modal-backdrop hidden" id="screen-picker-modal-backdrop" style="z-index:99999;">
+    <section class="update-modal" id="screen-picker-modal" role="dialog" aria-modal="true" style="max-width:740px;width:92vw;background:#181622;border:1px solid #332d46;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.8);color:#fff;overflow:hidden;padding:0;">
+      <header style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#201c2e;border-bottom:1px solid #2e2840;">
+        <div>
+          <h2 style="font-size:16px;font-weight:700;margin:0;color:#fff;" id="screen-picker-title">Choose what to share</h2>
+          <p style="font-size:12px;color:rgba(255,255,255,0.6);margin:2px 0 0 0;">The site will be able to see the contents of your selection</p>
+        </div>
+        <button class="icon-button" id="btn-cancel-screen-picker-x" type="button" aria-label="Cancel screen share">✕</button>
+      </header>
+
+      <div style="display:flex;background:#14121d;border-bottom:1px solid #2a243a;" id="screen-picker-tabs">
+        <button class="screen-picker-tab-btn active" type="button" data-target="tabs" style="flex:1;padding:12px 16px;background:#201c2e;color:#10b981;border:none;border-bottom:2px solid #10b981;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+          <span>🌐 InvictaTill Tabs</span>
+        </button>
+        <button class="screen-picker-tab-btn" type="button" data-target="windows" style="flex:1;padding:12px 16px;background:transparent;color:rgba(255,255,255,0.6);border:none;border-bottom:2px solid transparent;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+          <span>💻 Application Window</span>
+        </button>
+        <button class="screen-picker-tab-btn" type="button" data-target="screens" style="flex:1;padding:12px 16px;background:transparent;color:rgba(255,255,255,0.6);border:none;border-bottom:2px solid transparent;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+          <span>🖥️ Your Entire Screen</span>
+        </button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;height:340px;background:#14121d;">
+        <!-- Left Item Selection List -->
+        <div id="screen-picker-list-pane" style="overflow-y:auto;padding:12px;border-right:1px solid #2a243a;display:flex;flex-direction:column;gap:6px;"></div>
+
+        <!-- Right Preview Pane -->
+        <div id="screen-picker-preview-pane" style="padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#100e18;text-align:center;">
+          <div id="screen-picker-preview-box" style="width:100%;height:220px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:12px;">
+            <p style="color:rgba(255,255,255,0.4);font-size:13px;" id="screen-picker-preview-prompt">Select an item on the left to preview</p>
+            <img id="screen-picker-preview-img" style="max-width:100%;max-height:100%;object-fit:contain;display:none;">
+          </div>
+          <p id="screen-picker-preview-title" style="font-size:12px;font-weight:600;color:var(--cyan);margin:0;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></p>
+        </div>
+      </div>
+
+      <footer style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:#181622;border-top:1px solid #2a243a;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.8);cursor:pointer;">
+          <input type="checkbox" id="chk-share-audio" checked style="accent-color:#10b981;cursor:pointer;">
+          <span>Also share tab audio</span>
+        </label>
+        <div style="display:flex;gap:10px;">
+          <button class="secondary-button" id="btn-cancel-screen-picker" type="button" style="padding:8px 16px;font-size:12px;">Cancel</button>
+          <button class="primary-button" id="btn-submit-screen-picker" type="button" style="padding:8px 24px;font-size:12px;background:#10b981;border-color:#10b981;" disabled>Share</button>
+        </div>
+      </footer>
+    </section>
   </div>
   <script src="renderer.js"></script>
 </body>
