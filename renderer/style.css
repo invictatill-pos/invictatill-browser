@@ -2130,6 +2130,45 @@ kbd {
   color: #ef4444;
 }
 
+.ws-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  margin-left: 2px;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.ws-tab-pill:hover .ws-edit-btn {
+  opacity: 1;
+}
+
+.ws-edit-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.ws-rename-input {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid var(--cyan);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+  height: 18px;
+  width: 90px;
+  outline: none;
+}
+
 .ws-add-tab-btn {
   display: inline-flex;
   align-items: center;

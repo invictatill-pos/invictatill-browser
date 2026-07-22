@@ -430,6 +430,7 @@ function flushSessionState() {
       url: isAllowedRemoteUrl(tab.url, true) ? tab.url : 'about:blank',
       zoom: tab.zoom,
       muted: tab.isMuted,
+      workspaceId: tab.workspaceId || 'default',
     }));
   const activeIndex = Math.max(
     0,
@@ -438,6 +439,7 @@ function flushSessionState() {
   store.set('browser_session_v2', {
     tabs: serializedTabs,
     activeIndex,
+    activeWorkspaceId,
     savedAt: Date.now(),
   });
 }
@@ -1581,10 +1583,19 @@ function restoreTabs() {
     createTab('about:blank', { activate: true });
     return;
   }
+
+  if (saved && saved.activeWorkspaceId && workspaceList.some((w) => w.id === saved.activeWorkspaceId)) {
+    activeWorkspaceId = saved.activeWorkspaceId;
+  }
+
   const createdIds = [];
   for (const entry of entries) {
     const url = entry && isAllowedRemoteUrl(entry.url, true) ? entry.url : 'about:blank';
+    const wsId = entry && entry.workspaceId && workspaceList.some((w) => w.id === entry.workspaceId)
+      ? entry.workspaceId
+      : 'default';
     const created = createTab(url, {
+      workspaceId: wsId,
       activate: false,
       restored: {
         zoom: entry && Number.isFinite(entry.zoom) ? entry.zoom : 1,
@@ -1593,10 +1604,20 @@ function restoreTabs() {
     });
     createdIds.push(created.id);
   }
+
+  for (const w of workspaceList) {
+    const hasTabs = Array.from(tabs.values()).some((t) => (t.workspaceId || 'default') === w.id);
+    if (!hasTabs) {
+      createTab('about:blank', { workspaceId: w.id, activate: false });
+    }
+  }
+
   const activeIndex = Number.isInteger(saved.activeIndex)
     ? Math.min(Math.max(saved.activeIndex, 0), createdIds.length - 1)
     : 0;
-  switchTab(createdIds[activeIndex]);
+  if (createdIds[activeIndex]) {
+    switchTab(createdIds[activeIndex]);
+  }
 }
 
 function queryHistory(query) {
@@ -1718,17 +1739,17 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Seamless Meeting Screen Share: Enabled full display capture for Google Meet, Zoom, MS Teams, Webex, and Discord meetings.',
-      'Double-Click Workspace Renaming: Double-click any workspace tab (including the Default workspace) to quickly rename it.',
-      'Drag-and-Drop Workspace & Tab Reordering: Reorder both workspace tabs and web tabs simply by dragging them into position.',
-      'Complete Browser Inside Browser per Workspace: Independent tabs, page state, and session partition for every workspace.',
+      'Workspace Tab Persistence on Restart: Reopening the browser now restores every tab into its exact workspace without merging.',
+      '1-Click Pencil ✏️ & Double-Click Workspace Renaming: Edit and rename any workspace (including Default) using the pencil icon or double-clicking.',
+      'Seamless Meeting Screen Share: Full screen & window capture support for Google Meet, Zoom, MS Teams, Webex, and Discord meetings.',
+      'Drag-and-Drop Workspace & Tab Reordering: Reorder workspace tabs and web tabs simply by dragging them into position.',
+      'Complete Browser Inside Browser per Workspace: Independent tab strips, page state, and session partition for every workspace.',
       '1-Click Toolbar Zoom Controls: Quick Zoom In (+), Zoom Out (-), and Zoom Reset (100%) controls on main toolbar.',
       'Built-in InvictaTill AI Cloud API integration with zero manual key setup required.',
-      '24-Hour WFH Activity Report & Gmail Task Extractor.',
     ],
     bugFixes: [
-      'Fixed display-capture permissions and setDisplayMediaRequestHandler for meeting screen sharing.',
-      'Saved workspace reordering and custom names persistently.',
+      'Saved workspaceId for each tab in session state so tabs stay isolated per workspace across restarts.',
+      'Added inline rename input overlay on workspace tabs for instant renaming.',
     ],
   };
 }

@@ -726,7 +726,57 @@ function renderWorkspaces() {
     dot.style.background = w.color || '#6366f1';
 
     const text = createElement('span', '', (w.icon || '🌐') + ' ' + w.name);
-    pill.append(dot, text);
+    const editBtn = createElement('button', 'ws-edit-btn', '✏️');
+    editBtn.type = 'button';
+    editBtn.title = 'Rename workspace ' + w.name;
+
+    const startRename = function (event) {
+      if (event) event.stopPropagation();
+      const currentName = w.name || 'Workspace';
+      const input = createElement('input', 'ws-rename-input');
+      input.type = 'text';
+      input.value = currentName;
+
+      let finished = false;
+      const saveRename = async function () {
+        if (finished) return;
+        finished = true;
+        const newName = input.value ? input.value.trim() : '';
+        if (newName && newName !== currentName) {
+          try {
+            if (typeof api.renameWorkspace === 'function') {
+              const res = await api.renameWorkspace(w.id, newName);
+              applyBrowserState(res);
+              notify('Renamed workspace to: ' + newName, 'success', 2500);
+            }
+          } catch (err) {
+            notify('Could not rename workspace: ' + errorMessage(err), 'error');
+          }
+        } else {
+          renderWorkspaces();
+        }
+      };
+
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          saveRename();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          finished = true;
+          renderWorkspaces();
+        }
+      });
+      input.addEventListener('blur', saveRename);
+
+      text.replaceWith(input);
+      input.focus();
+      input.select();
+    };
+
+    editBtn.addEventListener('click', startRename);
+    text.addEventListener('dblclick', startRename);
+    pill.append(dot, text, editBtn);
 
     if (w.id !== 'default') {
       const closeBtn = createElement('button', 'ws-tab-close', '✕');
@@ -757,23 +807,6 @@ function renderWorkspaces() {
         }
       } catch (err) {
         notify('Failed to switch workspace: ' + errorMessage(err), 'error');
-      }
-    });
-
-    pill.addEventListener('dblclick', async function (event) {
-      event.stopPropagation();
-      const currentName = w.name || 'Workspace';
-      const promptName = prompt('Rename workspace "' + currentName + '":', currentName);
-      if (promptName && promptName.trim() && promptName.trim() !== currentName) {
-        try {
-          if (typeof api.renameWorkspace === 'function') {
-            const res = await api.renameWorkspace(w.id, promptName.trim());
-            applyBrowserState(res);
-            notify('Renamed workspace to: ' + promptName.trim(), 'success', 2500);
-          }
-        } catch (err) {
-          notify('Could not rename workspace: ' + errorMessage(err), 'error');
-        }
       }
     });
 
