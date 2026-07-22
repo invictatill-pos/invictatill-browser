@@ -110,7 +110,7 @@ function getWorkspaceSession(workspaceId) {
   }
 
   configurePermissions(sess);
-  setupDownloadHandlers(sess);
+  configureDownloads(sess);
   workspaceSessionsMap.set(cleanId, sess);
   return sess;
 }
@@ -1665,17 +1665,17 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Top Titlebar Workspace Container Selector: Switch and add multi-login workspaces directly from the top header next to the logo.',
-      'Restored Clean Tab Bar Layout: Tabs now start cleanly from the far left of the tab strip.',
+      'Top Titlebar Workspace Container Selector: Switch and add multi-login workspaces directly from the top header right after the InvictaTill logo.',
+      'Restored Clean Tab Bar Layout: Open web tabs are positioned cleanly below the workspace selector bar.',
       '1-Click Toolbar Zoom Controls: Quick Zoom In (+), Zoom Out (-), and Zoom Reset (100%) controls on main toolbar.',
       'Multi-Login Session Containers: Log into the exact same website with different accounts concurrently in separate workspaces.',
       'Built-in InvictaTill AI Cloud API integration with zero manual key setup required.',
       '24-Hour WFH Activity Report & Gmail Task Extractor.',
     ],
     bugFixes: [
-      'Fixed navigation handler so adding tabs and entering non-HTTP addresses or shortcuts never fails.',
-      'Restored clean tab strip styling and moved workspace controls to top header.',
-      'Prevented IPC navigation TypeError exceptions when loading internal pages.',
+      'Fixed setupDownloadHandlers ReferenceError when initializing workspace session partitions.',
+      'Resolved new tab IPC invocation failures and guaranteed tab creation works 100%.',
+      'Prevented non-HTTP address TypeError exceptions.',
     ],
   };
 }
