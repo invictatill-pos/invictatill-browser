@@ -1,4 +1,4 @@
-# InvictaTill Browser 2.1.13 UI, Update, and Reliability Quality
+# InvictaTill Browser 2.1.14 Workspace and WFH Quality
 
 ## Completed scope
 
@@ -17,11 +17,15 @@
 - Added a responsive update card and manual check action to Settings, including explicit portable-build behavior.
 - Added automated update-controller and release-feed tests and a public release asset verifier.
 - Hardened release staging to require valid Authenticode signatures and verify every uploaded draft asset.
+- Persisted a separate last-active tab for every workspace and corrected related close, reopen, Ctrl+Tab, split-view, and deletion edge cases.
+- Added cross-workspace tab and command search, pinned tabs, copy-link, and close-other-tabs controls.
+- Added persistent focus and break sessions with pause/resume, title-bar countdown, native completion notification, and daily statistics.
+- Added remote-work launchers for Google Meet, Calendar, Gmail, and Microsoft Teams.
 
 ## Verification completed
 
 - `npm run check`
-- `npm test`, including updater lifecycle, error handling, and release-feed coverage
+- `npm test`, including workspace restoration, focus lifecycle, updater lifecycle, error handling, and release-feed coverage
 - `npm run test:e2e`, including real display-media capture, all share-source categories, cancellation, long-URL containment, dialogs, menu, drawer, and 900px responsive geometry
 - `npm audit --omit=dev`
 - `npm run build`
@@ -32,4 +36,4 @@
 
 ## Release requirement
 
-The generated installer and portable executable are not Authenticode-signed. Sign them with the approved production certificate and run `npm run verify:update-feed -- --tag v2.1.13` after publication before declaring the rollout complete.
+The generated installer and portable executable must be signed with a publicly trusted, timestamped production certificate. Run `npm run verify:update-feed -- --tag v2.1.14` after publication before declaring the rollout complete.

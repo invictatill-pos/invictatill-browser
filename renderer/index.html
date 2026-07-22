@@ -29,6 +29,10 @@
         </button>
       </div>
       <div class="titlebar-status" id="titlebar-status" role="status" aria-live="polite"></div>
+      <button class="focus-status-pill hidden" id="focus-status-pill" type="button" aria-label="Open active focus session" title="Open focus session">
+        <span class="focus-status-dot" aria-hidden="true"></span>
+        <span id="focus-status-pill-text">Focus 25:00</span>
+      </button>
       <div class="window-controls">
         <button class="window-button" id="btn-minimize" type="button" aria-label="Minimize window" title="Minimize">
           <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M1 6h10" stroke="currentColor"></path></svg>
@@ -51,6 +55,9 @@
       </button>
       <button class="chrome-button compact-action" id="btn-reopen-tab" type="button" aria-label="Reopen closed tab" title="Reopen closed tab (Ctrl+Shift+T)">
         <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5V2m0 0h3M3 2l3 3a5 5 0 1 1-1.4 6.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </button>
+      <button class="chrome-button compact-action" id="btn-command-center" type="button" aria-label="Search tabs and commands" title="Search tabs and commands (Ctrl+Shift+A)">
+        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"></circle><path d="m10 10 3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>
       </button>
     </div>
 
@@ -225,6 +232,7 @@
     <div class="drawer-tabs" role="tablist" aria-label="Workspace sections">
       <button class="drawer-tab active" id="drawer-tab-chat" type="button" role="tab" aria-selected="true" aria-controls="drawer-panel-chat" tabindex="0" data-panel="chat">Chat</button>
       <button class="drawer-tab" id="drawer-tab-tasks" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-tasks" tabindex="-1" data-panel="tasks">Tasks <span class="count-badge" id="task-badge-count">0</span></button>
+      <button class="drawer-tab" id="drawer-tab-focus" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-focus" tabindex="-1" data-panel="focus">Focus</button>
       <button class="drawer-tab" id="drawer-tab-history" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-history" tabindex="-1" data-panel="history">History</button>
       <button class="drawer-tab" id="drawer-tab-downloads" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-downloads" tabindex="-1" data-panel="downloads">Downloads <span class="count-badge hidden" id="download-badge-count">0</span></button>
       <button class="drawer-tab" id="drawer-tab-settings" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-settings" tabindex="-1" data-panel="settings">Settings</button>
@@ -282,6 +290,59 @@
         </div>
         <div class="data-list" id="pending-tasks-list"></div>
         <p class="empty-state" id="tasks-empty">No tasks yet.</p>
+      </section>
+
+      <section class="drawer-panel" id="drawer-panel-focus" role="tabpanel" aria-labelledby="drawer-tab-focus" data-panel="focus" hidden>
+        <div class="focus-hero" id="focus-hero" data-status="idle" data-mode="focus">
+          <p class="eyebrow" id="focus-mode-label">Ready for focused work</p>
+          <time class="focus-clock" id="focus-clock" datetime="PT25M">25:00</time>
+          <p class="focus-intention-display" id="focus-intention-display">Choose one clear outcome for this session.</p>
+          <progress id="focus-progress" max="100" value="0">0%</progress>
+        </div>
+
+        <form class="focus-form" id="focus-form">
+          <label class="setting-row" for="focus-intention">
+            <span>Session intention</span>
+            <input id="focus-intention" type="text" maxlength="240" placeholder="e.g. Finish the weekly status report">
+          </label>
+          <label class="setting-row" for="focus-duration">
+            <span>Focus length</span>
+            <select id="focus-duration">
+              <option value="25">25 minutes</option>
+              <option value="50">50 minutes</option>
+              <option value="90">90 minutes</option>
+            </select>
+          </label>
+          <div class="focus-start-actions" id="focus-start-actions">
+            <button class="primary-button" id="btn-start-focus" type="submit">Start focus</button>
+            <button class="secondary-button" id="btn-start-break" type="button">5 min break</button>
+          </div>
+        </form>
+
+        <div class="focus-running-actions hidden" id="focus-running-actions">
+          <button class="primary-button" id="btn-pause-focus" type="button">Pause</button>
+          <button class="danger-button" id="btn-end-focus" type="button">End session</button>
+        </div>
+
+        <div class="focus-stats" aria-label="Today's focus summary">
+          <div><strong id="focus-sessions-today">0</strong><span>Sessions today</span></div>
+          <div><strong id="focus-minutes-today">0</strong><span>Focused minutes</span></div>
+        </div>
+
+        <section class="work-launcher" aria-labelledby="work-launcher-title">
+          <div class="section-heading compact">
+            <div>
+              <p class="eyebrow">One-click launch</p>
+              <h3 id="work-launcher-title">Remote work essentials</h3>
+            </div>
+          </div>
+          <div class="work-launcher-grid">
+            <button type="button" data-work-url="https://meet.google.com">Google Meet</button>
+            <button type="button" data-work-url="https://calendar.google.com">Calendar</button>
+            <button type="button" data-work-url="https://mail.google.com">Gmail</button>
+            <button type="button" data-work-url="https://teams.microsoft.com">Teams</button>
+          </div>
+        </section>
       </section>
 
       <section class="drawer-panel" id="drawer-panel-history" role="tabpanel" aria-labelledby="drawer-tab-history" data-panel="history" hidden>
@@ -407,6 +468,9 @@
   <div class="browser-menu hidden" id="browser-menu" role="menu" aria-label="Browser menu">
     <button role="menuitem" type="button" id="menu-new-tab">New tab <kbd>Ctrl+T</kbd></button>
     <button role="menuitem" type="button" id="menu-duplicate-tab">Duplicate tab</button>
+    <button role="menuitem" type="button" id="menu-pin-tab">Pin tab</button>
+    <button role="menuitem" type="button" id="menu-copy-link">Copy page link</button>
+    <button role="menuitem" type="button" id="menu-close-other-tabs">Close other tabs</button>
     <button role="menuitem" type="button" id="menu-reopen-tab">Reopen closed tab <kbd>Ctrl+Shift+T</kbd></button>
     <div class="menu-separator" role="separator"></div>
     <button role="menuitem" type="button" id="menu-print">Print… <kbd>Ctrl+P</kbd></button>
@@ -425,6 +489,26 @@
     <button role="menuitem" type="button" id="menu-settings">Settings</button>
     <button role="menuitem" type="button" id="menu-release-notes">Release notes</button>
     <p class="menu-version">InvictaTill Browser <span id="about-version"></span></p>
+  </div>
+
+  <div class="command-backdrop hidden" id="command-backdrop">
+    <section class="command-palette" id="command-palette" role="dialog" aria-modal="true" aria-labelledby="command-title" tabindex="-1">
+      <header class="command-header">
+        <span class="command-search-icon" aria-hidden="true">⌕</span>
+        <div class="command-input-wrap">
+          <h2 class="visually-hidden" id="command-title">Search tabs and browser commands</h2>
+          <label class="visually-hidden" for="command-input">Search open tabs and commands</label>
+          <input id="command-input" type="search" autocomplete="off" placeholder="Search tabs, workspaces, and browser commands…">
+        </div>
+        <kbd>Esc</kbd>
+      </header>
+      <div class="command-results" id="command-results" role="listbox" aria-label="Matching tabs and commands"></div>
+      <footer class="command-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span>
+        <span><kbd>Enter</kbd> Open</span>
+        <span id="command-result-count" aria-live="polite"></span>
+      </footer>
+    </section>
   </div>
 
   <div class="notification-stack" id="notification-stack" role="status" aria-live="polite" aria-atomic="false"></div>

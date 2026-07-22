@@ -8,6 +8,8 @@ const files = [
   'main.js',
   'preload.js',
   'updater-controller.js',
+  'focus-controller.js',
+  'workspace-state.js',
   path.join('renderer', 'renderer.js'),
   path.join('scripts', 'check.js'),
   path.join('scripts', 'after-pack.js'),
@@ -17,6 +19,8 @@ const files = [
   path.join('tests', 'package.test.js'),
   path.join('tests', 'updater.test.js'),
   path.join('tests', 'update-feed.test.js'),
+  path.join('tests', 'focus-controller.test.js'),
+  path.join('tests', 'workspace-state.test.js'),
   path.join('tests', 'electron-smoke.js'),
 ];
 

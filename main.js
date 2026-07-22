@@ -13,6 +13,7 @@ const {
   shell,
   clipboard,
   desktopCapturer,
+  Notification,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -21,6 +22,12 @@ const { spawn } = require('child_process');
 const { pathToFileURL, fileURLToPath } = require('url');
 const Store = require('electron-store');
 const { createUpdateController } = require('./updater-controller');
+const { createFocusController } = require('./focus-controller');
+const {
+  chooseRememberedTab,
+  restoreWorkspaceMemory,
+  serializeWorkspaceMemory,
+} = require('./workspace-state');
 
 // Enforce Chromium's renderer sandbox before app.ready.
 app.enableSandbox();
@@ -32,6 +39,7 @@ app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
 const privateInstance = process.argv.includes('--private-mode');
 const gamingInstance = process.argv.includes('--gaming-mode');
+const testMode = process.argv.includes('--test-mode') || process.env.INVICTA_TEST_MODE === '1';
 const portableInstance = app.isPackaged && Boolean(
   process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR
 );
@@ -96,12 +104,40 @@ const DEFAULT_WORKSPACES = [
 let workspaceList = [...DEFAULT_WORKSPACES];
 let activeWorkspaceId = 'default';
 const workspaceSessionsMap = new Map();
+let lastActiveTabByWorkspace = new Map();
 
 function getWorkspaceDetails(workspaceId) {
   const targetId = workspaceId || activeWorkspaceId || 'default';
   const found = workspaceList.find((w) => w.id === targetId);
   if (found) return found;
   return { id: targetId, name: targetId, icon: '📂', color: '#6366f1' };
+}
+
+function getWorkspaceTabs(workspaceId) {
+  const targetId = workspaceId || activeWorkspaceId || 'default';
+  return Array.from(tabs.values()).filter(
+    (tab) => (tab.workspaceId || 'default') === targetId
+  ).sort((left, right) => Number(Boolean(right.pinned)) - Number(Boolean(left.pinned)));
+}
+
+function rememberWorkspaceTab(tab) {
+  if (!tab) return;
+  lastActiveTabByWorkspace.set(tab.workspaceId || 'default', tab.id);
+}
+
+function activateWorkspace(workspaceId) {
+  const found = workspaceList.find((workspace) => workspace.id === workspaceId);
+  if (!found) return getBrowserState();
+  activeWorkspaceId = found.id;
+  const workspaceTabs = getWorkspaceTabs(activeWorkspaceId);
+  const target = chooseRememberedTab(
+    activeWorkspaceId,
+    workspaceTabs,
+    lastActiveTabByWorkspace.get(activeWorkspaceId)
+  );
+  if (target) switchTab(target.id);
+  else createTab('about:blank', { workspaceId: activeWorkspaceId, activate: true });
+  return getBrowserState();
 }
 
 let pendingScreenShareRequest = null;
@@ -256,6 +292,7 @@ function saveWorkspaces() {
 
 let autoUpdater = null;
 let updateController = null;
+let focusController = null;
 try {
   autoUpdater = require('electron-updater').autoUpdater;
 } catch (error) {
@@ -446,6 +483,7 @@ function publicTab(tab) {
     audible: Boolean(tab.audible),
     zoom: tab.zoom,
     crashed: Boolean(tab.crashed),
+    pinned: Boolean(tab.pinned),
     workspaceId: tab.workspaceId || 'default',
     workspaceName: ws.name,
     workspaceIcon: ws.icon,
@@ -455,9 +493,7 @@ function publicTab(tab) {
 }
 
 function getBrowserState() {
-  const currentWorkspaceTabs = Array.from(tabs.values()).filter(
-    (t) => (t.workspaceId || 'default') === activeWorkspaceId
-  );
+  const currentWorkspaceTabs = getWorkspaceTabs(activeWorkspaceId);
   return {
     tabs: currentWorkspaceTabs.map(publicTab),
     activeTabId,
@@ -473,6 +509,10 @@ function getBrowserState() {
     activeWorkspaceId,
     activeWorkspace: getWorkspaceDetails(activeWorkspaceId),
   };
+}
+
+function getAllTabs() {
+  return workspaceList.flatMap((workspace) => getWorkspaceTabs(workspace.id).map(publicTab));
 }
 
 function getTab(id) {
@@ -502,22 +542,24 @@ function flushSessionState() {
     sessionSaveTimer = null;
   }
   if (privateInstance || !store) return;
-  const serializedTabs = Array.from(tabs.values())
-    .slice(0, 30)
+  const persistedTabs = Array.from(tabs.values()).slice(0, 30);
+  const serializedTabs = persistedTabs
     .map((tab) => ({
       url: isAllowedRemoteUrl(tab.url, true) ? tab.url : 'about:blank',
       zoom: tab.zoom,
       muted: tab.isMuted,
+      pinned: Boolean(tab.pinned),
       workspaceId: tab.workspaceId || 'default',
     }));
   const activeIndex = Math.max(
     0,
-    Array.from(tabs.keys()).indexOf(activeTabId)
+    persistedTabs.findIndex((tab) => tab.id === activeTabId)
   );
   store.set('browser_session_v2', {
     tabs: serializedTabs,
     activeIndex,
     activeWorkspaceId,
+    lastActiveTabIndexes: serializeWorkspaceMemory(persistedTabs, lastActiveTabByWorkspace),
     savedAt: Date.now(),
   });
 }
@@ -716,6 +758,9 @@ function handleShortcut(event, input, tabId) {
     handled = true;
   } else if (command && key === 'l') {
     sendToShell('focus-address-bar', null);
+    handled = true;
+  } else if (command && shift && key === 'a') {
+    sendToShell('open-command-palette', null);
     handled = true;
   } else if (command && key === 'r') {
     reloadActive(Boolean(shift));
@@ -959,12 +1004,16 @@ function createTab(url, options) {
     favicon: '',
     isLoading: normalizedUrl !== 'about:blank',
     isMuted: Boolean(restored.muted),
+    pinned: Boolean(restored.pinned),
     audible: false,
     zoom,
     crashed: false,
   };
 
   tabs.set(id, tab);
+  if (!lastActiveTabByWorkspace.has(targetWorkspaceId)) {
+    lastActiveTabByWorkspace.set(targetWorkspaceId, id);
+  }
   mainWindow.contentView.addChildView(view);
   attachTabEvents(tab);
   view.webContents.setAudioMuted(tab.isMuted);
@@ -1009,8 +1058,9 @@ function destroyTabView(tab) {
 
 function closeTab(id) {
   const tab = getTab(id);
-  const ids = Array.from(tabs.keys());
-  const index = ids.indexOf(tab.id);
+  const wsId = tab.workspaceId || 'default';
+  const workspaceTabsBeforeClose = getWorkspaceTabs(wsId);
+  const workspaceIndex = workspaceTabsBeforeClose.findIndex((item) => item.id === tab.id);
   const wasActive = activeTabId === tab.id;
 
   if (tab.url && tab.url !== 'about:blank') {
@@ -1019,11 +1069,12 @@ function closeTab(id) {
       zoom: tab.zoom,
       muted: tab.isMuted,
       title: tab.title,
+      workspaceId: wsId,
+      pinned: Boolean(tab.pinned),
     });
     if (closedTabs.length > MAX_CLOSED_TABS) closedTabs.length = MAX_CLOSED_TABS;
   }
 
-  const wsId = tab.workspaceId || 'default';
   tabs.delete(tab.id);
   destroyTabView(tab);
 
@@ -1033,18 +1084,22 @@ function closeTab(id) {
 
   sendToShell('tab-closed', { id: tab.id });
 
-  const remainingWsTabs = Array.from(tabs.values()).filter(
-    (t) => (t.workspaceId || 'default') === wsId
-  );
+  const remainingWsTabs = getWorkspaceTabs(wsId);
+  const rememberedWasClosed = lastActiveTabByWorkspace.get(wsId) === tab.id;
 
   if (remainingWsTabs.length === 0) {
+    lastActiveTabByWorkspace.delete(wsId);
     if (activeWorkspaceId === wsId) {
       createTab('about:blank', { workspaceId: wsId, activate: true });
     }
   } else if (wasActive) {
-    const nextTab = remainingWsTabs[Math.min(index, remainingWsTabs.length - 1)];
+    const nextTab = remainingWsTabs[Math.min(Math.max(workspaceIndex, 0), remainingWsTabs.length - 1)];
     if (nextTab) switchTab(nextTab.id);
   } else {
+    if (rememberedWasClosed) {
+      const fallback = remainingWsTabs[Math.min(Math.max(workspaceIndex, 0), remainingWsTabs.length - 1)];
+      if (fallback) rememberWorkspaceTab(fallback);
+    }
     resizeViews();
   }
 
@@ -1054,9 +1109,11 @@ function closeTab(id) {
 
 function switchTab(id) {
   const tab = getTab(id);
+  activeWorkspaceId = tab.workspaceId || 'default';
   activeTabId = tab.id;
+  rememberWorkspaceTab(tab);
   if (splitScreen.secondaryTabId === tab.id) {
-    const replacement = Array.from(tabs.values()).find((item) => item.id !== tab.id);
+    const replacement = getWorkspaceTabs(activeWorkspaceId).find((item) => item.id !== tab.id);
     splitScreen.secondaryTabId = replacement ? replacement.id : null;
     splitScreen.enabled = Boolean(replacement);
   }
@@ -1067,7 +1124,7 @@ function switchTab(id) {
 }
 
 function cycleTabs(direction) {
-  const ids = Array.from(tabs.keys());
+  const ids = getWorkspaceTabs(activeWorkspaceId).map((tab) => tab.id);
   if (ids.length < 2) return getActiveTab() ? publicTab(getActiveTab()) : null;
   const current = Math.max(0, ids.indexOf(activeTabId));
   const next = (current + direction + ids.length) % ids.length;
@@ -1077,17 +1134,42 @@ function cycleTabs(direction) {
 function duplicateTab(id) {
   const tab = getTab(id);
   return createTab(tab.url || 'about:blank', {
+    workspaceId: tab.workspaceId || 'default',
     activate: true,
     restored: { zoom: tab.zoom, muted: tab.isMuted },
   });
 }
 
+function setTabPinned(id, pinned) {
+  const tab = getTab(id);
+  tab.pinned = Boolean(pinned);
+  emitTab('tab-update', tab);
+  scheduleSessionSave();
+  return getBrowserState();
+}
+
+function closeOtherTabs(id) {
+  const keep = getTab(id);
+  const otherIds = getWorkspaceTabs(keep.workspaceId || 'default')
+    .filter((tab) => tab.id !== keep.id)
+    .map((tab) => tab.id);
+  for (const tabId of otherIds) {
+    if (tabs.has(tabId)) closeTab(tabId);
+  }
+  if (tabs.has(keep.id)) switchTab(keep.id);
+  return getBrowserState();
+}
+
 function reopenClosedTab() {
   const closed = closedTabs.shift();
   if (!closed) return null;
+  const workspaceId = closed.workspaceId && workspaceList.some((workspace) => workspace.id === closed.workspaceId)
+    ? closed.workspaceId
+    : activeWorkspaceId;
   return createTab(closed.url, {
+    workspaceId,
     activate: true,
-    restored: { zoom: closed.zoom, muted: closed.muted },
+    restored: { zoom: closed.zoom, muted: closed.muted, pinned: closed.pinned },
   });
 }
 
@@ -1747,7 +1829,7 @@ function restoreTabs() {
     activeWorkspaceId = saved.activeWorkspaceId;
   }
 
-  const createdIds = [];
+  const createdTabs = [];
   for (const entry of entries) {
     const url = entry && isAllowedRemoteUrl(entry.url, true) ? entry.url : 'about:blank';
     const wsId = entry && entry.workspaceId && workspaceList.some((w) => w.id === entry.workspaceId)
@@ -1759,16 +1841,28 @@ function restoreTabs() {
       restored: {
         zoom: entry && Number.isFinite(entry.zoom) ? entry.zoom : 1,
         muted: Boolean(entry && entry.muted),
+        pinned: Boolean(entry && entry.pinned),
       },
     });
-    createdIds.push(created.id);
+    createdTabs.push({ id: created.id, workspaceId: wsId });
   }
 
+  lastActiveTabByWorkspace = restoreWorkspaceMemory(
+    createdTabs,
+    saved && saved.lastActiveTabIndexes
+  );
+
   const activeIndex = Number.isInteger(saved.activeIndex)
-    ? Math.min(Math.max(saved.activeIndex, 0), createdIds.length - 1)
+    ? Math.min(Math.max(saved.activeIndex, 0), createdTabs.length - 1)
     : 0;
-  if (createdIds[activeIndex]) {
-    switchTab(createdIds[activeIndex]);
+  const rememberedTabId = lastActiveTabByWorkspace.get(activeWorkspaceId);
+  const legacyActive = createdTabs[activeIndex];
+  if (rememberedTabId) {
+    switchTab(rememberedTabId);
+  } else if (legacyActive) {
+    switchTab(legacyActive.id);
+  } else {
+    activateWorkspace(activeWorkspaceId);
   }
 }
 
@@ -1898,6 +1992,9 @@ function getReleaseDetails() {
       'Cross-Workspace Password Vault 🔑: Encrypted password manager to save and autofill passwords across all your workspaces.',
       'Visible Tab Titles & Drag-and-Drop Reordering: Complete tab visibility and custom reordering.',
       'Update Center: Check, download, restart, and error states are now visible in Settings with manual retry support.',
+      'Workspace Continuity: Each workspace reopens its own last active tab, including after browser restart.',
+      'Tab Command Center: Search tabs across workspaces, pin important tabs, copy links, and run browser actions with Ctrl+Shift+A.',
+      'WFH Focus Sessions: Persistent focus and break timers, pause/resume, daily statistics, completion alerts, and remote-work launchers.',
     ],
     bugFixes: [
       'Screen picker visibility: Fixed malformed modal markup that left the picker trapped inside hidden dialogs.',
@@ -1908,6 +2005,8 @@ function getReleaseDetails() {
       'Address suggestions: Restored the renderer DOM-safety contract and passing test suite.',
       'Automatic updates: Restored the complete updater event bridge, Settings controls, restart action, and portable-build guidance.',
       'Release safety: Added required-asset validation for latest.yml and installer blockmaps before a draft can be approved.',
+      'Workspace switching: Fixed switching to the first tab instead of the last tab used in that workspace.',
+      'Workspace navigation: Ctrl+Tab, closed tabs, deleted workspaces, and split-view fallbacks now stay workspace-scoped.',
     ],
   };
 }
@@ -1939,6 +2038,31 @@ async function checkForUpdates() {
 function installUpdate() {
   if (!updateController) setupAutoUpdater();
   return updateController.install();
+}
+
+function setupFocusController() {
+  if (focusController) return focusController.getState();
+  focusController = createFocusController({
+    loadState: () => (!privateInstance && store ? store.get('focus_session_v1', null) : null),
+    saveState: (value) => {
+      if (!privateInstance && store) store.set('focus_session_v1', value);
+    },
+    loadHistory: () => (!privateInstance && store ? store.get('focus_history_v1', []) : []),
+    saveHistory: (value) => {
+      if (!privateInstance && store) store.set('focus_history_v1', value);
+    },
+    send: sendToShell,
+    notify: (mode, intention) => {
+      if (testMode || !Notification.isSupported()) return;
+      const isBreak = mode === 'break';
+      const title = isBreak ? 'Break complete' : 'Focus session complete';
+      const body = isBreak
+        ? 'Ready for the next focused work block.'
+        : (intention ? 'Completed: ' + intention : 'Great work. Take a short recovery break.');
+      new Notification({ title, body, silent: false }).show();
+    },
+  });
+  return focusController.configure();
 }
 
 function getRawAiConfig() {
@@ -2749,6 +2873,7 @@ function launchPrivateWindow() {
 
 function registerIpcHandlers() {
   registerHandler('get-browser-state', () => getBrowserState());
+  registerHandler('get-all-tabs', () => getAllTabs());
   registerHandler('new-tab', (event, url) =>
     createTab(url === undefined || url === null || url === '' ? 'about:blank' : url, {
       activate: true,
@@ -2756,6 +2881,12 @@ function registerIpcHandlers() {
   registerHandler('close-tab', (event, id) => closeTab(id));
   registerHandler('switch-tab', (event, id) => switchTab(id));
   registerHandler('duplicate-tab', (event, id) => duplicateTab(id));
+  registerHandler('set-tab-pinned', (event, payload) => {
+    assertPlainObject(payload, 'pin tab payload');
+    if (typeof payload.pinned !== 'boolean') throw new TypeError('pinned must be a boolean');
+    return setTabPinned(payload.id, payload.pinned);
+  });
+  registerHandler('close-other-tabs', (event, id) => closeOtherTabs(id));
   registerHandler('reopen-closed-tab', () => reopenClosedTab());
   registerHandler('navigate', (event, url) => {
     const tab = getActiveTab();
@@ -2892,20 +3023,7 @@ function registerIpcHandlers() {
   }));
 
   registerHandler('set-active-workspace', (event, workspaceId) => {
-    const found = workspaceList.find((w) => w.id === workspaceId);
-    if (found) {
-      activeWorkspaceId = found.id;
-      const workspaceTabs = Array.from(tabs.values()).filter(
-        (t) => (t.workspaceId || 'default') === activeWorkspaceId
-      );
-      if (workspaceTabs.length === 0) {
-        createTab('about:blank', { workspaceId: activeWorkspaceId, activate: true });
-      } else {
-        const targetTab = workspaceTabs.find((t) => t.id === activeTabId) || workspaceTabs[0];
-        if (targetTab) switchTab(targetTab.id);
-      }
-    }
-    return getBrowserState();
+    return activateWorkspace(workspaceId);
   });
 
   registerHandler('add-workspace', (event, payload) => {
@@ -2926,15 +3044,19 @@ function registerIpcHandlers() {
     if (workspaceId === 'default') {
       throw new Error('Cannot delete the Default workspace');
     }
+    const deletedActiveWorkspace = activeWorkspaceId === workspaceId;
     workspaceList = workspaceList.filter((w) => w.id !== workspaceId);
-    if (activeWorkspaceId === workspaceId) {
+    if (deletedActiveWorkspace) {
       activeWorkspaceId = 'default';
+      activeTabId = null;
     }
     for (const [tabId, tab] of Array.from(tabs.entries())) {
       if (tab.workspaceId === workspaceId) {
         closeTab(tabId);
       }
     }
+    lastActiveTabByWorkspace.delete(workspaceId);
+    if (deletedActiveWorkspace || !tabs.has(activeTabId)) activateWorkspace(activeWorkspaceId);
     saveWorkspaces();
     return getBrowserState();
   });
@@ -3209,6 +3331,32 @@ function registerIpcHandlers() {
   });
   registerHandler('check-updates', () => checkForUpdates());
   registerHandler('install-update', () => installUpdate());
+  registerHandler('get-focus-state', () => {
+    if (!focusController) setupFocusController();
+    return focusController.getState();
+  });
+  registerHandler('start-focus-session', (event, payload) => {
+    assertPlainObject(payload, 'focus session');
+    if (!focusController) setupFocusController();
+    return focusController.start({
+      mode: payload.mode,
+      durationMinutes: payload.durationMinutes,
+      intention: boundedString(payload.intention || '', 'focus intention', 240, true),
+      workspaceId: activeWorkspaceId,
+    });
+  });
+  registerHandler('pause-focus-session', () => {
+    if (!focusController) setupFocusController();
+    return focusController.pause();
+  });
+  registerHandler('resume-focus-session', () => {
+    if (!focusController) setupFocusController();
+    return focusController.resume();
+  });
+  registerHandler('cancel-focus-session', () => {
+    if (!focusController) setupFocusController();
+    return focusController.cancel();
+  });
 
   registerHandler('get-system-info', () => ({
     platform: os.platform(),
@@ -3324,6 +3472,7 @@ app.whenReady().then(() => {
   configureScreenSharePicker(browserSession);
   configureDownloads(browserSession);
   loadPersistentBrowserData();
+  setupFocusController();
   registerIpcHandlers();
   createMainWindow();
   restoreTabs();
@@ -3361,6 +3510,7 @@ app.on('before-quit', () => {
   }
   for (const controller of aiRequests.values()) controller.abort();
   aiRequests.clear();
+  if (focusController) focusController.dispose();
   if (powerBlockerId !== null && powerSaveBlocker.isStarted(powerBlockerId)) {
     powerSaveBlocker.stop(powerBlockerId);
   }

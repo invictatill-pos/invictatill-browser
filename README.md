@@ -11,6 +11,7 @@ Regular tabs share the normal persistent browser session. Private windows use an
 ## Browser features
 
 - Multi-tab browsing with reopen-closed-tab and optional session restore.
+- Per-workspace last-active tab restoration, pinned tabs, close-other-tabs, and searchable tabs/commands with `Ctrl+Shift+A`.
 - Searchable browsing history, bookmarks, and recent-page shortcuts.
 - Managed downloads with progress and completed-download controls.
 - Private windows backed by an isolated, non-persistent session.
@@ -19,6 +20,7 @@ Regular tabs share the normal persistent browser session. Private windows use an
 - Find in page, per-tab mute, page zoom, screenshots, printing, and save-to-PDF.
 - Split view for working with two tabs side by side.
 - Clear-browsing-data controls and visible update status.
+- Persistent focus sessions with pause/resume, completion notifications, daily focused-time statistics, recovery breaks, and one-click remote-work launchers.
 
 ## Invicta AI
 
@@ -88,7 +90,7 @@ Installed Setup builds check the stable GitHub release feed after startup. Updat
 A public update release is valid only when the Setup executable, matching `.blockmap`, and `latest.yml` are published together. Verify a published tag with:
 
 ```powershell
-npm run verify:update-feed -- --tag v2.1.13
+npm run verify:update-feed -- --tag v2.1.14
 ```
 
 This command is read-only and fails when required stable-channel assets are absent.

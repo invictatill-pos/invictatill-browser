@@ -28,12 +28,32 @@ const els = {
   drawerClose: $('btn-close-drawer'),
   menuButton: $('btn-menu'),
   menu: $('browser-menu'),
+  commandBackdrop: $('command-backdrop'),
+  commandPalette: $('command-palette'),
+  commandInput: $('command-input'),
+  commandResults: $('command-results'),
+  commandResultCount: $('command-result-count'),
   findBar: $('find-bar'),
   findInput: $('find-input'),
   findResults: $('find-results'),
   notificationStack: $('notification-stack'),
   modeBadgeText: $('mode-badge-text'),
   titlebarStatus: $('titlebar-status'),
+  focusStatusPill: $('focus-status-pill'),
+  focusStatusPillText: $('focus-status-pill-text'),
+  focusHero: $('focus-hero'),
+  focusClock: $('focus-clock'),
+  focusModeLabel: $('focus-mode-label'),
+  focusIntentionDisplay: $('focus-intention-display'),
+  focusProgress: $('focus-progress'),
+  focusForm: $('focus-form'),
+  focusIntention: $('focus-intention'),
+  focusDuration: $('focus-duration'),
+  focusStartActions: $('focus-start-actions'),
+  focusRunningActions: $('focus-running-actions'),
+  pauseFocusButton: $('btn-pause-focus'),
+  focusSessionsToday: $('focus-sessions-today'),
+  focusMinutesToday: $('focus-minutes-today'),
   bookmarksGrid: $('bookmarks-grid'),
   bookmarksEmpty: $('bookmarks-empty'),
   recentList: $('recent-list'),
@@ -142,6 +162,9 @@ const state = {
   engineMode: 'workspace',
   drawerOpen: false,
   menuOpen: false,
+  commandItems: [],
+  commandFiltered: [],
+  commandSelection: 0,
   findOpen: false,
   modalOpen: false,
   lastViewVisible: null,
@@ -173,7 +196,9 @@ const state = {
   currentVersion: '',
   updateBannerVisible: false,
   previousModalFocus: null,
-  activityTimer: null
+  activityTimer: null,
+  focusState: null,
+  focusTicker: null
 };
 
 function createElement(tag, className, textValue) {
@@ -201,6 +226,7 @@ function visibleModalSurface() {
     [els.addWorkspaceModalBackdrop, els.addWorkspaceModal],
     [els.passwordsModalBackdrop, els.passwordsModal],
     [els.updateModalBackdrop, els.updateModal],
+    [els.commandBackdrop, els.commandPalette],
   ];
   for (const surface of surfaces) {
     if (surface[0] && !surface[0].classList.contains('hidden')) return surface;
@@ -386,6 +412,7 @@ function normalizeTab(raw) {
     audible: Boolean(tab.audible || tab.isAudible),
     muted: Boolean(tab.muted || tab.isMuted),
     crashed: Boolean(tab.crashed || tab.status === 'crashed'),
+    pinned: Boolean(tab.pinned),
     canGoBack: Boolean(tab.canGoBack),
     canGoForward: Boolean(tab.canGoForward),
     workspaceId: tab.workspaceId || 'default',
@@ -491,6 +518,7 @@ function renderTabs() {
     item.dataset.tabId = idKey(tab.id);
     item.setAttribute('role', 'presentation');
     item.classList.toggle('active', selected);
+    item.classList.toggle('pinned', tab.pinned);
     if (tab.loading) item.classList.add('loading');
     if (tab.crashed) item.classList.add('crashed');
 
@@ -551,7 +579,13 @@ function renderTabs() {
       wsDot.title = 'Workspace: ' + (tab.workspaceName || 'Default');
       selectButton.prepend(wsDot);
     }
-    selectButton.append(faviconWrap, title);
+    if (tab.pinned) {
+      const pin = createElement('span', 'tab-pin-indicator', '•');
+      pin.setAttribute('aria-hidden', 'true');
+      selectButton.append(faviconWrap, pin, title);
+    } else {
+      selectButton.append(faviconWrap, title);
+    }
     item.append(selectButton, audioButton, closeButton);
 
     item.draggable = true;
@@ -659,6 +693,10 @@ function renderBrowserControls() {
   els.splitButton.disabled = !state.splitScreen && state.tabs.filter(function (item) { return !isNewTabUrl(item.url); }).length < 2;
   $('btn-screenshot').disabled = !hasPage;
   $('menu-duplicate-tab').disabled = !tab;
+  $('menu-pin-tab').disabled = !tab;
+  $('menu-pin-tab').textContent = tab && tab.pinned ? 'Unpin tab' : 'Pin tab';
+  $('menu-copy-link').disabled = !hasPage;
+  $('menu-close-other-tabs').disabled = state.tabs.length < 2;
   $('menu-print').disabled = !hasPage;
   $('menu-save-pdf').disabled = !hasPage;
   $('menu-devtools').disabled = !hasPage;
@@ -1362,7 +1400,11 @@ async function closeTab(id) {
 async function switchTab(id) {
   if (sameId(id, state.activeTabId)) return;
   try {
-    await invoke('switchTab', id);
+    const result = await invoke('switchTab', id);
+    if (result && result.workspaceId && result.workspaceId !== state.activeWorkspaceId) {
+      await refreshBrowserState();
+      return;
+    }
     state.activeTabId = id;
     renderTabs();
     renderBrowserControls();
@@ -1378,6 +1420,28 @@ async function duplicateTab(id) {
     await refreshBrowserState();
   } catch (error) {
     notify('Could not duplicate tab: ' + errorMessage(error), 'error');
+  }
+}
+
+async function togglePinnedTab(id, pinned) {
+  try {
+    const result = await invoke('setTabPinned', id, pinned);
+    closeMenu();
+    if (result) applyBrowserState(result);
+    notify(pinned ? 'Tab pinned to this workspace.' : 'Tab unpinned.', 'success', 2500);
+  } catch (error) {
+    notify('Could not update pinned tab: ' + errorMessage(error), 'error');
+  }
+}
+
+async function closeOtherWorkspaceTabs(id) {
+  try {
+    const result = await invoke('closeOtherTabs', id);
+    closeMenu();
+    if (result) applyBrowserState(result);
+    notify('Other tabs in this workspace were closed.', 'success', 2500);
+  } catch (error) {
+    notify('Could not close other tabs: ' + errorMessage(error), 'error');
   }
 }
 
@@ -1955,6 +2019,117 @@ async function clearFinishedDownloads() {
   }
 }
 
+function focusRemainingSeconds(data) {
+  if (!data) return 25 * 60;
+  if (data.status === 'active' && Number.isFinite(Number(data.endsAt))) {
+    return Math.max(0, Math.ceil((Number(data.endsAt) - Date.now()) / 1000));
+  }
+  if (data.status === 'paused') return Math.max(0, Number(data.remainingSeconds) || 0);
+  return Math.max(0, Math.round((Number(data.durationMinutes) || 25) * 60));
+}
+
+function formatFocusTime(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainder = String(safeSeconds % 60).padStart(2, '0');
+  return String(minutes).padStart(2, '0') + ':' + remainder;
+}
+
+function renderFocusCountdown() {
+  const data = state.focusState || { status: 'idle', mode: 'focus', durationMinutes: 25, stats: {} };
+  const remaining = focusRemainingSeconds(data);
+  const durationSeconds = Math.max(60, (Number(data.durationMinutes) || 25) * 60);
+  const progress = data.status === 'idle' ? 0 : clamp(((durationSeconds - remaining) / durationSeconds) * 100, 0, 100);
+  const timeText = formatFocusTime(remaining);
+  els.focusClock.textContent = timeText;
+  els.focusClock.setAttribute('datetime', 'PT' + Math.ceil(remaining / 60) + 'M');
+  els.focusProgress.value = progress;
+  els.focusProgress.textContent = Math.round(progress) + '%';
+  if (data.status === 'active' || data.status === 'paused') {
+    const label = data.mode === 'break' ? 'Break' : 'Focus';
+    els.focusStatusPillText.textContent = label + ' ' + timeText;
+    setHidden(els.focusStatusPill, false);
+  } else {
+    setHidden(els.focusStatusPill, true);
+  }
+}
+
+function applyFocusState(info) {
+  const data = info && typeof info === 'object' ? info : {};
+  const status = ['active', 'paused'].includes(data.status) ? data.status : 'idle';
+  const mode = data.mode === 'break' ? 'break' : 'focus';
+  state.focusState = { ...data, status, mode };
+  els.focusHero.dataset.status = status;
+  els.focusHero.dataset.mode = mode;
+  const running = status === 'active' || status === 'paused';
+  const phase = mode === 'break' ? 'Break' : 'Focus';
+  els.focusModeLabel.textContent = status === 'paused'
+    ? phase + ' session paused'
+    : status === 'active'
+      ? phase + ' session in progress'
+      : 'Ready for focused work';
+  els.focusIntentionDisplay.textContent = running
+    ? (data.intention || (mode === 'break' ? 'Step away, hydrate, and reset.' : 'Focused work session'))
+    : 'Choose one clear outcome for this session.';
+  els.focusIntention.disabled = running;
+  els.focusDuration.disabled = running;
+  setHidden(els.focusStartActions, running);
+  setHidden(els.focusRunningActions, !running);
+  els.pauseFocusButton.textContent = status === 'paused' ? 'Resume' : 'Pause';
+  const focusStats = data.stats || {};
+  els.focusSessionsToday.textContent = String(Number(focusStats.sessionsToday) || 0);
+  els.focusMinutesToday.textContent = String(Number(focusStats.minutesToday) || 0);
+  renderFocusCountdown();
+  if (data.completedMode) {
+    notify(data.completedMode === 'break'
+      ? 'Break complete. Ready for the next work block.'
+      : 'Focus session complete' + (data.completedIntention ? ': ' + data.completedIntention : '.'), 'success', 7000);
+  }
+}
+
+async function loadFocusState() {
+  try {
+    const result = await invokeOptional('getFocusState');
+    if (result) applyFocusState(result);
+  } catch (error) {
+    notify('Could not load focus session: ' + errorMessage(error), 'error');
+  }
+}
+
+async function startFocusSession(mode, durationMinutes) {
+  try {
+    const result = await invoke('startFocusSession', {
+      mode,
+      durationMinutes,
+      intention: String(els.focusIntention.value || '').trim(),
+    });
+    applyFocusState(result);
+    notify(mode === 'break' ? 'Recovery break started.' : 'Focus session started.', 'success', 3000);
+  } catch (error) {
+    notify('Could not start focus session: ' + errorMessage(error), 'error');
+  }
+}
+
+async function toggleFocusPause() {
+  try {
+    const paused = state.focusState && state.focusState.status === 'paused';
+    const result = await invoke(paused ? 'resumeFocusSession' : 'pauseFocusSession');
+    applyFocusState(result);
+  } catch (error) {
+    notify('Could not update focus session: ' + errorMessage(error), 'error');
+  }
+}
+
+async function endFocusSession() {
+  try {
+    const result = await invoke('cancelFocusSession');
+    applyFocusState(result);
+    notify('Focus session ended.', 'info', 2500);
+  } catch (error) {
+    notify('Could not end focus session: ' + errorMessage(error), 'error');
+  }
+}
+
 function setDrawerPanel(panelName, focusTab) {
   const tabs = Array.from(document.querySelectorAll('.drawer-tab'));
   const panels = Array.from(document.querySelectorAll('.drawer-panel'));
@@ -1973,6 +2148,7 @@ function setDrawerPanel(panelName, focusTab) {
   if (panelName === 'tasks') loadTasks();
   if (panelName === 'history') loadHistory();
   if (panelName === 'downloads') loadDownloads();
+  if (panelName === 'focus') loadFocusState();
   if (panelName === 'settings') {
     populateBrowserSettings();
     loadAiConfig();
@@ -2028,6 +2204,131 @@ function closeMenu(restoreFocus) {
 function toggleMenu() {
   if (state.menuOpen) closeMenu(true);
   else openMenu();
+}
+
+function browserCommandItems() {
+  const tab = activeTab();
+  return [
+    { kind: 'command', id: 'new-tab', title: 'New tab', meta: 'Browser', shortcut: 'Ctrl+T', keywords: 'create open page', run: newTab },
+    { kind: 'command', id: 'reopen-tab', title: 'Reopen closed tab', meta: 'Browser', shortcut: 'Ctrl+Shift+T', keywords: 'restore recent closed', run: reopenClosedTab },
+    { kind: 'command', id: 'private', title: 'New private window', meta: 'Privacy', keywords: 'incognito private session', run: openPrivateWindow },
+    { kind: 'command', id: 'focus', title: 'Open focus sessions', meta: 'Work from home', keywords: 'timer pomodoro deep work break', run: function () { openDrawer('focus'); } },
+    { kind: 'command', id: 'tasks', title: 'Open pending tasks', meta: 'Work from home', keywords: 'todo action items', run: function () { openDrawer('tasks'); } },
+    { kind: 'command', id: 'history', title: 'Search browsing history', meta: 'Browser', keywords: 'recent pages', run: function () { openDrawer('history'); } },
+    { kind: 'command', id: 'downloads', title: 'Open downloads', meta: 'Browser', keywords: 'files download', run: function () { openDrawer('downloads'); } },
+    { kind: 'command', id: 'settings', title: 'Open settings', meta: 'Browser', keywords: 'preferences update', run: function () { openDrawer('settings'); } },
+    { kind: 'command', id: 'copy-link', title: 'Copy current page link', meta: 'Page', keywords: 'url clipboard share', disabled: !tab || isNewTabUrl(tab.url), run: copyCurrentLink },
+    { kind: 'command', id: 'pin-tab', title: tab && tab.pinned ? 'Unpin current tab' : 'Pin current tab', meta: 'Tabs', keywords: 'keep fixed favorite', disabled: !tab, run: function () { if (tab) return togglePinnedTab(tab.id, !tab.pinned); } },
+    { kind: 'command', id: 'screenshot', title: 'Capture page screenshot', meta: 'Page', shortcut: 'Ctrl+Shift+S', keywords: 'image capture', disabled: !tab || isNewTabUrl(tab.url), run: takeScreenshot },
+    { kind: 'command', id: 'print', title: 'Print current page', meta: 'Page', shortcut: 'Ctrl+P', keywords: 'pdf printer', disabled: !tab || isNewTabUrl(tab.url), run: printPage },
+  ];
+}
+
+function commandSearchText(item) {
+  return [item.title, item.meta, item.keywords, item.url, item.workspaceName].filter(Boolean).join(' ').toLowerCase();
+}
+
+function renderCommandResults() {
+  const query = String(els.commandInput.value || '').trim().toLowerCase();
+  const tokens = query.split(/\s+/).filter(Boolean);
+  state.commandFiltered = state.commandItems.filter(function (item) {
+    if (item.disabled) return false;
+    const haystack = commandSearchText(item);
+    return tokens.every(function (token) { return haystack.includes(token); });
+  }).slice(0, 24);
+  state.commandSelection = Math.min(Math.max(state.commandSelection, 0), Math.max(0, state.commandFiltered.length - 1));
+  clearNode(els.commandResults);
+
+  if (!state.commandFiltered.length) {
+    els.commandResults.appendChild(createElement('p', 'command-empty', 'No matching tabs or commands.'));
+  } else {
+    state.commandFiltered.forEach(function (item, index) {
+      const button = createElement('button', 'command-result');
+      button.type = 'button';
+      button.setAttribute('role', 'option');
+      button.setAttribute('aria-selected', index === state.commandSelection ? 'true' : 'false');
+      button.classList.toggle('selected', index === state.commandSelection);
+      button.dataset.commandIndex = String(index);
+
+      const icon = createElement('span', 'command-result-icon', item.kind === 'tab' ? (item.pinned ? '●' : '○') : '›');
+      icon.setAttribute('aria-hidden', 'true');
+      const copy = createElement('span', 'command-result-copy');
+      copy.append(
+        createElement('strong', '', item.title),
+        createElement('span', '', item.kind === 'tab'
+          ? (item.workspaceName || 'Workspace') + (item.url ? ' · ' + item.url : '')
+          : item.meta)
+      );
+      button.append(icon, copy);
+      if (item.shortcut) button.appendChild(createElement('kbd', '', item.shortcut));
+      button.addEventListener('click', function () { executeCommandItem(index); });
+      els.commandResults.appendChild(button);
+    });
+  }
+  els.commandResultCount.textContent = state.commandFiltered.length + (state.commandFiltered.length === 1 ? ' result' : ' results');
+}
+
+async function executeCommandItem(index) {
+  const item = state.commandFiltered[index];
+  if (!item || item.disabled) return;
+  closeCommandPalette(false);
+  try {
+    if (item.kind === 'tab') await switchTab(item.id);
+    else if (typeof item.run === 'function') await item.run();
+  } catch (error) {
+    notify('Command failed: ' + errorMessage(error), 'error');
+  }
+}
+
+async function openCommandPalette() {
+  closeMenu(false);
+  let allTabs = [];
+  try {
+    allTabs = await invokeOptional('getAllTabs') || state.tabs;
+  } catch (error) {
+    allTabs = state.tabs;
+  }
+  const tabItems = allTabs.map(normalizeTab).map(function (tab) {
+    return {
+      kind: 'tab',
+      id: tab.id,
+      title: formatTabTitle(tab),
+      url: tab.url,
+      workspaceName: tab.workspaceName,
+      pinned: tab.pinned,
+      keywords: 'open switch tab workspace',
+    };
+  });
+  state.commandItems = tabItems.concat(browserCommandItems());
+  state.commandSelection = 0;
+  els.commandInput.value = '';
+  renderCommandResults();
+  openModalSurface(els.commandBackdrop, els.commandPalette);
+  window.setTimeout(function () { els.commandInput.focus(); }, 0);
+}
+
+function closeCommandPalette(restoreFocus) {
+  if (els.commandBackdrop.classList.contains('hidden')) return;
+  closeModalSurface(els.commandBackdrop);
+  state.commandItems = [];
+  state.commandFiltered = [];
+  if (restoreFocus) $('btn-command-center').focus();
+}
+
+function handleCommandPaletteKeydown(event) {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    const direction = event.key === 'ArrowDown' ? 1 : -1;
+    const count = state.commandFiltered.length;
+    if (!count) return;
+    state.commandSelection = (state.commandSelection + direction + count) % count;
+    renderCommandResults();
+    const selected = els.commandResults.querySelector('.command-result.selected');
+    if (selected) selected.scrollIntoView({ block: 'nearest' });
+  } else if (event.key === 'Enter') {
+    event.preventDefault();
+    executeCommandItem(state.commandSelection);
+  }
 }
 
 function createMessage(content, sender, options) {
@@ -2393,6 +2694,17 @@ async function openPrivateWindow() {
   }
 }
 
+async function copyCurrentLink() {
+  const tab = activeTab();
+  if (!tab || isNewTabUrl(tab.url)) return;
+  try {
+    await navigator.clipboard.writeText(tab.url);
+    notify('Page link copied.', 'success', 2500);
+  } catch (error) {
+    notify('Could not copy page link: ' + errorMessage(error), 'error');
+  }
+}
+
 async function printPage() {
   try {
     const result = await invoke('printPage');
@@ -2725,6 +3037,7 @@ function registerBrowserEvents() {
     els.addressBar.focus();
     els.addressBar.select();
   });
+  registerEvent('open-command-palette', openCommandPalette);
   registerEvent('show-find-bar', openFindBar);
   registerEvent('found-in-page-result', handleFindResult);
   registerEvent('download-created', upsertDownload);
@@ -2741,6 +3054,7 @@ function registerBrowserEvents() {
   registerEvent('update-downloaded', handleUpdateDownloaded);
   registerEvent('update-error', handleUpdateError);
   registerEvent('update-installing', handleUpdateInstalling);
+  registerEvent('focus-state', applyFocusState);
 }
 
 function bindClick(id, handler) {
@@ -2754,6 +3068,8 @@ function wireUi() {
   bindClick('btn-close', function () { invokeOptional('closeWindow'); });
   bindClick('btn-new-tab', function () { newTab(); });
   bindClick('btn-reopen-tab', reopenClosedTab);
+  bindClick('btn-command-center', openCommandPalette);
+  bindClick('focus-status-pill', function () { openDrawer('focus'); });
   bindClick('btn-back', goBack);
   bindClick('btn-forward', goForward);
   bindClick('btn-reload', reloadOrStop);
@@ -2768,6 +3084,24 @@ function wireUi() {
   bindClick('btn-ai-drawer', toggleDrawer);
   bindClick('btn-close-drawer', function () { closeDrawer(true); });
   bindClick('btn-menu', toggleMenu);
+  els.focusForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    startFocusSession('focus', Number(els.focusDuration.value) || 25);
+  });
+  bindClick('btn-start-break', function () { startFocusSession('break', 5); });
+  bindClick('btn-pause-focus', toggleFocusPause);
+  bindClick('btn-end-focus', endFocusSession);
+  document.querySelectorAll('[data-work-url]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      const url = button.dataset.workUrl;
+      if (url) newTab(url);
+    });
+  });
+  els.commandInput.addEventListener('input', function () {
+    state.commandSelection = 0;
+    renderCommandResults();
+  });
+  els.commandInput.addEventListener('keydown', handleCommandPaletteKeydown);
   bindClick('btn-error-reload', reloadOrStop);
   bindClick('btn-error-new-tab', function () { newTab(); });
 
@@ -3059,6 +3393,18 @@ function wireUi() {
     const tab = activeTab();
     if (tab) duplicateTab(tab.id);
   });
+  bindClick('menu-pin-tab', function () {
+    const tab = activeTab();
+    if (tab) togglePinnedTab(tab.id, !tab.pinned);
+  });
+  bindClick('menu-copy-link', function () {
+    closeMenu();
+    copyCurrentLink();
+  });
+  bindClick('menu-close-other-tabs', function () {
+    const tab = activeTab();
+    if (tab) closeOtherWorkspaceTabs(tab.id);
+  });
   bindClick('menu-reopen-tab', reopenClosedTab);
   bindClick('menu-print', printPage);
   bindClick('menu-save-pdf', savePagePdf);
@@ -3220,6 +3566,7 @@ function wireUi() {
     if (event.target === els.siteInfoModalBackdrop) closeSiteInfoModal();
     if (event.target === els.addWorkspaceModalBackdrop) closeAddWorkspaceModal();
     if (event.target === els.passwordsModalBackdrop) closePasswordsModal();
+    if (event.target === els.commandBackdrop) closeCommandPalette(true);
     if (event.target === els.screenPickerBackdrop) {
       cancelScreenPickerModal();
     }
@@ -3246,7 +3593,10 @@ function handleGlobalShortcuts(event) {
   const ctrl = event.ctrlKey || event.metaKey;
   const key = String(event.key || '').toLowerCase();
   if (event.key === 'Escape') {
-    if (!els.screenPickerBackdrop.classList.contains('hidden')) {
+    if (!els.commandBackdrop.classList.contains('hidden')) {
+      event.preventDefault();
+      closeCommandPalette(true);
+    } else if (!els.screenPickerBackdrop.classList.contains('hidden')) {
       event.preventDefault();
       cancelScreenPickerModal();
     } else if (!els.siteInfoModalBackdrop.classList.contains('hidden')) {
@@ -3291,6 +3641,9 @@ function handleGlobalShortcuts(event) {
   } else if (ctrl && event.shiftKey && key === 't') {
     event.preventDefault();
     reopenClosedTab();
+  } else if (ctrl && event.shiftKey && key === 'a') {
+    event.preventDefault();
+    openCommandPalette();
   } else if (ctrl && key === 'l') {
     event.preventDefault();
     els.addressBar.focus();
@@ -3367,6 +3720,7 @@ async function initialize() {
   closeMenu(false);
   setHidden(els.findBar, true);
   setHidden(els.updateModalBackdrop, true);
+  setHidden(els.commandBackdrop, true);
   setHidden(els.siteInfoModalBackdrop, true);
   setHidden(els.updateBanner, true);
   await Promise.all([
@@ -3377,6 +3731,7 @@ async function initialize() {
     loadHistory(),
     loadDownloads(),
     loadVersion(),
+    loadFocusState(),
     loadUpdateState(),
     refreshBrowserState()
   ]);
@@ -3389,6 +3744,7 @@ async function initialize() {
     }
   } catch (error) {}
   updateViewLayout();
+  if (!state.focusTicker) state.focusTicker = window.setInterval(renderFocusCountdown, 1000);
 }
 
 initialize().catch(function (error) {

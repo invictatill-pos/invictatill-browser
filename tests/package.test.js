@@ -25,6 +25,8 @@ test('browser uses a supported Chromium baseline and safe release defaults', () 
   assert.ok(!packageJson.build.files.some((entry) => entry.includes('node_modules')));
   assert.ok(packageJson.build.files.includes('LICENSE'));
   assert.ok(packageJson.build.files.includes('updater-controller.js'));
+  assert.ok(packageJson.build.files.includes('focus-controller.js'));
+  assert.ok(packageJson.build.files.includes('workspace-state.js'));
   assert.equal(packageJson.overrides['fast-uri'], '3.1.4');
 });
 

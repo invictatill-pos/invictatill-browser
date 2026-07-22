@@ -37,6 +37,9 @@ test('find-in-page controls and accessible landmarks exist', () => {
   for (const id of ['update-settings-card', 'update-settings-status', 'btn-check-updates', 'btn-settings-install-update']) {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }
+  for (const id of ['command-backdrop', 'command-input', 'command-results', 'drawer-panel-focus', 'focus-clock', 'focus-status-pill']) {
+    assert.ok(idSet.has(id), `Missing #${id}`);
+  }
 });
 
 test('renderer avoids executable HTML and dynamic code sinks', () => {

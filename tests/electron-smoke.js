@@ -139,6 +139,7 @@ async function main() {
       'add-workspace-modal-backdrop',
       'passwords-modal-backdrop',
       'screen-picker-modal-backdrop',
+      'command-backdrop',
     ].map((id) => ({ id, parent: document.getElementById(id).parentElement.tagName })));
     assert.ok(modalParents.every((item) => item.parent === 'BODY'),
       `Expected top-level modal backdrops, received ${JSON.stringify(modalParents)}`);
@@ -185,6 +186,19 @@ async function main() {
     await assertViewportContained(['#browser-menu'], 'Browser menu');
     await window.keyboard.press('Escape');
     await browserMenu.waitFor({ state: 'hidden' });
+
+    await window.locator('#btn-command-center').click();
+    const commandPalette = window.locator('#command-backdrop');
+    await commandPalette.waitFor({ state: 'visible' });
+    await assertViewportContained(['#command-palette', '#command-input', '#command-results'], 'Tab and command search');
+    await window.locator('#command-input').fill('open focus sessions');
+    assert.equal(await window.locator('#command-results .command-result').count(), 1);
+    await capture('06-command-center.png');
+    await window.locator('#command-input').press('Enter');
+    await window.locator('#drawer-panel-focus').waitFor({ state: 'visible' });
+    await window.locator('#btn-close-drawer').click();
+    await window.locator('#workspace-drawer').waitFor({ state: 'hidden' });
+    log('Tab and command search verified');
     log('Core dialogs and browser menu geometry verified');
 
     const initial = await window.evaluate(() => window.electronAPI.getBrowserState());
@@ -207,6 +221,32 @@ async function main() {
     const active = loaded.tabs.find((tab) => tab.id === loaded.activeTabId);
     assert.equal(active.url, pageUrl);
     assert.equal(active.canGoBack, false);
+
+    const defaultLastTabId = loaded.activeTabId;
+    const initialWorkState = await window.evaluate(() => window.electronAPI.setActiveWorkspace('work'));
+    const firstWorkTabId = initialWorkState.activeTabId;
+    const workMiddle = await window.evaluate((url) => window.electronAPI.newTab(url), pageUrl);
+    const workLast = await window.evaluate((url) => window.electronAPI.newTab(url), `${pageUrl}second`);
+    assert.notEqual(workMiddle.id, firstWorkTabId);
+    assert.notEqual(workLast.id, workMiddle.id);
+    await window.evaluate((id) => window.electronAPI.switchTab(id), workMiddle.id);
+    const returnedDefault = await window.evaluate(() => window.electronAPI.setActiveWorkspace('default'));
+    assert.equal(returnedDefault.activeTabId, defaultLastTabId, 'Default workspace did not restore its last tab');
+    const returnedWork = await window.evaluate(() => window.electronAPI.setActiveWorkspace('work'));
+    assert.equal(returnedWork.activeTabId, workMiddle.id, 'Work workspace opened its first tab instead of its last active tab');
+    const allTabs = await window.evaluate(() => window.electronAPI.getAllTabs());
+    assert.ok(allTabs.some((tab) => tab.id === workMiddle.id && tab.workspaceId === 'work'));
+    const pinnedWork = await window.evaluate((id) => window.electronAPI.setTabPinned(id, true), workMiddle.id);
+    assert.equal(pinnedWork.tabs[0].id, workMiddle.id);
+    assert.equal(pinnedWork.tabs[0].pinned, true);
+    await window.evaluate((id) => window.electronAPI.setTabPinned(id, false), workMiddle.id);
+    await window.evaluate(() => window.electronAPI.setActiveWorkspace('default'));
+    await window.evaluate((id) => window.electronAPI.switchTab(id), defaultLastTabId);
+    await window.evaluate(() => window.electronAPI.getBrowserState()).then((browserState) => {
+      assert.equal(browserState.activeWorkspaceId, 'default');
+      assert.equal(browserState.activeTabId, defaultLastTabId);
+    });
+    log('Per-workspace last-active tab restoration and pinned tabs verified');
 
     const longHistoryUrl = `${pageUrl}visual-validation?flow=signin&continue=${'workspace-browser-'.repeat(35)}`;
     await window.evaluate((url) => window.electronAPI.navigate(url), longHistoryUrl);
@@ -428,6 +468,23 @@ async function main() {
     assert.equal((await window.locator('#btn-check-updates').textContent()).trim(), 'Unavailable');
     await window.locator('#update-settings-card').scrollIntoViewIfNeeded();
     await capture('05-update-settings.png');
+    await window.locator('#drawer-tab-focus').click();
+    await window.locator('#drawer-panel-focus').waitFor({ state: 'visible' });
+    await assertViewportContained(['#focus-hero', '#focus-form', '.focus-stats', '.work-launcher-grid'], 'Focus session panel');
+    await window.locator('#focus-intention').fill('Complete E2E quality review');
+    await window.locator('#focus-duration').selectOption('25');
+    await window.locator('#btn-start-focus').click();
+    await window.locator('#focus-status-pill').waitFor({ state: 'visible' });
+    assert.match(await window.locator('#focus-clock').textContent(), /^2[45]:[0-5][0-9]$/);
+    assert.match(await window.locator('#focus-intention-display').textContent(), /Complete E2E quality review/);
+    await capture('07-focus-session.png');
+    await window.locator('#btn-pause-focus').click();
+    assert.equal((await window.locator('#btn-pause-focus').textContent()).trim(), 'Resume');
+    await window.locator('#btn-pause-focus').click();
+    assert.equal((await window.locator('#btn-pause-focus').textContent()).trim(), 'Pause');
+    await window.locator('#btn-end-focus').click();
+    await window.locator('#focus-status-pill').waitFor({ state: 'hidden' });
+    log('Persistent focus session controls and remote-work launcher verified');
     await window.locator('#drawer-tab-chat').click();
     log('Update settings state and geometry verified');
 
