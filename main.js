@@ -1810,7 +1810,7 @@ function getReleaseDetails() {
       'Visible Tab Titles & Drag-and-Drop Reordering: Complete tab visibility and custom reordering.',
     ],
     bugFixes: [
-      'Google Meet Screenshare: Fixed InvictaTill Tab selection failing to capture the WebContents stream.',
+      'Google Meet Screenshare: Hotfix for WebRTC pipeline dropping WebContents objects by explicitly passing mainFrame.',
       'Workspace Tab Segregation on Restart: Fixed background tabs appearing in the Default workspace on application startup.',
       'Password Manager Validation Error: Fixed a DOM binding bug that prevented passwords from being saved correctly.',
     ],
@@ -3021,9 +3021,9 @@ function registerIpcHandlers() {
     try {
       if (typeof selection.sourceId === 'number' || String(selection.sourceId).match(/^\d+$/)) {
         const tab = tabs.get(Number(selection.sourceId));
-        if (tab && tab.view && tab.view.webContents) {
+        if (tab && tab.view && tab.view.webContents && tab.view.webContents.mainFrame) {
           pendingScreenShareCallback({
-            video: tab.view.webContents,
+            video: tab.view.webContents.mainFrame,
             audio: selection.audio ? 'loopback' : 'local'
           });
         } else {
