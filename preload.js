@@ -114,6 +114,8 @@ const api = {
   getSitePermissions: (url) => ipcRenderer.invoke('get-site-permissions', url),
   setSitePermission: (url, permission, state) =>
     ipcRenderer.invoke('set-site-permission', { originUrl: url, permission, state }),
+  get24HReport: () => ipcRenderer.invoke('get-24h-report'),
+  extractEmailTasks: () => ipcRenderer.invoke('extract-email-tasks'),
 
   // Compatible download aliases used by older/newer renderer surfaces.
   clearDownloads: () => ipcRenderer.invoke('clear-downloads'),

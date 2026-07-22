@@ -1803,6 +1803,23 @@ function handleUpdateAvailable(info) {
   setHidden(els.modalInstall, true);
 }
 
+function syncUpdateStateUI(ready, versionText) {
+  state.updateReady = Boolean(ready);
+  const btnSettings = $('btn-settings-install-update');
+  if (btnSettings) {
+    btnSettings.disabled = !state.updateReady;
+    setHidden(btnSettings, !state.updateReady);
+  }
+  if (els.installUpdateButton) {
+    els.installUpdateButton.disabled = !state.updateReady;
+    setHidden(els.installUpdateButton, !state.updateReady);
+  }
+  if (els.modalInstall) {
+    els.modalInstall.disabled = !state.updateReady;
+    setHidden(els.modalInstall, !state.updateReady);
+  }
+}
+
 function handleUpdateProgress(progressInfo) {
   const percent = clamp(progressInfo && progressInfo.percent, 0, 100);
   setUpdateBannerVisible(true);
@@ -1814,28 +1831,60 @@ function handleUpdateProgress(progressInfo) {
 
 function handleUpdateDownloaded(info) {
   const version = info && info.version ? ' v' + info.version : '';
-  state.updateReady = true;
+  syncUpdateStateUI(true, version);
   setUpdateBannerVisible(true);
-  els.updateTitle.textContent = 'Update' + version + ' ready';
-  els.updateSub.textContent = 'Restart when you are ready to finish the update.';
+  els.updateTitle.textContent = 'Update' + version + ' ready to install';
+  els.updateSub.textContent = 'Click Install & Restart below to finish updating.';
   els.updateProgress.value = 100;
   setHidden(els.updateProgress, true);
-  els.installUpdateButton.disabled = false;
-  setHidden(els.installUpdateButton, false);
-  els.modalInstall.disabled = false;
-  setHidden(els.modalInstall, false);
-  notify('Browser update is ready to install', 'success', 5000);
+  notify('Browser update' + version + ' is ready! Click Install & Restart to finish.', 'success', 10000);
 }
 
 async function installUpdate() {
-  if (!state.updateReady) {
-    notify('The update is still downloading.', 'warning');
-    return;
-  }
   try {
-    await invoke('installUpdate');
+    const res = await invoke('installUpdate');
+    if (res && res.success === false) {
+      notify('Could not install update: ' + (res.error || 'Update not ready'), 'error');
+    }
   } catch (error) {
     notify('Could not install update: ' + errorMessage(error), 'error');
+  }
+}
+
+async function trigger24HReport() {
+  openDrawer('chat');
+  appendChatMessage('user', 'Generate 24H WFH Productivity & Activity Report');
+  setAiBusy(true);
+  try {
+    let result = null;
+    if (typeof api.get24HReport === 'function') {
+      result = await api.get24HReport();
+    }
+    const reportText = result && (result.response || result.report) ? (result.response || result.report) : 'Generating report failed';
+    appendChatMessage('assistant', reportText);
+  } catch (err) {
+    appendChatMessage('assistant', 'Could not generate WFH report: ' + errorMessage(err));
+  } finally {
+    setAiBusy(false);
+  }
+}
+
+async function triggerEmailTaskExtraction() {
+  openDrawer('chat');
+  appendChatMessage('user', 'Extract tasks and action items from active email/page');
+  setAiBusy(true);
+  try {
+    let result = null;
+    if (typeof api.extractEmailTasks === 'function') {
+      result = await api.extractEmailTasks();
+    }
+    const summaryText = result && (result.response || result.summary) ? (result.response || result.summary) : 'Task extraction complete';
+    appendChatMessage('assistant', summaryText);
+    await loadTasks();
+  } catch (err) {
+    appendChatMessage('assistant', 'Could not extract email tasks: ' + errorMessage(err));
+  } finally {
+    setAiBusy(false);
   }
 }
 
@@ -2107,6 +2156,12 @@ function wireUi() {
   bindClick('menu-private-window', openPrivateWindow);
   bindClick('menu-settings', function () { closeMenu(); openDrawer('settings'); });
   bindClick('menu-release-notes', function () { closeMenu(); openUpdateModal(); });
+
+  bindClick('btn-ai-gmail-tasks', triggerEmailTaskExtraction);
+  bindClick('btn-ai-24h-report', trigger24HReport);
+  bindClick('btn-tasks-24h-report', trigger24HReport);
+  bindClick('btn-tasks-extract-email', triggerEmailTaskExtraction);
+  bindClick('btn-settings-install-update', installUpdate);
 
   bindClick('security-indicator', openSiteInfoModal);
   bindClick('btn-close-site-info', closeSiteInfoModal);

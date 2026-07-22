@@ -231,6 +231,8 @@
           <button class="chip-button" type="button" data-ai-action="Summarize this page clearly.">Summarize</button>
           <button class="chip-button" type="button" data-ai-action="Explain the key ideas on this page.">Explain</button>
           <button class="chip-button" type="button" data-ai-action="Extract useful tasks from this page.">Extract tasks</button>
+          <button class="chip-button" id="btn-ai-gmail-tasks" type="button">📬 Gmail tasks</button>
+          <button class="chip-button" id="btn-ai-24h-report" type="button">📊 24H WFH Report</button>
         </div>
         <div class="ai-chat-messages" id="ai-chat-messages" role="log" aria-live="polite" aria-relevant="additions">
           <div class="chat-message assistant">
@@ -259,6 +261,10 @@
         </form>
         <div class="list-toolbar">
           <p id="task-summary">0 open tasks</p>
+          <div style="display:flex;gap:6px;">
+            <button class="secondary-button compact" id="btn-tasks-24h-report" type="button" style="font-size:11px;padding:2px 8px;">📊 24H Report</button>
+            <button class="secondary-button compact" id="btn-tasks-extract-email" type="button" style="font-size:11px;padding:2px 8px;">📬 Email Tasks</button>
+          </div>
         </div>
         <div class="data-list" id="pending-tasks-list"></div>
         <p class="empty-state" id="tasks-empty">No tasks yet.</p>
@@ -282,26 +288,30 @@
 
       <section class="drawer-panel" id="drawer-panel-downloads" role="tabpanel" aria-labelledby="drawer-tab-downloads" data-panel="downloads" hidden>
         <div class="list-toolbar">
-          <p id="downloads-summary">No active downloads</p>
-          <button class="text-button" id="btn-clear-downloads" type="button">Clear finished</button>
+          <p id="downloads-summary">0 downloads</p>
+          <button class="danger-text-button" id="btn-clear-downloads" type="button">Clear finished</button>
         </div>
         <div class="data-list" id="downloads-list" aria-live="polite"></div>
-        <p class="empty-state" id="downloads-empty">Downloads will appear here.</p>
+        <p class="empty-state" id="downloads-empty">No downloads yet.</p>
       </section>
 
       <section class="drawer-panel settings-panel" id="drawer-panel-settings" role="tabpanel" aria-labelledby="drawer-tab-settings" data-panel="settings" hidden>
         <form id="browser-settings-form">
           <fieldset class="settings-group">
-            <legend>Browsing</legend>
-            <label class="field-label" for="setting-search-engine">Search engine</label>
-            <select id="setting-search-engine">
-              <option value="google">Google</option>
-              <option value="bing">Bing</option>
-              <option value="duckduckgo">DuckDuckGo</option>
-              <option value="brave">Brave Search</option>
-            </select>
-            <label class="field-label" for="setting-homepage">Homepage</label>
-            <input id="setting-homepage" type="url" placeholder="https://example.com">
+            <legend>Browser preferences</legend>
+            <label class="setting-row" for="setting-search-engine">
+              <span>Search engine</span>
+              <select id="setting-search-engine">
+                <option value="google">Google</option>
+                <option value="bing">Bing</option>
+                <option value="duckduckgo">DuckDuckGo</option>
+                <option value="brave">Brave</option>
+              </select>
+            </label>
+            <label class="setting-row" for="setting-homepage">
+              <span>Homepage URL</span>
+              <input id="setting-homepage" type="text" placeholder="about:blank or https://…">
+            </label>
             <label class="toggle-row" for="setting-restore-session">
               <input id="setting-restore-session" type="checkbox">
               <span class="toggle-control" aria-hidden="true"></span>
@@ -310,40 +320,55 @@
             <label class="toggle-row" for="setting-activity-tracking">
               <input id="setting-activity-tracking" type="checkbox">
               <span class="toggle-control" aria-hidden="true"></span>
-              <span>Enable activity tracking</span>
+              <span>Enable 24H WFH Activity tracking</span>
             </label>
-            <p class="field-help">Off by default. Logged URLs have query strings and fragments removed.</p>
-            <button class="primary-button" id="btn-save-browser-settings" type="submit">Save browser settings</button>
+            <div class="form-actions">
+              <button class="primary-button compact" type="submit">Save preferences</button>
+              <span class="settings-status" id="browser-settings-status" role="status" aria-live="polite"></span>
+            </div>
           </fieldset>
         </form>
 
         <form id="ai-settings-form">
           <fieldset class="settings-group">
             <legend>Invicta AI provider</legend>
-            <label class="field-label" for="setting-ai-provider">Mode</label>
-            <select id="setting-ai-provider">
-              <option value="local">Local</option>
-              <option value="invicta">InvictaTill AI API</option>
-              <option value="cloud">OpenAI Responses API</option>
-            </select>
-            <label class="field-label" for="setting-ai-endpoint">API base URL</label>
-            <input id="setting-ai-endpoint" type="url" placeholder="https://api.openai.com/v1">
-            <label class="field-label" for="setting-ai-model">Model</label>
-            <input id="setting-ai-model" type="text" autocomplete="off" placeholder="Model name">
-            <label class="field-label" for="setting-ai-key">API key</label>
-            <input id="setting-ai-key" type="password" autocomplete="new-password" placeholder="Leave blank to keep saved key">
-            <p class="field-help">Saved keys are never read back into this page.</p>
-            <div class="button-row">
-              <button class="primary-button" id="btn-save-ai-settings" type="submit">Save</button>
-              <button class="secondary-button" id="btn-test-ai-settings" type="button">Test connection</button>
+            <label class="setting-row" for="setting-ai-provider">
+              <span>AI provider</span>
+              <select id="setting-ai-provider">
+                <option value="invicta">InvictaTill AI (Built-in)</option>
+                <option value="local">Private Local Assistance (Extractive)</option>
+                <option value="openai">OpenAI Responses API</option>
+              </select>
+            </label>
+            <label class="setting-row" for="setting-ai-endpoint">
+              <span>API Base URL</span>
+              <input id="setting-ai-endpoint" type="text" placeholder="https://invictatill.shop">
+            </label>
+            <label class="setting-row" for="setting-ai-model">
+              <span>Model</span>
+              <input id="setting-ai-model" type="text" placeholder="invicta-ai-v1">
+            </label>
+            <label class="setting-row" for="setting-ai-key">
+              <span>API key</span>
+              <input id="setting-ai-key" type="password" placeholder="Key is saved; enter new key to replace">
+            </label>
+            <label class="toggle-row" for="setting-ai-clear-key">
+              <input id="setting-ai-clear-key" type="checkbox">
+              <span class="toggle-control" aria-hidden="true"></span>
+              <span>Clear stored API key</span>
+            </label>
+            <div class="form-actions">
+              <button class="primary-button compact" type="submit">Save AI settings</button>
+              <button class="secondary-button compact" id="btn-test-ai-settings" type="button">Test connection</button>
             </div>
             <p class="settings-status" id="ai-settings-status" role="status" aria-live="polite"></p>
           </fieldset>
         </form>
 
         <fieldset class="settings-group">
-          <legend>Tools and privacy</legend>
+          <legend>Updates and tools</legend>
           <div class="settings-actions">
+            <button class="primary-button hidden" id="btn-settings-install-update" type="button">Restart &amp; Install Update Now</button>
             <button class="secondary-button" id="btn-private-window" type="button">Open private window</button>
             <button class="secondary-button" id="btn-print-page" type="button">Print page</button>
             <button class="secondary-button" id="btn-save-pdf" type="button">Save page as PDF</button>

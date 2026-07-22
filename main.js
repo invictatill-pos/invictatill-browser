@@ -51,8 +51,9 @@ const MAX_ACTIVITY_RECORDS = 10000;
 const MAX_URL_LENGTH = 8192;
 const MAX_PAGE_CONTEXT = 50000;
 const DEFAULT_AI_BASE_URL = 'https://api.openai.com/v1';
-const DEFAULT_INVICTA_AI_BASE_URL = 'http://127.0.0.1:7860/api/v1';
-const DEFAULT_AI_MODEL = 'gpt-5.6-sol';
+const DEFAULT_INVICTA_AI_BASE_URL = 'https://invictatill.shop';
+const DEFAULT_INVICTA_API_KEY = 'invicta_sk_X9zz51Mt-qru97Z6u15flS8VJWBvfpLZKJ8t4ATyGmE';
+const DEFAULT_AI_MODEL = 'invicta-ai-v1';
 
 let mainWindow = null;
 let browserSession = null;
@@ -1594,15 +1595,16 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Site & Security Permissions control modal accessible directly by clicking the address bar security badge.',
-      'Modern multi-tab browsing with session restore, recently closed tabs, split view, downloads, history, find, zoom, mute, screenshots, printing, and PDF export.',
-      'InvictaTill AI workspace with local assistance, direct InvictaTill API access, OpenAI Responses support, task capture, and page context control.',
-      'Private windows, per-site permission management, opt-in activity records, and encrypted cloud-provider credentials.',
+      'Built-in Out-of-the-Box InvictaTill AI API Integration with zero manual key setup required.',
+      '24-Hour WFH Productivity & Activity Report generator built into AI & Workspace Tasks.',
+      'Smart Gmail & Email Task Extractor: auto-detects incoming email tasks, subjects, and un-replied mail items.',
+      'Enhanced Auto-Updater with direct "Restart & Install Update" button in Settings, Banner, and Notification toasts.',
+      'Site & Security Permissions control modal accessible directly from the address bar security badge.',
     ],
     bugFixes: [
+      'Fixed update installation relaunch flow so updates can be installed with one click as soon as downloading completes.',
+      'Added fallback to local extractive intelligence whenever cloud endpoints are unreachable or offline.',
       'Fixed camera and microphone permission queries for Google Meet, WebRTC, and web applications.',
-      'Unified permission check and request handlers so media permissions work seamlessly.',
-      'Added per-domain site permission configuration and quick reset options.',
     ],
   };
 }
@@ -1745,15 +1747,15 @@ function publicAiConfig(rawConfig) {
 }
 
 function decryptAiKey(rawConfig) {
-  if (!rawConfig || !rawConfig.encryptedApiKey) return '';
-  if (!safeStorage.isEncryptionAvailable()) return '';
-  try {
-    return safeStorage.decryptString(
-      Buffer.from(rawConfig.encryptedApiKey, 'base64')
-    );
-  } catch (error) {
-    return '';
+  if (rawConfig && rawConfig.encryptedApiKey && safeStorage.isEncryptionAvailable()) {
+    try {
+      const decrypted = safeStorage.decryptString(
+        Buffer.from(rawConfig.encryptedApiKey, 'base64')
+      );
+      if (decrypted) return decrypted;
+    } catch (error) {}
   }
+  return DEFAULT_INVICTA_API_KEY;
 }
 
 function saveAiConfig(input) {
@@ -1888,6 +1890,7 @@ function invictaChatEndpoint(baseUrl) {
 }
 
 async function callInvictaAi(config, apiKey, prompt, pageContext, controller, timeoutMs) {
+  const effectiveKey = apiKey || DEFAULT_INVICTA_API_KEY;
   const contextBlock = pageContext
     ? '\n\n<untrusted_page_content>\nTitle: ' + pageContext.title +
       '\nURL: ' + pageContext.url + '\n\n' + pageContext.text +
@@ -1901,10 +1904,10 @@ async function callInvictaAi(config, apiKey, prompt, pageContext, controller, ti
     const response = await fetch(invictaChatEndpoint(config.baseUrl), {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer ' + apiKey,
+        Authorization: 'Bearer ' + effectiveKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ message, stream: false }),
+      body: JSON.stringify({ message, stream: false, session_id: null }),
       signal: controller.signal,
     });
     const rawText = await response.text();
@@ -1920,9 +1923,17 @@ async function callInvictaAi(config, apiKey, prompt, pageContext, controller, ti
         ? messageText
         : 'InvictaTill AI returned HTTP ' + response.status);
     }
-    const answer = payload && typeof payload.reply === 'string' ? payload.reply.trim() : '';
+    const answer = payload && (
+      typeof payload.reply === 'string' ? payload.reply.trim() : (
+      typeof payload.response === 'string' ? payload.response.trim() : (
+      typeof payload.message === 'string' ? payload.message.trim() : (
+      typeof payload.text === 'string' ? payload.text.trim() : ''
+    ))));
     if (!answer) throw new Error('InvictaTill AI returned an empty response');
     return answer;
+  } catch (err) {
+    const fallback = localAiAnswer(prompt, pageContext);
+    return fallback && fallback.response ? fallback.response : ('InvictaTill AI: ' + err.message);
   } finally {
     clearTimeout(timer);
   }
@@ -1948,16 +1959,21 @@ function extractiveSummary(text, maxSentences) {
 
   const frequency = new Map();
   for (const sentence of sentences) {
-    for (const word of sentence.toLowerCase().match(/[a-z0-9]{3,}/g) || []) {
-      if (!SUMMARY_STOP_WORDS.has(word)) {
+    const words = sentence.toLowerCase().match(/[a-z0-9]+/g) || [];
+    for (const word of words) {
+      if (word.length >= 3 && !SUMMARY_STOP_WORDS.has(word)) {
         frequency.set(word, (frequency.get(word) || 0) + 1);
       }
     }
   }
+
   const ranked = sentences.map((sentence, index) => {
-    const words = sentence.toLowerCase().match(/[a-z0-9]{3,}/g) || [];
-    const score = words.reduce((sum, word) => sum + (frequency.get(word) || 0), 0) /
-      Math.max(8, words.length);
+    const words = sentence.toLowerCase().match(/[a-z0-9]+/g) || [];
+    let score = 0;
+    for (const word of words) {
+      if (frequency.has(word)) score += frequency.get(word);
+    }
+    score = score / Math.max(8, words.length);
     return { sentence, index, score };
   });
   return ranked
@@ -1965,6 +1981,135 @@ function extractiveSummary(text, maxSentences) {
     .slice(0, maxSentences)
     .sort((left, right) => left.index - right.index)
     .map((item) => item.sentence);
+}
+
+function generate24HourWfhReport() {
+  const records = privateInstance
+    ? historyRecords
+    : (store ? store.get('wfh_activity_records', []) : []);
+  const valid = Array.isArray(records) ? records : [];
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  const recent24h = valid.filter((record) => {
+    const timestamp = record.timestamp || record.visitedAt;
+    return Number.isFinite(timestamp) && timestamp >= cutoff;
+  });
+
+  const domainCounts = new Map();
+  recent24h.forEach((rec) => {
+    let domain = rec.domain;
+    if (!domain && rec.url) {
+      try { domain = new URL(rec.url).hostname; } catch (e) {}
+    }
+    if (domain) {
+      domainCounts.set(domain, (domainCounts.get(domain) || 0) + 1);
+    }
+  });
+
+  const topDomains = Array.from(domainCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([dom, count]) => '  • ' + dom + ' (' + count + ' visits)');
+
+  const tasks = store ? store.get('pending_tasks', []) : [];
+  const pendingTasksList = Array.isArray(tasks) ? tasks.filter((t) => !t.done) : [];
+  const completedTasksList = Array.isArray(tasks) ? tasks.filter((t) => t.done) : [];
+
+  const reportText =
+    '📊 InvictaTill 24-Hour WFH Productivity & Activity Report\n' +
+    '───────────────────────────────────────────────────────\n\n' +
+    '🕒 Reporting Window: Last 24 Hours\n' +
+    '• Total Web pages visited: ' + recent24h.length + '\n' +
+    '• Active Open Tabs: ' + tabs.size + '\n' +
+    '• Pending Tasks: ' + pendingTasksList.length + ' open action item(s)\n' +
+    '• Completed Tasks: ' + completedTasksList.length + ' finished item(s)\n\n' +
+    '🌐 Top Visited Domains (Last 24 Hours):\n' +
+    (topDomains.length ? topDomains.join('\n') : '  • No web activity recorded in the last 24 hours') + '\n\n' +
+    '📋 Pending Action Items:\n' +
+    (pendingTasksList.length
+      ? pendingTasksList.slice(0, 5).map((t) => '  [ ] ' + t.text + (t.date ? ' (' + t.date + ')' : '')).join('\n')
+      : '  • All tasks completed! No pending items.') + '\n\n' +
+    '💡 WFH Tip: Use Invicta AI to summarize emails or extract tasks from active web pages at any time.';
+
+  return {
+    success: true,
+    response: reportText,
+    report: reportText,
+    totalVisits: recent24h.length,
+    openTasks: pendingTasksList.length,
+    completedTasks: completedTasksList.length
+  };
+}
+
+function extractEmailTasksFromContext(pageContext) {
+  if (!pageContext || !pageContext.text) {
+    return {
+      success: false,
+      response: 'No email or page content available. Enable "Share this page for this message" to scan your active email page.'
+    };
+  }
+
+  const text = pageContext.text;
+  const url = pageContext.url || '';
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+  const detectedTasks = [];
+
+  for (const line of lines) {
+    if (detectedTasks.length >= 6) break;
+    if (/^(re:|fwd:|subject:|action required|please|kindly|deadline|review|confirm|submit|send|update)/i.test(line) && line.length >= 10 && line.length <= 150) {
+      detectedTasks.push(line.replace(/^(re:|fwd:|subject:)\s*/i, 'Email Action: '));
+    }
+  }
+
+  if (!detectedTasks.length) {
+    const sentences = text.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length >= 20 && s.length <= 120);
+    const actionable = sentences.filter((s) => /please|need|must|review|reply|send|check|verify|report|update|confirm/i.test(s)).slice(0, 4);
+    actionable.forEach((s) => detectedTasks.push('Task: ' + s));
+  }
+
+  if (!detectedTasks.length && pageContext.title) {
+    detectedTasks.push('Review email/page: ' + pageContext.title);
+  }
+
+  const currentTasks = store ? store.get('pending_tasks', []) : [];
+  const existingTexts = new Set(currentTasks.map((t) => t.text));
+  const newTasksAdded = [];
+
+  detectedTasks.forEach((taskTitle) => {
+    const textToSave = taskTitle.slice(0, 200);
+    if (!existingTexts.has(textToSave)) {
+      const item = {
+        id: 'task-email-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        text: textToSave,
+        done: false,
+        date: new Date().toLocaleDateString(),
+        sourceUrl: url,
+        sourceTitle: pageContext.title || 'Email Task'
+      };
+      currentTasks.unshift(item);
+      newTasksAdded.push(item);
+    }
+  });
+
+  if (store && newTasksAdded.length) {
+    store.set('pending_tasks', currentTasks.slice(0, MAX_TASKS));
+  }
+
+  const summaryText =
+    '📬 Invicta Email & Task Scanner\n' +
+    '─────────────────────────────────\n\n' +
+    '• Scanned Page: ' + (pageContext.title || url) + '\n' +
+    '• New Action Items Added: ' + newTasksAdded.length + '\n\n' +
+    (newTasksAdded.length
+      ? 'Extracted Tasks:\n' + newTasksAdded.map((t) => '  ✓ ' + t.text).join('\n')
+      : '  • No new email action items detected or tasks were already added.') + '\n\n' +
+    'View all items in your Workspace Tasks drawer.';
+
+  return {
+    success: true,
+    response: summaryText,
+    addedTasks: newTasksAdded,
+    totalTasks: currentTasks.length
+  };
 }
 
 function localAiAnswer(prompt, pageContext) {
@@ -1988,25 +2133,12 @@ function localAiAnswer(prompt, pageContext) {
     };
   }
 
-  if (request.includes('report') || request.includes('analytics') || request.includes('activity')) {
-    const records = privateInstance
-      ? historyRecords
-      : (store ? store.get('wfh_activity_records', []) : []);
-    const valid = Array.isArray(records) ? records : [];
-    const today = new Date().toDateString();
-    const todayCount = valid.filter((record) => {
-      const timestamp = record.visitedAt || record.timestamp;
-      return Number.isFinite(timestamp) && new Date(timestamp).toDateString() === today;
-    }).length;
-    return {
-      response:
-        'InvictaTill Activity & Analytics Report\n\n' +
-        '• Total history records: ' + valid.length + '\n' +
-        '• Total pages visited today: ' + todayCount + '\n' +
-        '• Private Session: ' + (privateInstance ? 'Enabled (data ephemeral)' : 'Standard Persistent Mode') + '\n' +
-        '• Active Open Tabs: ' + tabs.size,
-      taskExtracted: null,
-    };
+  if (request.includes('report') || request.includes('analytics') || request.includes('activity') || request.includes('24h') || request.includes('24 hour') || request.includes('wfh')) {
+    return generate24HourWfhReport();
+  }
+
+  if (request.includes('email') || request.includes('gmail') || request.includes('mail') || request.includes('unreplied') || request.includes('non reply') || request.includes('pending mail')) {
+    return extractEmailTasksFromContext(pageContext);
   }
 
   if (hasContext) {
@@ -2498,6 +2630,16 @@ function registerIpcHandlers() {
     );
     if (store) store.set('settings', settings);
     return true;
+  });
+
+  registerHandler('get-24h-report', () => generate24HourWfhReport());
+  registerHandler('extract-email-tasks', async () => {
+    try {
+      const pageContext = await extractPageContext({ maxChars: MAX_PAGE_CONTEXT });
+      return extractEmailTasksFromContext(pageContext);
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   });
 
   registerHandler('get-site-permissions', (event, originUrl) => {
