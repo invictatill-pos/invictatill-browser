@@ -7,6 +7,7 @@ const els = {
   browserChrome: $('browser-chrome'),
   tabsContainer: $('tabs-container'),
   addressBar: $('address-bar'),
+  addressSuggestions: $('address-suggestions'),
   omnibox: $('omnibox-shell'),
   newTabPage: $('new-tab-page'),
   pageError: $('page-error'),
@@ -2593,22 +2594,193 @@ function wireUi() {
   bindClick('btn-error-new-tab', function () { newTab(); });
 
   els.addressBar.addEventListener('focus', function () { els.addressBar.select(); });
+  let suggestionIndex = -1;
+  let currentSuggestions = [];
+
+  function renderSuggestions() {
+    els.addressSuggestions.innerHTML = '';
+    if (currentSuggestions.length === 0) {
+      setHidden(els.addressSuggestions, true);
+      return;
+    }
+    setHidden(els.addressSuggestions, false);
+    currentSuggestions.forEach((item, index) => {
+      const div = document.createElement('div');
+      div.className = 'suggestion-item' + (index === suggestionIndex ? ' selected' : '');
+      const icon = document.createElement('span');
+      icon.className = 'suggestion-icon';
+      icon.textContent = '🕒';
+      const text = document.createElement('div');
+      text.className = 'suggestion-text';
+      const title = document.createElement('span');
+      title.className = 'suggestion-title';
+      title.textContent = item.title || item.url;
+      const url = document.createElement('span');
+      url.className = 'suggestion-url';
+      url.textContent = item.url;
+      text.appendChild(title);
+      text.appendChild(url);
+      div.appendChild(icon);
+      div.appendChild(text);
+      div.onmousedown = (e) => {
+        e.preventDefault();
+        navigate(item.url);
+        els.addressBar.blur();
+        setHidden(els.addressSuggestions, true);
+      };
+      els.addressSuggestions.appendChild(div);
+    });
+  }
+
+  els.addressBar.addEventListener('input', async function () {
+    const val = els.addressBar.value.trim().toLowerCase();
+    suggestionIndex = -1;
+    if (!val || val.startsWith('invicta://')) {
+      currentSuggestions = [];
+      renderSuggestions();
+      return;
+    }
+    const history = await api.getHistory({ query: val, limit: 10 });
+    const unique = [];
+    const seen = new Set();
+    for (const h of history) {
+      if (!seen.has(h.url)) {
+        seen.add(h.url);
+        unique.push(h);
+      }
+    }
+    currentSuggestions = unique.slice(0, 6);
+    renderSuggestions();
+  });
+
+  els.addressBar.addEventListener('blur', function () {
+    setTimeout(() => setHidden(els.addressSuggestions, true), 100);
+  });
+
   els.addressBar.addEventListener('keydown', function (event) {
-    if (event.key === 'Enter') {
+    if (event.key === 'ArrowDown') {
       event.preventDefault();
-      navigate(els.addressBar.value);
+      if (currentSuggestions.length > 0) {
+        suggestionIndex = (suggestionIndex + 1) % currentSuggestions.length;
+        renderSuggestions();
+      }
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (currentSuggestions.length > 0) {
+        suggestionIndex = suggestionIndex <= 0 ? currentSuggestions.length - 1 : suggestionIndex - 1;
+        renderSuggestions();
+      }
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (suggestionIndex >= 0 && suggestionIndex < currentSuggestions.length) {
+        navigate(currentSuggestions[suggestionIndex].url);
+      } else {
+        navigate(els.addressBar.value);
+      }
       els.addressBar.blur();
+      setHidden(els.addressSuggestions, true);
     } else if (event.key === 'Escape') {
       event.preventDefault();
+      setHidden(els.addressSuggestions, true);
       const tab = activeTab();
       els.addressBar.value = tab && !isNewTabUrl(tab.url) ? tab.url : '';
       els.addressBar.blur();
     }
   });
 
+  let ntpSuggestionIndex = -1;
+  let currentNtpSuggestions = [];
+  const ntpSearchInput = $('ntp-search');
+  const ntpSuggestionsContainer = $('ntp-suggestions');
+
+  function renderNtpSuggestions() {
+    ntpSuggestionsContainer.innerHTML = '';
+    if (currentNtpSuggestions.length === 0) {
+      setHidden(ntpSuggestionsContainer, true);
+      return;
+    }
+    setHidden(ntpSuggestionsContainer, false);
+    currentNtpSuggestions.forEach((item, index) => {
+      const div = document.createElement('div');
+      div.className = 'suggestion-item' + (index === ntpSuggestionIndex ? ' selected' : '');
+      const icon = document.createElement('span');
+      icon.className = 'suggestion-icon';
+      icon.textContent = '🕒';
+      const text = document.createElement('div');
+      text.className = 'suggestion-text';
+      const title = document.createElement('span');
+      title.className = 'suggestion-title';
+      title.textContent = item.title || item.url;
+      const url = document.createElement('span');
+      url.className = 'suggestion-url';
+      url.textContent = item.url;
+      text.appendChild(title);
+      text.appendChild(url);
+      div.appendChild(icon);
+      div.appendChild(text);
+      div.onmousedown = (e) => {
+        e.preventDefault();
+        navigate(item.url);
+        ntpSearchInput.blur();
+        setHidden(ntpSuggestionsContainer, true);
+      };
+      ntpSuggestionsContainer.appendChild(div);
+    });
+  }
+
+  ntpSearchInput.addEventListener('input', async function () {
+    const val = ntpSearchInput.value.trim().toLowerCase();
+    ntpSuggestionIndex = -1;
+    if (!val || val.startsWith('invicta://')) {
+      currentNtpSuggestions = [];
+      renderNtpSuggestions();
+      return;
+    }
+    const history = await api.getHistory({ query: val, limit: 10 });
+    const unique = [];
+    const seen = new Set();
+    for (const h of history) {
+      if (!seen.has(h.url)) {
+        seen.add(h.url);
+        unique.push(h);
+      }
+    }
+    currentNtpSuggestions = unique.slice(0, 6);
+    renderNtpSuggestions();
+  });
+
+  ntpSearchInput.addEventListener('blur', function () {
+    setTimeout(() => setHidden(ntpSuggestionsContainer, true), 100);
+  });
+
+  ntpSearchInput.addEventListener('keydown', function (event) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (currentNtpSuggestions.length > 0) {
+        ntpSuggestionIndex = (ntpSuggestionIndex + 1) % currentNtpSuggestions.length;
+        renderNtpSuggestions();
+      }
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (currentNtpSuggestions.length > 0) {
+        ntpSuggestionIndex = ntpSuggestionIndex <= 0 ? currentNtpSuggestions.length - 1 : ntpSuggestionIndex - 1;
+        renderNtpSuggestions();
+      }
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      setHidden(ntpSuggestionsContainer, true);
+    }
+  });
+
   $('ntp-search-form').addEventListener('submit', function (event) {
     event.preventDefault();
-    navigate($('ntp-search').value);
+    if (ntpSuggestionIndex >= 0 && ntpSuggestionIndex < currentNtpSuggestions.length) {
+      navigate(currentNtpSuggestions[ntpSuggestionIndex].url);
+    } else {
+      navigate(ntpSearchInput.value);
+    }
+    ntpSearchInput.blur();
+    setHidden(ntpSuggestionsContainer, true);
   });
   document.querySelectorAll('.quick-link').forEach(function (button) {
     button.addEventListener('click', function () { navigate(button.dataset.url); });
