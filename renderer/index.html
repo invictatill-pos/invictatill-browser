@@ -19,10 +19,23 @@
           </svg>
         </span>
         <span class="logo-text">InvictaTill</span>
-        <span class="mode-badge" id="mode-badge">
-          <span class="mode-dot" aria-hidden="true"></span>
-          <span id="mode-badge-text">Workspace</span>
-        </span>
+        
+        <div class="workspace-selector-shell" id="workspace-selector-shell">
+          <button class="mode-badge workspace-pill-button" id="btn-workspace-selector" type="button" aria-haspopup="true" aria-expanded="false" title="Click to Switch or Create Multi-Login Workspaces">
+            <span class="mode-dot ws-dot" id="ws-active-dot" style="background:#6366f1;"></span>
+            <span class="ws-icon" id="ws-active-icon">🌐</span>
+            <span id="ws-active-name">Default</span>
+            <span id="mode-badge-text" class="visually-hidden">Workspace</span>
+            <span class="ws-chevron" aria-hidden="true">▾</span>
+          </button>
+          <div class="workspace-dropdown hidden" id="workspace-dropdown-menu" role="menu" aria-label="Workspaces">
+            <div class="ws-menu-header">
+              <span>MULTI-LOGIN WORKSPACES</span>
+              <button class="ws-add-btn" id="btn-add-workspace-open" type="button" title="Add New Workspace">+ Add Workspace</button>
+            </div>
+            <div class="ws-list" id="workspace-menu-list"></div>
+          </div>
+        </div>
       </div>
       <div class="titlebar-status" id="titlebar-status" role="status" aria-live="polite"></div>
       <div class="window-controls">
@@ -39,26 +52,10 @@
     </div>
 
     <div class="tabs-bar" id="tabs-bar">
-      <div class="workspace-selector-shell" id="workspace-selector-shell">
-        <button class="workspace-pill-button" id="btn-workspace-selector" type="button" aria-haspopup="true" aria-expanded="false" title="Active Multi-Login Workspace Container">
-          <span class="ws-dot" id="ws-active-dot" style="background:#6366f1;"></span>
-          <span class="ws-icon" id="ws-active-icon">🌐</span>
-          <span class="ws-name" id="ws-active-name">Default</span>
-          <span class="ws-chevron" aria-hidden="true">▾</span>
-        </button>
-        <div class="workspace-dropdown hidden" id="workspace-dropdown-menu" role="menu" aria-label="Workspaces">
-          <div class="ws-menu-header">
-            <span>MULTI-LOGIN WORKSPACES</span>
-            <button class="ws-add-btn" id="btn-add-workspace-open" type="button" title="Add New Workspace">+ Add</button>
-          </div>
-          <div class="ws-list" id="workspace-menu-list"></div>
-        </div>
-      </div>
-
       <div class="tabs-scroll">
         <div class="tabs-container" id="tabs-container" role="tablist" aria-label="Open tabs"></div>
       </div>
-      <button class="chrome-button new-tab-button" id="btn-new-tab" type="button" aria-label="New tab" title="New tab in active workspace (Ctrl+T)">
+      <button class="chrome-button new-tab-button" id="btn-new-tab" type="button" aria-label="New tab" title="New tab (Ctrl+T)">
         <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
       </button>
       <button class="chrome-button compact-action" id="btn-reopen-tab" type="button" aria-label="Reopen closed tab" title="Reopen closed tab (Ctrl+Shift+T)">

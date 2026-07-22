@@ -217,15 +217,21 @@ function isAllowedRemoteUrl(candidate, allowBlank) {
   }
 }
 
+function isNewTabUrl(url) {
+  const value = String(url || '').trim().toLowerCase();
+  return !value || value === 'about:blank' || value === 'invicta://newtab' || value === 'invictatill://newtab' || value === 'chrome://newtab';
+}
+
 function normalizeNavigationUrl(input) {
-  const raw = boundedString(input, 'url', MAX_URL_LENGTH, false);
-  if (raw === 'about:blank') return raw;
+  if (input === undefined || input === null || isNewTabUrl(input)) return 'about:blank';
+  const raw = boundedString(input, 'url', MAX_URL_LENGTH, true);
+  if (!raw || isNewTabUrl(raw)) return 'about:blank';
 
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) {
-    if (!isAllowedRemoteUrl(raw, false)) {
-      throw new TypeError('Only HTTP and HTTPS navigation is allowed');
+    if (isAllowedRemoteUrl(raw, true)) {
+      return new URL(raw).toString();
     }
-    return new URL(raw).toString();
+    return 'https://www.google.com/search?q=' + encodeURIComponent(raw);
   }
 
   if (/\s/.test(raw)) {
@@ -1659,17 +1665,17 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Multi-Login Workspace Containers: Create and switch isolated workspace partitions at the top of the browser bar to log into the exact same website with different accounts concurrently!',
-      '1-Click Toolbar Zoom Controls: Quick Zoom In (+), Zoom Out (-), and Zoom Reset (100%) buttons on the main navigation bar.',
-      'Color-Coded Workspace Tabs: Visual workspace tags on each tab indicating session container ownership.',
+      'Top Titlebar Workspace Container Selector: Switch and add multi-login workspaces directly from the top header next to the logo.',
+      'Restored Clean Tab Bar Layout: Tabs now start cleanly from the far left of the tab strip.',
+      '1-Click Toolbar Zoom Controls: Quick Zoom In (+), Zoom Out (-), and Zoom Reset (100%) controls on main toolbar.',
+      'Multi-Login Session Containers: Log into the exact same website with different accounts concurrently in separate workspaces.',
       'Built-in InvictaTill AI Cloud API integration with zero manual key setup required.',
-      '24-Hour WFH Productivity & Activity Report generator built into AI & Workspace Tasks.',
-      'Smart Gmail & Email Task Extractor: auto-detects incoming email tasks, subjects, and un-replied mail items.',
+      '24-Hour WFH Activity Report & Gmail Task Extractor.',
     ],
     bugFixes: [
-      'Isolated session partition cookies, localStorage, and authentication per workspace container.',
-      'Fixed update installation relaunch flow so updates can be installed with one click.',
-      'Added fallback to local extractive intelligence whenever cloud endpoints are unreachable.',
+      'Fixed navigation handler so adding tabs and entering non-HTTP addresses or shortcuts never fails.',
+      'Restored clean tab strip styling and moved workspace controls to top header.',
+      'Prevented IPC navigation TypeError exceptions when loading internal pages.',
     ],
   };
 }

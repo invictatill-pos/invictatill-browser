@@ -2070,28 +2070,29 @@ kbd {
 
 .workspace-selector-shell {
   position: relative;
-  margin-right: 6px;
+  margin-left: 6px;
+  -webkit-app-region: no-drag;
 }
 
 .workspace-pill-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
+  height: 24px;
   padding: 0 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  color: var(--text-primary);
-  font-size: 12px;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: 9999px;
+  color: #fff;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .workspace-pill-button:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.25);
+  background: rgba(99, 102, 241, 0.28);
+  border-color: rgba(99, 102, 241, 0.6);
 }
 
 .ws-dot {
