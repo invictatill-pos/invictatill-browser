@@ -333,8 +333,11 @@ function publicTab(tab) {
 }
 
 function getBrowserState() {
+  const currentWorkspaceTabs = Array.from(tabs.values()).filter(
+    (t) => (t.workspaceId || 'default') === activeWorkspaceId
+  );
   return {
-    tabs: Array.from(tabs.values()).map(publicTab),
+    tabs: currentWorkspaceTabs.map(publicTab),
     activeTabId,
     activeTab: activeTabId,
     splitScreen: splitScreen.enabled,
@@ -472,6 +475,7 @@ function resizeViews() {
   }
 
   if (!tabsVisible || !primary) return;
+  if ((primary.workspaceId || 'default') !== activeWorkspaceId) return;
 
   const primaryCanShow = primary.url !== 'about:blank';
   const secondaryCanShow = secondary && secondary.url !== 'about:blank';
@@ -895,6 +899,7 @@ function closeTab(id) {
     if (closedTabs.length > MAX_CLOSED_TABS) closedTabs.length = MAX_CLOSED_TABS;
   }
 
+  const wsId = tab.workspaceId || 'default';
   tabs.delete(tab.id);
   destroyTabView(tab);
 
@@ -904,13 +909,17 @@ function closeTab(id) {
 
   sendToShell('tab-closed', { id: tab.id });
 
-  if (tabs.size === 0) {
-    activeTabId = null;
-    createTab('about:blank', { activate: true });
+  const remainingWsTabs = Array.from(tabs.values()).filter(
+    (t) => (t.workspaceId || 'default') === wsId
+  );
+
+  if (remainingWsTabs.length === 0) {
+    if (activeWorkspaceId === wsId) {
+      createTab('about:blank', { workspaceId: wsId, activate: true });
+    }
   } else if (wasActive) {
-    const remaining = Array.from(tabs.keys());
-    const nextId = remaining[Math.min(index, remaining.length - 1)];
-    switchTab(nextId);
+    const nextTab = remainingWsTabs[Math.min(index, remainingWsTabs.length - 1)];
+    if (nextTab) switchTab(nextTab.id);
   } else {
     resizeViews();
   }
@@ -1665,17 +1674,17 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Workspace Tabs Strip: Workspaces now display side-by-side as workspace tabs on the top header right after the logo.',
+      'Complete Browser Inside Browser per Workspace: Each workspace functions as an independent browser instance with its own dedicated tabs, active page state, and session partition.',
+      'Isolated Tab Strips per Workspace: Opening, closing, or switching tabs in one workspace does not affect tabs in other workspaces.',
+      'Top Header Workspace Tabs Strip: Workspaces are listed side-by-side on the top titlebar right after the logo.',
       '1-Click Workspace Management: Add new workspaces with + Workspace button and close them one-by-one with ✕ on each workspace tab.',
-      'Web Tabs Below: Page tabs display cleanly below the workspace header for the currently selected workspace.',
       '1-Click Toolbar Zoom Controls: Quick Zoom In (+), Zoom Out (-), and Zoom Reset (100%) controls on main toolbar.',
-      'Multi-Login Session Containers: Log into the exact same website with different accounts concurrently in separate workspaces.',
       'Built-in InvictaTill AI Cloud API integration with zero manual key setup required.',
       '24-Hour WFH Activity Report & Gmail Task Extractor.',
     ],
     bugFixes: [
-      'Closing a workspace automatically closes its tabs and switches smoothly to Default workspace.',
-      'Fixed workspace partition initialization and navigation handlers.',
+      'Guaranteed tabs created in new workspaces remain strictly scoped to that workspace.',
+      'Session state saving preserves workspace association across browser restarts.',
     ],
   };
 }
@@ -2723,6 +2732,15 @@ function registerIpcHandlers() {
     const found = workspaceList.find((w) => w.id === workspaceId);
     if (found) {
       activeWorkspaceId = found.id;
+      const workspaceTabs = Array.from(tabs.values()).filter(
+        (t) => (t.workspaceId || 'default') === activeWorkspaceId
+      );
+      if (workspaceTabs.length === 0) {
+        createTab('about:blank', { workspaceId: activeWorkspaceId, activate: true });
+      } else {
+        const targetTab = workspaceTabs.find((t) => t.id === activeTabId) || workspaceTabs[0];
+        if (targetTab) switchTab(targetTab.id);
+      }
     }
     return getBrowserState();
   });
@@ -2737,6 +2755,7 @@ function registerIpcHandlers() {
     workspaceList.push(newWs);
     activeWorkspaceId = id;
     saveWorkspaces();
+    createTab('about:blank', { workspaceId: id, activate: true });
     return getBrowserState();
   });
 
