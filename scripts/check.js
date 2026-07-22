@@ -7,12 +7,16 @@ const root = path.resolve(__dirname, '..');
 const files = [
   'main.js',
   'preload.js',
+  'updater-controller.js',
   path.join('renderer', 'renderer.js'),
   path.join('scripts', 'check.js'),
   path.join('scripts', 'after-pack.js'),
+  path.join('scripts', 'verify-update-feed.js'),
   path.join('tests', 'security.test.js'),
   path.join('tests', 'dom-contract.test.js'),
   path.join('tests', 'package.test.js'),
+  path.join('tests', 'updater.test.js'),
+  path.join('tests', 'update-feed.test.js'),
   path.join('tests', 'electron-smoke.js'),
 ];
 

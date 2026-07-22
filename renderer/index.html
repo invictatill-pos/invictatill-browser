@@ -24,7 +24,9 @@
 
       <div class="workspace-tabs-strip" id="workspace-tabs-strip" role="tablist" aria-label="Workspaces">
         <div class="workspace-tabs-container" id="workspace-tabs-container"></div>
-        <button class="ws-add-tab-btn" id="btn-add-workspace-open" type="button" title="Add New Multi-Login Workspace">+ Workspace</button>
+        <button class="ws-add-tab-btn" id="btn-add-workspace-open" type="button" title="Add New Multi-Login Workspace" aria-label="Add workspace">
+          <span class="ws-add-symbol" aria-hidden="true">+</span><span class="ws-add-label">Workspace</span>
+        </button>
       </div>
       <div class="titlebar-status" id="titlebar-status" role="status" aria-live="polite"></div>
       <div class="window-controls">
@@ -273,9 +275,9 @@
         </form>
         <div class="list-toolbar">
           <p id="task-summary">0 open tasks</p>
-          <div style="display:flex;gap:6px;">
-            <button class="secondary-button compact" id="btn-tasks-24h-report" type="button" style="font-size:11px;padding:2px 8px;">📊 24H Report</button>
-            <button class="secondary-button compact" id="btn-tasks-extract-email" type="button" style="font-size:11px;padding:2px 8px;">📬 Email Tasks</button>
+          <div class="toolbar-actions">
+            <button class="secondary-button compact micro-button" id="btn-tasks-24h-report" type="button">📊 24H Report</button>
+            <button class="secondary-button compact micro-button" id="btn-tasks-extract-email" type="button">📬 Email Tasks</button>
           </div>
         </div>
         <div class="data-list" id="pending-tasks-list"></div>
@@ -379,8 +381,19 @@
 
         <fieldset class="settings-group">
           <legend>Updates and tools</legend>
+          <div class="update-settings-card" id="update-settings-card" data-status="idle">
+            <span class="update-settings-icon" id="update-settings-icon" aria-hidden="true">↻</span>
+            <div class="update-settings-copy">
+              <strong id="update-settings-title">Browser updates</strong>
+              <p class="settings-status" id="update-settings-status" role="status" aria-live="polite">Loading update status…</p>
+            </div>
+            <div class="update-settings-actions">
+              <button class="secondary-button compact" id="btn-check-updates" type="button">Check for updates</button>
+              <button class="primary-button compact hidden" id="btn-settings-install-update" type="button">Restart &amp; Install</button>
+            </div>
+          </div>
+          <p class="field-help update-settings-help">Automatic installation is supported by the installed Setup version. Portable builds can be updated manually from the release page.</p>
           <div class="settings-actions">
-            <button class="primary-button hidden" id="btn-settings-install-update" type="button">Restart &amp; Install Update Now</button>
             <button class="secondary-button" id="btn-private-window" type="button">Open private window</button>
             <button class="secondary-button" id="btn-print-page" type="button">Print page</button>
             <button class="secondary-button" id="btn-save-pdf" type="button">Save page as PDF</button>
@@ -488,7 +501,7 @@
           <input id="ws-input-name" type="text" placeholder="e.g. Work, Personal, Client B" required maxlength="60">
           
           <label class="field-label">Icon Tag</label>
-          <div class="ws-icon-picker" id="ws-icon-picker" style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+          <div class="ws-icon-picker" id="ws-icon-picker">
             <button class="chip-button ws-icon-opt active" type="button" data-icon="🏢">🏢 Work</button>
             <button class="chip-button ws-icon-opt" type="button" data-icon="🏠">🏠 Home</button>
             <button class="chip-button ws-icon-opt" type="button" data-icon="💼">💼 Business</button>
@@ -498,16 +511,16 @@
           </div>
 
           <label class="field-label">Color Accent</label>
-          <div class="ws-color-picker" id="ws-color-picker" style="display:flex;gap:10px;margin-bottom:16px;">
-            <button class="ws-color-opt active" type="button" data-color="#3b82f6" style="width:24px;height:24px;border-radius:50%;background:#3b82f6;border:2px solid #fff;cursor:pointer;"></button>
-            <button class="ws-color-opt" type="button" data-color="#10b981" style="width:24px;height:24px;border-radius:50%;background:#10b981;border:2px solid transparent;cursor:pointer;"></button>
-            <button class="ws-color-opt" type="button" data-color="#6366f1" style="width:24px;height:24px;border-radius:50%;background:#6366f1;border:2px solid transparent;cursor:pointer;"></button>
-            <button class="ws-color-opt" type="button" data-color="#8b5cf6" style="width:24px;height:24px;border-radius:50%;background:#8b5cf6;border:2px solid transparent;cursor:pointer;"></button>
-            <button class="ws-color-opt" type="button" data-color="#f59e0b" style="width:24px;height:24px;border-radius:50%;background:#f59e0b;border:2px solid transparent;cursor:pointer;"></button>
-            <button class="ws-color-opt" type="button" data-color="#ef4444" style="width:24px;height:24px;border-radius:50%;background:#ef4444;border:2px solid transparent;cursor:pointer;"></button>
+          <div class="ws-color-picker" id="ws-color-picker" aria-label="Workspace color">
+            <button class="ws-color-opt active" type="button" data-color="#3b82f6" aria-label="Blue" aria-pressed="true"></button>
+            <button class="ws-color-opt" type="button" data-color="#10b981" aria-label="Green" aria-pressed="false"></button>
+            <button class="ws-color-opt" type="button" data-color="#6366f1" aria-label="Indigo" aria-pressed="false"></button>
+            <button class="ws-color-opt" type="button" data-color="#8b5cf6" aria-label="Purple" aria-pressed="false"></button>
+            <button class="ws-color-opt" type="button" data-color="#f59e0b" aria-label="Amber" aria-pressed="false"></button>
+            <button class="ws-color-opt" type="button" data-color="#ef4444" aria-label="Red" aria-pressed="false"></button>
           </div>
 
-          <div class="modal-footer" style="padding:0;margin-top:12px;">
+          <div class="modal-footer embedded-modal-footer">
             <button class="secondary-button" id="btn-cancel-add-ws" type="button">Cancel</button>
             <button class="primary-button" id="btn-submit-add-ws" type="submit">Create &amp; Switch Workspace</button>
           </div>
@@ -526,65 +539,69 @@
       </header>
       <div class="modal-body">
         <p class="modal-intro">Passwords saved here can be autofilled cleanly across all your workspaces!</p>
-        <form id="save-password-form" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;margin-bottom:16px;">
-          <input id="pwd-input-domain" type="text" placeholder="Website Domain (e.g. google.com)" required style="padding:6px;border-radius:4px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:12px;">
-          <input id="pwd-input-username" type="text" placeholder="Username / Email" required style="padding:6px;border-radius:4px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:12px;">
-          <input id="pwd-input-password" type="password" placeholder="Password" required style="padding:6px;border-radius:4px;background:rgba(0,0,0,0.5);border:1px solid rgba(255,255,255,0.2);color:#fff;font-size:12px;">
-          <button class="primary-button" type="submit" style="padding:6px 12px;font-size:12px;">+ Save</button>
+        <form class="password-form" id="save-password-form">
+          <label class="visually-hidden" for="pwd-input-domain">Website domain</label>
+          <input id="pwd-input-domain" type="text" placeholder="Website Domain (e.g. google.com)" required autocomplete="url">
+          <label class="visually-hidden" for="pwd-input-username">Username or email</label>
+          <input id="pwd-input-username" type="text" placeholder="Username / Email" required autocomplete="username">
+          <label class="visually-hidden" for="pwd-input-password">Password</label>
+          <input id="pwd-input-password" type="password" placeholder="Password" required autocomplete="current-password">
+          <button class="primary-button password-save-button" type="submit">+ Save</button>
         </form>
         <h3 class="section-title">Saved Logins</h3>
-        <div id="passwords-list" style="max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;"></div>
+        <div class="passwords-list" id="passwords-list"></div>
       </div>
       <footer class="modal-footer">
         <button class="secondary-button" id="btn-close-passwords-done" type="button">Close</button>
       </footer>
     </section>
   </div>
-  <div class="modal-backdrop hidden" id="screen-picker-modal-backdrop" style="z-index:99999;">
-    <section class="update-modal" id="screen-picker-modal" role="dialog" aria-modal="true" aria-labelledby="screen-picker-title" aria-describedby="screen-picker-description screen-picker-origin" tabindex="-1" style="max-width:740px;width:92vw;background:#181622;border:1px solid #332d46;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.8);color:#fff;overflow:hidden;padding:0;">
-      <header style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;background:#201c2e;border-bottom:1px solid #2e2840;">
+  <div class="modal-backdrop screen-picker-backdrop hidden" id="screen-picker-modal-backdrop">
+    <section class="update-modal screen-picker-modal" id="screen-picker-modal" role="dialog" aria-modal="true" aria-labelledby="screen-picker-title" aria-describedby="screen-picker-description screen-picker-origin" tabindex="-1">
+      <header class="screen-picker-header">
         <div>
-          <h2 style="font-size:16px;font-weight:700;margin:0;color:#fff;" id="screen-picker-title">Choose what to share</h2>
-          <p id="screen-picker-description" style="font-size:12px;color:rgba(255,255,255,0.6);margin:2px 0 0 0;">The site will be able to see the contents of your selection</p>
-          <p id="screen-picker-origin" style="font-size:11px;color:#10b981;margin:3px 0 0 0;"></p>
+          <p class="eyebrow">Screen sharing</p>
+          <h2 id="screen-picker-title">Choose what to share</h2>
+          <p id="screen-picker-description">The site can see only the source you select.</p>
+          <p id="screen-picker-origin"></p>
         </div>
         <button class="icon-button" id="btn-cancel-screen-picker-x" type="button" aria-label="Cancel screen share">✕</button>
       </header>
 
-      <div style="display:flex;background:#14121d;border-bottom:1px solid #2a243a;" id="screen-picker-tabs">
-        <button class="screen-picker-tab-btn active" type="button" data-target="tabs" style="flex:1;padding:12px 16px;background:#201c2e;color:#10b981;border:none;border-bottom:2px solid #10b981;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
-          <span>🌐 InvictaTill Tabs</span>
+      <div class="screen-picker-tabs" id="screen-picker-tabs" role="tablist" aria-label="Share source type">
+        <button class="screen-picker-tab-btn active" type="button" role="tab" aria-selected="true" data-target="tabs">
+          <span aria-hidden="true">🌐</span><span>Browser tabs</span>
         </button>
-        <button class="screen-picker-tab-btn" type="button" data-target="windows" style="flex:1;padding:12px 16px;background:transparent;color:rgba(255,255,255,0.6);border:none;border-bottom:2px solid transparent;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
-          <span>💻 Application Window</span>
+        <button class="screen-picker-tab-btn" type="button" role="tab" aria-selected="false" data-target="windows">
+          <span aria-hidden="true">💻</span><span>App windows</span>
         </button>
-        <button class="screen-picker-tab-btn" type="button" data-target="screens" style="flex:1;padding:12px 16px;background:transparent;color:rgba(255,255,255,0.6);border:none;border-bottom:2px solid transparent;font-weight:600;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
-          <span>🖥️ Your Entire Screen</span>
+        <button class="screen-picker-tab-btn" type="button" role="tab" aria-selected="false" data-target="screens">
+          <span aria-hidden="true">🖥️</span><span>Entire screen</span>
         </button>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;height:340px;background:#14121d;">
+      <div class="screen-picker-content">
         <!-- Left Item Selection List -->
-        <div id="screen-picker-list-pane" style="overflow-y:auto;padding:12px;border-right:1px solid #2a243a;display:flex;flex-direction:column;gap:6px;"></div>
+        <div class="screen-picker-list-pane" id="screen-picker-list-pane" aria-live="polite"></div>
 
         <!-- Right Preview Pane -->
-        <div id="screen-picker-preview-pane" style="padding:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#100e18;text-align:center;">
-          <div id="screen-picker-preview-box" style="width:100%;height:220px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px dashed rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:12px;">
-            <p style="color:rgba(255,255,255,0.4);font-size:13px;" id="screen-picker-preview-prompt">Select an item on the left to preview</p>
-            <img id="screen-picker-preview-img" alt="Selected screen-share preview" style="max-width:100%;max-height:100%;object-fit:contain;display:none;">
+        <div class="screen-picker-preview-pane" id="screen-picker-preview-pane">
+          <div class="screen-picker-preview-box" id="screen-picker-preview-box">
+            <p class="screen-picker-preview-prompt" id="screen-picker-preview-prompt">Select an item to preview</p>
+            <img class="screen-picker-preview-img hidden" id="screen-picker-preview-img" alt="Selected screen-share preview">
           </div>
-          <p id="screen-picker-preview-title" style="font-size:12px;font-weight:600;color:var(--cyan);margin:0;max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></p>
+          <p class="screen-picker-preview-title" id="screen-picker-preview-title"></p>
         </div>
       </div>
 
-      <footer style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;background:#181622;border-top:1px solid #2a243a;">
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:rgba(255,255,255,0.8);cursor:pointer;">
-          <input type="checkbox" id="chk-share-audio" checked style="accent-color:#10b981;cursor:pointer;">
+      <footer class="screen-picker-footer">
+        <label class="screen-picker-audio-option">
+          <input type="checkbox" id="chk-share-audio" checked>
           <span id="screen-picker-audio-label">Also share tab audio</span>
         </label>
-        <div style="display:flex;gap:10px;">
-          <button class="secondary-button" id="btn-cancel-screen-picker" type="button" style="padding:8px 16px;font-size:12px;">Cancel</button>
-          <button class="primary-button" id="btn-submit-screen-picker" type="button" style="padding:8px 24px;font-size:12px;background:#10b981;border-color:#10b981;" disabled>Share</button>
+        <div class="screen-picker-actions">
+          <button class="secondary-button" id="btn-cancel-screen-picker" type="button">Cancel</button>
+          <button class="primary-button screen-picker-share-button" id="btn-submit-screen-picker" type="button" disabled>Share</button>
         </div>
       </footer>
     </section>

@@ -53,13 +53,24 @@ function Assert-SignedArtifact {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     $signature = Get-AuthenticodeSignature -LiteralPath $Path
-    $validStatuses = @(
-        [System.Management.Automation.SignatureStatus]::Valid,
-        [System.Management.Automation.SignatureStatus]::UnknownError,
-        [System.Management.Automation.SignatureStatus]::NotSigned
-    )
-    if ($signature.Status -notin $validStatuses) {
-        throw "Artifact has invalid Authenticode status: $([System.IO.Path]::GetFileName($Path)) (status: $($signature.Status))."
+    if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+        throw "Artifact is not protected by a valid Authenticode signature: $([System.IO.Path]::GetFileName($Path)) (status: $($signature.Status))."
+    }
+    if (-not $signature.SignerCertificate -or $signature.SignerCertificate.Subject -eq $signature.SignerCertificate.Issuer) {
+        throw "Artifact uses a missing or self-signed certificate: $([System.IO.Path]::GetFileName($Path))."
+    }
+    $chain = [System.Security.Cryptography.X509Certificates.X509Chain]::new()
+    try {
+        if (-not $chain.Build($signature.SignerCertificate)) {
+            $statuses = @($chain.ChainStatus | ForEach-Object { $_.Status.ToString() }) -join ', '
+            throw "Artifact signing chain is not publicly trusted: $([System.IO.Path]::GetFileName($Path)) ($statuses)."
+        }
+    }
+    finally {
+        $chain.Dispose()
+    }
+    if (-not $signature.TimeStamperCertificate) {
+        throw "Artifact signature is missing a trusted timestamp: $([System.IO.Path]::GetFileName($Path))."
     }
 }
 
@@ -199,6 +210,10 @@ try {
         throw 'latest.yml SHA-512 checksum does not match the built installer.'
     }
 
+    Invoke-Checked -Command $node -CommandArgs @(
+        'scripts/verify-update-feed.js', '--local', '--tag', $tagName
+    ) -Description 'Verify complete local auto-update feed'
+
     Assert-SignedArtifact -Path $installerPath
     Assert-SignedArtifact -Path $portablePath
 
@@ -223,6 +238,22 @@ try {
             '--notes-file', $releaseNotesPath,
             '--target', $commit
         ) -Description 'Create GitHub draft and upload verified artifacts'
+
+        $draftJson = & $gh release view $tagName --json isDraft,assets
+        if ($LASTEXITCODE -ne 0 -or -not $draftJson) {
+            throw "Unable to verify uploaded assets for $tagName."
+        }
+        $draft = $draftJson | ConvertFrom-Json
+        if (-not $draft.isDraft) {
+            throw "$tagName was not created as a draft. Stop and inspect the release immediately."
+        }
+        $uploadedNames = @($draft.assets | ForEach-Object { $_.name })
+        foreach ($path in $expectedFiles) {
+            $expectedName = [System.IO.Path]::GetFileName($path)
+            if ($expectedName -notin $uploadedNames) {
+                throw "GitHub draft is missing required update asset: $expectedName."
+            }
+        }
 
         Write-Host "`nDRAFT CREATED — NOT LIVE" -ForegroundColor Yellow
         Write-Host "Version $Version is staged in a GitHub draft. Production auto-update is unchanged."

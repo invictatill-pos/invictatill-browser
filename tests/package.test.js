@@ -24,12 +24,19 @@ test('browser uses a supported Chromium baseline and safe release defaults', () 
   assert.equal(packageJson.build.publish.releaseType, 'draft');
   assert.ok(!packageJson.build.files.some((entry) => entry.includes('node_modules')));
   assert.ok(packageJson.build.files.includes('LICENSE'));
+  assert.ok(packageJson.build.files.includes('updater-controller.js'));
   assert.equal(packageJson.overrides['fast-uri'], '3.1.4');
 });
 
 test('verification scripts are release prerequisites', () => {
   assert.equal(packageJson.scripts.check, 'node scripts/check.js');
   assert.equal(packageJson.scripts.test, 'node --test tests/*.test.js');
+  assert.equal(packageJson.scripts['verify:update-feed'], 'node scripts/verify-update-feed.js');
   assert.match(releaseScript, /--notes-file/);
+  assert.match(releaseScript, /release view \$tagName --json isDraft,assets/);
+  assert.match(releaseScript, /verify-update-feed\.js/);
+  assert.doesNotMatch(releaseScript, /SignatureStatus\]::NotSigned/);
+  assert.match(releaseScript, /self-signed certificate/);
+  assert.match(releaseScript, /TimeStamperCertificate/);
   assert.doesNotMatch(releaseScript, /--generate-notes/);
 });

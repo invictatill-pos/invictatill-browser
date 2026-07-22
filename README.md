@@ -57,10 +57,11 @@ From the `InvictaTill Browser` directory:
 npm ci
 npm run check
 npm test
+npm run test:e2e
 npm start
 ```
 
-`npm ci` installs the exact dependency versions recorded in `package-lock.json`. `npm run check` performs static project checks, and `npm test` runs the automated security, package, and DOM-contract tests. `npm start` launches a development build; development mode does not publish releases.
+`npm ci` installs the exact dependency versions recorded in `package-lock.json`. `npm run check` performs static project checks, `npm test` runs the automated security, package, and DOM-contract tests, and `npm run test:e2e` exercises the live Electron shell including screen sharing and responsive UI geometry. `npm start` launches a development build; development mode does not publish releases.
 
 ### Build Windows artifacts
 
@@ -79,6 +80,18 @@ The build creates both x64 Windows targets in `dist/`:
 - `latest.yml` and the installer blockmap — auto-update metadata
 
 Production artifacts must be code-signed and verified before a release draft is published. See [RELEASE_GUIDE.md](RELEASE_GUIDE.md) for the staged release checklist.
+
+### Browser updates
+
+Installed Setup builds check the stable GitHub release feed after startup. Update status is also available under **Invicta AI > Settings > Browser updates**, where a user can retry a check and restart once the verified update has downloaded. Development, private, and portable builds show why automatic installation is unavailable; portable users update by downloading the next portable executable manually.
+
+A public update release is valid only when the Setup executable, matching `.blockmap`, and `latest.yml` are published together. Verify a published tag with:
+
+```powershell
+npm run verify:update-feed -- --tag v2.1.13
+```
+
+This command is read-only and fails when required stable-channel assets are absent.
 
 ## License
 

@@ -97,6 +97,8 @@ gh auth status
 
 The command creates a new draft release and uploads the already verified installer, blockmap, portable executable, and `latest.yml`. It does not create a public release. It fails if GitHub CLI is missing, authentication is invalid, or a release for that version already exists.
 
+After upload, the release script reads the draft back from GitHub and blocks completion unless it is still a draft and all four required asset names are present.
+
 Download the draft assets on a separate machine and repeat signature, hash, install, launch, uninstall, and malware-scanning checks. Confirm the draft contains artifacts from one build only; never combine an installer with `latest.yml` from another build.
 
 ## 6. Test N-1 to N updating
@@ -126,5 +128,13 @@ Only a maintainer may publish the verified GitHub draft through the GitHub relea
 - Release notes disclose user-visible behavior and privacy changes.
 
 After the GitHub release is public, synchronize the website. Update its displayed version, direct-download files, links, checksums, and copied update metadata from the same verified build. Download the website artifact once and confirm its file version and hash. Never update the website before the release is public.
+
+Before announcing the rollout, verify the public stable feed itself:
+
+```powershell
+npm run verify:update-feed -- --tag v2.0.0
+```
+
+The command must report the installer, matching blockmap, portable executable, and `latest.yml`. A missing `latest.yml` or blockmap blocks the release because installed clients cannot complete an automatic update without them.
 
 Finally, test the public N-1 to N update once more from a clean VM and retain the previous signed release for rollback. Do not reuse a version number or replace assets on an already published release.

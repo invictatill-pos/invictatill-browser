@@ -62,6 +62,12 @@ const els = {
   updateSub: $('update-banner-sub'),
   updateProgress: $('update-progress'),
   installUpdateButton: $('btn-install-update'),
+  updateSettingsCard: $('update-settings-card'),
+  updateSettingsIcon: $('update-settings-icon'),
+  updateSettingsTitle: $('update-settings-title'),
+  updateSettingsStatus: $('update-settings-status'),
+  checkUpdatesButton: $('btn-check-updates'),
+  settingsInstallUpdateButton: $('btn-settings-install-update'),
   updateModalBackdrop: $('update-modal-backdrop'),
   updateModal: $('update-modal'),
   modalVersion: $('modal-version-label'),
@@ -163,6 +169,8 @@ const state = {
   activeAiRequestId: null,
   lastAiRequest: null,
   updateReady: false,
+  updateStatus: 'idle',
+  currentVersion: '',
   updateBannerVisible: false,
   previousModalFocus: null,
   activityTimer: null
@@ -539,7 +547,7 @@ function renderTabs() {
 
     if (tab.workspaceColor) {
       const wsDot = createElement('span', 'tab-ws-dot');
-      wsDot.style.background = tab.workspaceColor;
+      wsDot.dataset.color = String(tab.workspaceColor).toLowerCase();
       wsDot.title = 'Workspace: ' + (tab.workspaceName || 'Default');
       selectButton.prepend(wsDot);
     }
@@ -797,18 +805,20 @@ function renderWorkspaces() {
 
   clearNode(els.workspaceTabsContainer);
   ws.forEach(function (w) {
-    const pill = createElement('button', 'ws-tab-pill');
-    pill.type = 'button';
+    const pill = createElement('div', 'ws-tab-pill');
     pill.setAttribute('role', 'tab');
+    pill.tabIndex = w.id === activeWsId ? 0 : -1;
+    pill.setAttribute('aria-selected', w.id === activeWsId ? 'true' : 'false');
     if (w.id === activeWsId) pill.classList.add('active');
 
     const dot = createElement('span', 'ws-dot');
-    dot.style.background = w.color || '#6366f1';
+    dot.dataset.color = String(w.color || '#6366f1').toLowerCase();
 
-    const text = createElement('span', '', (w.icon || '🌐') + ' ' + w.name);
+    const text = createElement('span', 'ws-tab-label', (w.icon || '🌐') + ' ' + w.name);
     const editBtn = createElement('button', 'ws-edit-btn', '✏️');
     editBtn.type = 'button';
     editBtn.title = 'Rename workspace ' + w.name;
+    editBtn.setAttribute('aria-label', 'Rename workspace ' + w.name);
 
     const startRename = function (event) {
       if (event) event.stopPropagation();
@@ -862,6 +872,7 @@ function renderWorkspaces() {
       const closeBtn = createElement('button', 'ws-tab-close', '✕');
       closeBtn.type = 'button';
       closeBtn.title = 'Close workspace ' + w.name;
+      closeBtn.setAttribute('aria-label', 'Close workspace ' + w.name);
       closeBtn.addEventListener('click', async function (event) {
         event.stopPropagation();
         try {
@@ -888,6 +899,11 @@ function renderWorkspaces() {
       } catch (err) {
         notify('Failed to switch workspace: ' + errorMessage(err), 'error');
       }
+    });
+    pill.addEventListener('keydown', function (event) {
+      if (event.target !== pill || (event.key !== 'Enter' && event.key !== ' ')) return;
+      event.preventDefault();
+      pill.click();
     });
 
     pill.draggable = true;
@@ -940,7 +956,9 @@ function openAddWorkspaceModal() {
   }
   if (els.wsColorPicker) {
     els.wsColorPicker.querySelectorAll('.ws-color-opt').forEach(function (btn) {
-      btn.style.borderColor = btn.dataset.color === state.selectedWsColor ? '#fff' : 'transparent';
+      const selected = btn.dataset.color === state.selectedWsColor;
+      btn.classList.toggle('active', selected);
+      btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
   }
 
@@ -962,19 +980,13 @@ async function renderPasswordsList() {
     }
     list.forEach(function (item) {
       const row = createElement('div', 'pwd-item');
-      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:rgba(255,255,255,0.05);border-radius:4px;margin-bottom:4px;';
-      const info = createElement('div');
-      info.style.cssText = 'display:flex;flex-direction:column;';
-      const domainSpan = createElement('span', '', item.domain);
-      domainSpan.style.cssText = 'font-weight:700;color:var(--cyan);font-size:12px;';
-      const userSpan = createElement('span', '', item.username || 'No username');
-      userSpan.style.cssText = 'font-size:11px;color:rgba(255,255,255,0.7);';
+      const info = createElement('div', 'pwd-info');
+      const domainSpan = createElement('span', 'pwd-domain', item.domain);
+      const userSpan = createElement('span', 'pwd-username', item.username || 'No username');
       info.append(domainSpan, userSpan);
 
-      const actions = createElement('div');
-      actions.style.cssText = 'display:flex;gap:6px;';
-      const fillBtn = createElement('button', 'secondary-button', '⚡ Autofill');
-      fillBtn.style.cssText = 'padding:3px 8px;font-size:11px;';
+      const actions = createElement('div', 'pwd-actions');
+      const fillBtn = createElement('button', 'secondary-button pwd-fill-button', '⚡ Autofill');
       fillBtn.type = 'button';
       fillBtn.addEventListener('click', async function () {
         try {
@@ -988,9 +1000,10 @@ async function renderPasswordsList() {
         }
       });
 
-      const delBtn = createElement('button', 'icon-button', '✕');
-      delBtn.style.cssText = 'padding:2px 6px;font-size:11px;color:#ef4444;';
+      const delBtn = createElement('button', 'icon-button pwd-delete-button', '✕');
       delBtn.type = 'button';
+      delBtn.title = 'Delete saved login for ' + item.domain;
+      delBtn.setAttribute('aria-label', 'Delete saved login for ' + item.domain);
       delBtn.addEventListener('click', async function () {
         try {
           if (typeof api.deletePassword === 'function') {
@@ -1014,7 +1027,7 @@ async function renderPasswordsList() {
 
 function openPasswordsModal() {
   if (!els.passwordsModalBackdrop) return;
-  const tab = getActiveTab();
+  const tab = activeTab();
   if (tab && tab.url && tab.url !== 'about:blank' && els.pwdInputDomain) {
     try {
       const parsed = new URL(tab.url);
@@ -1080,17 +1093,14 @@ function renderScreenPickerList() {
     const card = createElement('button', 'screen-picker-item');
     card.type = 'button';
     card.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
-    card.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:${isSelected ? 'rgba(16,185,129,0.15)' : 'rgba(255,255,255,0.04)'};border:1px solid ${isSelected ? '#10b981' : 'rgba(255,255,255,0.1)'};cursor:pointer;transition:all 0.15s ease;`;
+    card.title = item.title;
 
-    const icon = createElement('span', '', item.type === 'tab' ? '🌐' : item.type === 'window' ? '💻' : '🖥️');
-    icon.style.cssText = 'font-size:16px;';
+    const icon = createElement('span', 'screen-picker-item-icon', item.type === 'tab' ? '🌐' : item.type === 'window' ? '💻' : '🖥️');
+    icon.setAttribute('aria-hidden', 'true');
 
-    const info = createElement('div');
-    info.style.cssText = 'display:flex;flex-direction:column;overflow:hidden;';
-    const titleSpan = createElement('span', '', item.title);
-    titleSpan.style.cssText = 'font-weight:600;font-size:12px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-    const subSpan = createElement('span', '', item.subtitle);
-    subSpan.style.cssText = 'font-size:11px;color:rgba(255,255,255,0.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+    const info = createElement('div', 'screen-picker-item-copy');
+    const titleSpan = createElement('span', 'screen-picker-item-title', item.title);
+    const subSpan = createElement('span', 'screen-picker-item-subtitle', item.subtitle);
     info.append(titleSpan, subSpan);
     card.append(icon, info);
 
@@ -1160,9 +1170,8 @@ function openScreenPickerModal(data) {
   if (els.screenPickerTabs) {
     els.screenPickerTabs.querySelectorAll('.screen-picker-tab-btn').forEach(function (btn) {
       const isAct = btn.dataset.target === state.screenPickerCategory;
-      btn.style.background = isAct ? '#201c2e' : 'transparent';
-      btn.style.color = isAct ? '#10b981' : 'rgba(255,255,255,0.6)';
-      btn.style.borderBottomColor = isAct ? '#10b981' : 'transparent';
+      btn.classList.toggle('active', isAct);
+      btn.setAttribute('aria-selected', isAct ? 'true' : 'false');
     });
   }
 
@@ -1319,8 +1328,14 @@ async function newTab(url) {
     await invoke('newTab', url || 'about:blank');
     await refreshBrowserState();
     if (!url || isNewTabUrl(url)) {
+      const search = $('ntp-search');
+      const suggestions = $('ntp-suggestions');
+      if (search) search.value = '';
+      if (suggestions) {
+        clearNode(suggestions);
+        setHidden(suggestions, true);
+      }
       window.setTimeout(function () {
-        const search = $('ntp-search');
         if (search) search.focus();
       }, 0);
     }
@@ -2407,9 +2422,83 @@ function setUpdateBannerVisible(visible) {
   scheduleLayout();
 }
 
+function applyUpdateState(info) {
+  const data = info && typeof info === 'object' ? info : {};
+  const allowedStatuses = new Set(['idle', 'disabled', 'checking', 'current', 'downloading', 'downloaded', 'installing', 'error']);
+  const status = allowedStatuses.has(data.status) ? data.status : state.updateStatus;
+  const currentVersion = data.currentVersion || state.currentVersion || '';
+  const targetVersion = data.version || currentVersion;
+  const percent = clamp(data.percent, 0, 100);
+  state.updateStatus = status;
+  state.currentVersion = currentVersion;
+
+  if (els.updateSettingsCard) els.updateSettingsCard.dataset.status = status;
+  if (els.updateSettingsIcon) {
+    els.updateSettingsIcon.textContent = status === 'current' || status === 'downloaded'
+      ? '✓'
+      : status === 'error'
+        ? '!'
+        : status === 'disabled'
+          ? '—'
+          : '↻';
+  }
+
+  let title = 'Browser updates';
+  let message = currentVersion ? 'Installed version ' + currentVersion + '.' : 'Update status is ready.';
+  if (status === 'disabled') {
+    title = 'Automatic updates unavailable';
+    message = data.error || 'Updates are unavailable in this browser mode.';
+  } else if (status === 'checking') {
+    title = 'Checking for updates';
+    message = currentVersion ? 'Comparing installed version ' + currentVersion + ' with the public release feed…' : 'Contacting the public release feed…';
+  } else if (status === 'current') {
+    title = 'You’re up to date';
+    message = 'InvictaTill Browser ' + (currentVersion || targetVersion) + ' is the latest public version.';
+  } else if (status === 'downloading') {
+    title = 'Downloading update' + (targetVersion ? ' ' + targetVersion : '');
+    message = 'Download in progress: ' + Math.round(percent) + '%.';
+  } else if (status === 'downloaded') {
+    title = 'Update ' + targetVersion + ' is ready';
+    message = 'Restart InvictaTill Browser to finish installing the verified update.';
+  } else if (status === 'installing') {
+    title = 'Restarting to update';
+    message = 'InvictaTill Browser is closing and applying update ' + targetVersion + '.';
+  } else if (status === 'error') {
+    title = 'Update check failed';
+    message = data.error || 'The update service returned an unexpected error.';
+  }
+
+  if (els.updateSettingsTitle) els.updateSettingsTitle.textContent = title;
+  if (els.updateSettingsStatus) els.updateSettingsStatus.textContent = message;
+  if (els.checkUpdatesButton) {
+    const busy = status === 'checking' || status === 'downloading' || status === 'installing';
+    els.checkUpdatesButton.disabled = busy || status === 'disabled';
+    els.checkUpdatesButton.textContent = status === 'checking'
+      ? 'Checking…'
+      : status === 'downloading'
+        ? 'Downloading…'
+        : status === 'disabled'
+          ? 'Unavailable'
+          : 'Check for updates';
+    setHidden(els.checkUpdatesButton, status === 'downloaded' || status === 'installing');
+  }
+  syncUpdateStateUI(status === 'downloaded');
+}
+
+function handleUpdateChecking(info) {
+  applyUpdateState({ ...(info || {}), status: 'checking' });
+}
+
+function handleUpdateNotAvailable(info) {
+  applyUpdateState({ ...(info || {}), status: 'current' });
+  if (info && info.interactive) {
+    notify('InvictaTill Browser is up to date.', 'success', 3500);
+  }
+}
+
 function handleUpdateAvailable(info) {
   const version = info && info.version ? ' v' + info.version : '';
-  state.updateReady = false;
+  applyUpdateState({ ...(info || {}), status: 'downloading', percent: 0 });
   setUpdateBannerVisible(true);
   els.updateTitle.textContent = 'Update' + version + ' available';
   els.updateSub.textContent = 'Downloading in the background…';
@@ -2421,12 +2510,11 @@ function handleUpdateAvailable(info) {
   setHidden(els.modalInstall, true);
 }
 
-function syncUpdateStateUI(ready, versionText) {
+function syncUpdateStateUI(ready) {
   state.updateReady = Boolean(ready);
-  const btnSettings = $('btn-settings-install-update');
-  if (btnSettings) {
-    btnSettings.disabled = !state.updateReady;
-    setHidden(btnSettings, !state.updateReady);
+  if (els.settingsInstallUpdateButton) {
+    els.settingsInstallUpdateButton.disabled = !state.updateReady;
+    setHidden(els.settingsInstallUpdateButton, !state.updateReady);
   }
   if (els.installUpdateButton) {
     els.installUpdateButton.disabled = !state.updateReady;
@@ -2440,6 +2528,7 @@ function syncUpdateStateUI(ready, versionText) {
 
 function handleUpdateProgress(progressInfo) {
   const percent = clamp(progressInfo && progressInfo.percent, 0, 100);
+  applyUpdateState({ ...(progressInfo || {}), status: 'downloading', percent });
   setUpdateBannerVisible(true);
   setHidden(els.updateProgress, false);
   els.updateProgress.value = percent;
@@ -2449,7 +2538,7 @@ function handleUpdateProgress(progressInfo) {
 
 function handleUpdateDownloaded(info) {
   const version = info && info.version ? ' v' + info.version : '';
-  syncUpdateStateUI(true, version);
+  applyUpdateState({ ...(info || {}), status: 'downloaded', percent: 100 });
   setUpdateBannerVisible(true);
   els.updateTitle.textContent = 'Update' + version + ' ready to install';
   els.updateSub.textContent = 'Click Install & Restart below to finish updating.';
@@ -2458,11 +2547,52 @@ function handleUpdateDownloaded(info) {
   notify('Browser update' + version + ' is ready! Click Install & Restart to finish.', 'success', 10000);
 }
 
+function handleUpdateError(info) {
+  const data = { ...(info || {}), status: 'error' };
+  applyUpdateState(data);
+  if (data.interactive) {
+    setUpdateBannerVisible(true);
+    els.updateTitle.textContent = 'Update check failed';
+    els.updateSub.textContent = data.error || 'The update service returned an unexpected error.';
+    setHidden(els.updateProgress, true);
+    syncUpdateStateUI(false);
+    notify('Update check failed: ' + (data.error || 'Unknown update error'), 'error', 7000);
+  }
+}
+
+function handleUpdateInstalling(info) {
+  applyUpdateState({ ...(info || {}), status: 'installing' });
+}
+
+async function checkForBrowserUpdates() {
+  applyUpdateState({ status: 'checking', currentVersion: state.currentVersion });
+  try {
+    const result = await invoke('checkUpdates');
+    applyUpdateState(result);
+    return result;
+  } catch (error) {
+    const data = { status: 'error', error: errorMessage(error), interactive: true };
+    handleUpdateError(data);
+    return data;
+  }
+}
+
+async function loadUpdateState() {
+  try {
+    const result = await invokeOptional('getUpdateState');
+    if (result) applyUpdateState(result);
+  } catch (error) {
+    applyUpdateState({ status: 'error', error: errorMessage(error), interactive: false });
+  }
+}
+
 async function installUpdate() {
   try {
     const res = await invoke('installUpdate');
     if (res && res.success === false) {
       notify('Could not install update: ' + (res.error || 'Update not ready'), 'error');
+    } else if (res) {
+      applyUpdateState(res);
     }
   } catch (error) {
     notify('Could not install update: ' + errorMessage(error), 'error');
@@ -2604,9 +2734,13 @@ function registerBrowserEvents() {
     document.body.classList.toggle('fullscreen', state.isFullscreen);
     scheduleLayout();
   });
+  registerEvent('update-checking', handleUpdateChecking);
+  registerEvent('update-not-available', handleUpdateNotAvailable);
   registerEvent('update-available', handleUpdateAvailable);
   registerEvent('update-progress', handleUpdateProgress);
   registerEvent('update-downloaded', handleUpdateDownloaded);
+  registerEvent('update-error', handleUpdateError);
+  registerEvent('update-installing', handleUpdateInstalling);
 }
 
 function bindClick(id, handler) {
@@ -2968,7 +3102,9 @@ function wireUi() {
       if (!btn) return;
       state.selectedWsColor = btn.dataset.color || '#3b82f6';
       els.wsColorPicker.querySelectorAll('.ws-color-opt').forEach(function (opt) {
-        opt.style.borderColor = opt === btn ? '#fff' : 'transparent';
+        const selected = opt === btn;
+        opt.classList.toggle('active', selected);
+        opt.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
     });
   }
@@ -3011,9 +3147,8 @@ function wireUi() {
       state.screenPickerCategory = btn.dataset.target || 'tabs';
       els.screenPickerTabs.querySelectorAll('.screen-picker-tab-btn').forEach(function (b) {
         const isAct = b === btn;
-        b.style.background = isAct ? '#201c2e' : 'transparent';
-        b.style.color = isAct ? '#10b981' : 'rgba(255,255,255,0.6)';
-        b.style.borderBottomColor = isAct ? '#10b981' : 'transparent';
+        b.classList.toggle('active', isAct);
+        b.setAttribute('aria-selected', isAct ? 'true' : 'false');
       });
       state.selectedScreenSource = null;
       renderScreenPickerList();
@@ -3074,6 +3209,8 @@ function wireUi() {
 
   bindClick('btn-dismiss-update', function () { setUpdateBannerVisible(false); });
   bindClick('btn-install-update', installUpdate);
+  bindClick('btn-check-updates', checkForBrowserUpdates);
+  bindClick('btn-settings-install-update', installUpdate);
   bindClick('btn-close-update-modal', closeUpdateModal);
   bindClick('btn-modal-later', closeUpdateModal);
   bindClick('btn-modal-install', installUpdate);
@@ -3214,7 +3351,10 @@ function handleGlobalShortcuts(event) {
 async function loadVersion() {
   try {
     const version = await invokeOptional('getVersion');
-    if (version) $('about-version').textContent = 'v' + version;
+    if (version) {
+      state.currentVersion = version;
+      $('about-version').textContent = 'v' + version;
+    }
   } catch (error) {}
 }
 
@@ -3237,6 +3377,7 @@ async function initialize() {
     loadHistory(),
     loadDownloads(),
     loadVersion(),
+    loadUpdateState(),
     refreshBrowserState()
   ]);
   try {

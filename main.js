@@ -20,6 +20,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 const { pathToFileURL, fileURLToPath } = require('url');
 const Store = require('electron-store');
+const { createUpdateController } = require('./updater-controller');
 
 // Enforce Chromium's renderer sandbox before app.ready.
 app.enableSandbox();
@@ -31,6 +32,9 @@ app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
 const privateInstance = process.argv.includes('--private-mode');
 const gamingInstance = process.argv.includes('--gaming-mode');
+const portableInstance = app.isPackaged && Boolean(
+  process.env.PORTABLE_EXECUTABLE_FILE || process.env.PORTABLE_EXECUTABLE_DIR
+);
 const hasInstanceLock = privateInstance || app.requestSingleInstanceLock();
 
 if (!hasInstanceLock) {
@@ -251,11 +255,9 @@ function saveWorkspaces() {
 }
 
 let autoUpdater = null;
-let updateState = { status: 'idle', version: null, error: null };
+let updateController = null;
 try {
   autoUpdater = require('electron-updater').autoUpdater;
-  autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
 } catch (error) {
   autoUpdater = null;
 }
@@ -1895,6 +1897,7 @@ function getReleaseDetails() {
       'Persistent Workspace Logins: Session cookies are flushed to disk on quit and restored per workspace so Gmail, Google, and work accounts stay signed in.',
       'Cross-Workspace Password Vault 🔑: Encrypted password manager to save and autofill passwords across all your workspaces.',
       'Visible Tab Titles & Drag-and-Drop Reordering: Complete tab visibility and custom reordering.',
+      'Update Center: Check, download, restart, and error states are now visible in Settings with manual retry support.',
     ],
     bugFixes: [
       'Screen picker visibility: Fixed malformed modal markup that left the picker trapped inside hidden dialogs.',
@@ -1903,97 +1906,39 @@ function getReleaseDetails() {
       'Tab ordering: Fixed a runtime error when saving a drag-and-drop tab order.',
       'Security: Removed an embedded service credential and prohibited plaintext password-vault fallback storage.',
       'Address suggestions: Restored the renderer DOM-safety contract and passing test suite.',
+      'Automatic updates: Restored the complete updater event bridge, Settings controls, restart action, and portable-build guidance.',
+      'Release safety: Added required-asset validation for latest.yml and installer blockmaps before a draft can be approved.',
     ],
   };
 }
 
 function setupAutoUpdater() {
-  if (!autoUpdater || isDev || privateInstance) {
-    updateState = {
-      status: 'disabled',
-      version: app.getVersion(),
-      error: isDev ? 'Updates are disabled in development builds' : null,
-    };
-    return;
-  }
+  if (updateController) return updateController.getState();
+  let disabledReason = null;
+  if (isDev) disabledReason = 'Updates are available only in an installed production build.';
+  else if (privateInstance) disabledReason = 'Updates are managed by the regular browser window.';
+  else if (portableInstance) disabledReason = 'Automatic updates require the installed setup version; portable builds update manually.';
+  else if (!autoUpdater) disabledReason = 'Update service is unavailable in this build.';
 
-  autoUpdater.on('checking-for-update', () => {
-    updateState = { status: 'checking', version: null, error: null };
+  updateController = createUpdateController({
+    updater: autoUpdater,
+    currentVersion: app.getVersion(),
+    disabledReason,
+    send: sendToShell,
   });
-  autoUpdater.on('update-not-available', (info) => {
-    updateState = {
-      status: 'current',
-      version: info && info.version ? info.version : app.getVersion(),
-      error: null,
-    };
-  });
-  autoUpdater.on('update-available', (info) => {
-    updateState = { status: 'downloading', version: info.version, error: null };
-    sendToShell('update-available', {
-      version: info.version,
-      releaseDate: info.releaseDate || null,
-      releaseNotes: info.releaseNotes || null,
-    });
-  });
-  autoUpdater.on('download-progress', (progress) => {
-    updateState = {
-      status: 'downloading',
-      version: updateState.version,
-      error: null,
-      percent: Math.round(progress.percent),
-    };
-    sendToShell('update-progress', {
-      percent: Math.round(progress.percent),
-      speed: Math.round(progress.bytesPerSecond / 1024),
-      transferred: Math.round(progress.transferred / (1024 * 1024)),
-      total: Math.round(progress.total / (1024 * 1024)),
-    });
-  });
-  autoUpdater.on('update-downloaded', (info) => {
-    updateState = { status: 'downloaded', version: info.version, error: null };
-    sendToShell('update-downloaded', {
-      version: info.version,
-      releaseNotes: info.releaseNotes || null,
-    });
-  });
-  autoUpdater.on('error', (error) => {
-    updateState = {
-      status: 'error',
-      version: updateState.version,
-      error: error && error.message ? error.message : 'Update failed',
-    };
-    sendToShell('update-error', { ...updateState });
-  });
-
-  setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {});
-  }, 8000);
+  updateController.configure();
+  updateController.scheduleAutomaticCheck(8000);
+  return updateController.getState();
 }
 
 async function checkForUpdates() {
-  if (!autoUpdater || isDev || privateInstance) {
-    return {
-      success: false,
-      isDev,
-      isPrivate: privateInstance,
-      ...updateState,
-    };
-  }
-  try {
-    await autoUpdater.checkForUpdates();
-    return { success: true, ...updateState };
-  } catch (error) {
-    updateState = { status: 'error', version: null, error: error.message };
-    return { success: false, ...updateState };
-  }
+  if (!updateController) setupAutoUpdater();
+  return updateController.check(true);
 }
 
 function installUpdate() {
-  if (!autoUpdater || updateState.status !== 'downloaded') {
-    return { success: false, error: 'No downloaded update is ready to install' };
-  }
-  autoUpdater.quitAndInstall(false, true);
-  return { success: true };
+  if (!updateController) setupAutoUpdater();
+  return updateController.install();
 }
 
 function getRawAiConfig() {
@@ -3258,6 +3203,10 @@ function registerIpcHandlers() {
 
   registerHandler('get-version', () => app.getVersion());
   registerHandler('get-release-notes', () => getReleaseDetails());
+  registerHandler('get-update-state', () => {
+    if (!updateController) setupAutoUpdater();
+    return updateController.getState();
+  });
   registerHandler('check-updates', () => checkForUpdates());
   registerHandler('install-update', () => installUpdate());
 

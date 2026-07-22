@@ -34,6 +34,9 @@ test('find-in-page controls and accessible landmarks exist', () => {
   assert.match(html, /id=["']screen-picker-modal["'][^>]*aria-labelledby=["']screen-picker-title["']/);
   assert.ok(idSet.has('screen-picker-origin'));
   assert.ok(idSet.has('screen-picker-audio-label'));
+  for (const id of ['update-settings-card', 'update-settings-status', 'btn-check-updates', 'btn-settings-install-update']) {
+    assert.ok(idSet.has(id), `Missing #${id}`);
+  }
 });
 
 test('renderer avoids executable HTML and dynamic code sinks', () => {
@@ -41,4 +44,10 @@ test('renderer avoids executable HTML and dynamic code sinks', () => {
   assert.ok(!/insertAdjacentHTML/.test(renderer));
   assert.ok(!/\beval\s*\(/.test(renderer));
   assert.ok(!/new\s+Function\s*\(/.test(renderer));
+});
+
+test('UI styling stays compatible with the strict content security policy', () => {
+  assert.ok(!/\sstyle\s*=/.test(html), 'Inline HTML styles are blocked by style-src self');
+  assert.ok(!/\.style\.|\.style\s*=|cssText/.test(renderer), 'Runtime inline styles bypass the shared component system');
+  assert.match(html, /<link\s+rel=["']stylesheet["']\s+href=["']style\.css["']>/);
 });
