@@ -81,13 +81,8 @@ const els = {
   btnZoomOut: $('btn-zoom-out'),
   btnZoomIn: $('btn-zoom-in'),
   btnZoomReset: $('btn-zoom-reset'),
-  workspaceSelectorShell: $('workspace-selector-shell'),
-  btnWorkspaceSelector: $('btn-workspace-selector'),
-  wsActiveDot: $('ws-active-dot'),
-  wsActiveIcon: $('ws-active-icon'),
-  wsActiveName: $('ws-active-name'),
-  workspaceDropdownMenu: $('workspace-dropdown-menu'),
-  workspaceMenuList: $('workspace-menu-list'),
+  workspaceTabsStrip: $('workspace-tabs-strip'),
+  workspaceTabsContainer: $('workspace-tabs-container'),
   btnAddWorkspaceOpen: $('btn-add-workspace-open'),
   addWorkspaceModalBackdrop: $('add-workspace-modal-backdrop'),
   addWorkspaceModal: $('add-workspace-modal'),
@@ -679,77 +674,64 @@ function closeSiteInfoModal() {
 }
 
 function renderWorkspaces() {
-  if (!els.wsActiveName) return;
+  if (!els.workspaceTabsContainer) return;
   const ws = state.workspaces && state.workspaces.length > 0 ? state.workspaces : [
     { id: 'default', name: 'Default', icon: '🌐', color: '#6366f1' },
     { id: 'work', name: 'Work', icon: '🏢', color: '#3b82f6' },
     { id: 'personal', name: 'Personal', icon: '🏠', color: '#10b981' }
   ];
-  const activeWs = ws.find(function (item) { return item.id === state.activeWorkspaceId; }) || ws[0];
+  const activeWsId = state.activeWorkspaceId || ws[0].id;
 
-  if (els.wsActiveDot) els.wsActiveDot.style.background = activeWs.color || '#6366f1';
-  if (els.wsActiveIcon) els.wsActiveIcon.textContent = activeWs.icon || '🌐';
-  if (els.wsActiveName) els.wsActiveName.textContent = activeWs.name || 'Default';
+  clearNode(els.workspaceTabsContainer);
+  ws.forEach(function (w) {
+    const pill = createElement('button', 'ws-tab-pill');
+    pill.type = 'button';
+    pill.setAttribute('role', 'tab');
+    if (w.id === activeWsId) pill.classList.add('active');
 
-  if (els.workspaceMenuList) {
-    clearNode(els.workspaceMenuList);
-    ws.forEach(function (w) {
-      const item = createElement('div', 'ws-item');
-      if (w.id === activeWs.id) item.classList.add('active');
+    const dot = createElement('span', 'ws-dot');
+    dot.style.background = w.color || '#6366f1';
 
-      const left = createElement('div');
-      left.style.display = 'flex';
-      left.style.alignItems = 'center';
-      left.style.gap = '6px';
-      const dot = createElement('span', 'ws-dot');
-      dot.style.background = w.color;
-      const text = createElement('span', '', w.icon + ' ' + w.name);
-      left.append(dot, text);
+    const text = createElement('span', '', (w.icon || '🌐') + ' ' + w.name);
+    pill.append(dot, text);
 
-      const actions = createElement('div');
-      actions.style.display = 'flex';
-      actions.style.alignItems = 'center';
-      actions.style.gap = '6px';
-
-      if (w.id === activeWs.id) {
-        actions.appendChild(createElement('span', '', '✓ Active'));
-      }
-
-      item.append(left, actions);
-      item.addEventListener('click', async function () {
+    if (w.id !== 'default') {
+      const closeBtn = createElement('button', 'ws-tab-close', '✕');
+      closeBtn.type = 'button';
+      closeBtn.title = 'Close workspace ' + w.name;
+      closeBtn.addEventListener('click', async function (event) {
+        event.stopPropagation();
         try {
-          setWorkspaceDropdownVisible(false);
-          if (typeof api.setActiveWorkspace === 'function') {
-            const res = await api.setActiveWorkspace(w.id);
+          if (typeof api.deleteWorkspace === 'function') {
+            const res = await api.deleteWorkspace(w.id);
             applyBrowserState(res);
-            notify('Switched to workspace: ' + w.name + ' (Isolated logins)', 'success', 3000);
+            notify('Closed workspace: ' + w.name, 'info', 3000);
           }
         } catch (err) {
-          notify('Failed to switch workspace: ' + errorMessage(err), 'error');
+          notify('Could not close workspace: ' + errorMessage(err), 'error');
         }
       });
-      els.workspaceMenuList.appendChild(item);
+      pill.appendChild(closeBtn);
+    }
+
+    pill.addEventListener('click', async function () {
+      if (w.id === activeWsId) return;
+      try {
+        if (typeof api.setActiveWorkspace === 'function') {
+          const res = await api.setActiveWorkspace(w.id);
+          applyBrowserState(res);
+          notify('Switched to workspace: ' + w.name, 'success', 2500);
+        }
+      } catch (err) {
+        notify('Failed to switch workspace: ' + errorMessage(err), 'error');
+      }
     });
-  }
-}
 
-function setWorkspaceDropdownVisible(visible) {
-  if (!els.workspaceDropdownMenu) return;
-  const isVisible = Boolean(visible);
-  setHidden(els.workspaceDropdownMenu, !isVisible);
-  if (els.btnWorkspaceSelector) {
-    els.btnWorkspaceSelector.setAttribute('aria-expanded', isVisible ? 'true' : 'false');
-  }
-}
-
-function toggleWorkspaceDropdown() {
-  if (!els.workspaceDropdownMenu) return;
-  const hidden = els.workspaceDropdownMenu.classList.contains('hidden');
-  setWorkspaceDropdownVisible(hidden);
+    els.workspaceTabsContainer.appendChild(pill);
+  });
 }
 
 function openAddWorkspaceModal() {
-  setWorkspaceDropdownVisible(false);
   if (els.wsInputName) els.wsInputName.value = '';
   state.selectedWsIcon = '🏢';
   state.selectedWsColor = '#3b82f6';
@@ -2371,7 +2353,6 @@ function wireUi() {
   bindClick('btn-zoom-in', zoomIn);
   bindClick('btn-zoom-reset', resetZoom);
 
-  bindClick('btn-workspace-selector', toggleWorkspaceDropdown);
   bindClick('btn-add-workspace-open', openAddWorkspaceModal);
   bindClick('btn-close-add-ws', closeAddWorkspaceModal);
   bindClick('btn-cancel-add-ws', closeAddWorkspaceModal);
@@ -2413,9 +2394,6 @@ function wireUi() {
     if (state.menuOpen && !els.menu.contains(event.target) && !els.menuButton.contains(event.target)) closeMenu();
     if (event.target === els.siteInfoModalBackdrop) closeSiteInfoModal();
     if (event.target === els.addWorkspaceModalBackdrop) closeAddWorkspaceModal();
-    if (els.workspaceSelectorShell && !els.workspaceSelectorShell.contains(event.target)) {
-      setWorkspaceDropdownVisible(false);
-    }
   });
   els.menu.addEventListener('keydown', function (event) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;

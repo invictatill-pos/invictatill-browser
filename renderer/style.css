@@ -2068,56 +2068,87 @@ kbd {
   color: var(--cyan);
 }
 
-.workspace-selector-shell {
-  position: relative;
-  margin-left: 6px;
+.workspace-tabs-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
   -webkit-app-region: no-drag;
 }
 
-.workspace-pill-button {
+.workspace-tabs-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-tab-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 24px;
+  height: 26px;
   padding: 0 10px;
-  background: rgba(99, 102, 241, 0.15);
-  border: 1px solid rgba(99, 102, 241, 0.35);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
   border-radius: 9999px;
-  color: #fff;
+  color: var(--text-secondary);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.workspace-pill-button:hover {
-  background: rgba(99, 102, 241, 0.28);
-  border-color: rgba(99, 102, 241, 0.6);
+.ws-tab-pill:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
 }
 
-.ws-dot {
-  width: 8px;
-  height: 8px;
+.ws-tab-pill.active {
+  background: rgba(99, 102, 241, 0.22);
+  border-color: rgba(99, 102, 241, 0.55);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+}
+
+.ws-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  box-shadow: 0 0 6px currentColor;
-}
-
-.ws-chevron {
-  font-size: 10px;
+  border: none;
+  background: transparent;
   color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  margin-left: 2px;
 }
 
-.workspace-dropdown {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 1050;
-  width: 260px;
-  background: #111827;
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-  padding: 8px;
+.ws-tab-close:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #ef4444;
+}
+
+.ws-add-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  background: rgba(56, 217, 245, 0.1);
+  border: 1px solid rgba(56, 217, 245, 0.3);
+  border-radius: 9999px;
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ws-add-tab-btn:hover {
+  background: rgba(56, 217, 245, 0.22);
+  border-color: rgba(56, 217, 245, 0.5);
 }
 
 .ws-menu-header {

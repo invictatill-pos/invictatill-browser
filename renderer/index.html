@@ -19,23 +19,12 @@
           </svg>
         </span>
         <span class="logo-text">InvictaTill</span>
-        
-        <div class="workspace-selector-shell" id="workspace-selector-shell">
-          <button class="mode-badge workspace-pill-button" id="btn-workspace-selector" type="button" aria-haspopup="true" aria-expanded="false" title="Click to Switch or Create Multi-Login Workspaces">
-            <span class="mode-dot ws-dot" id="ws-active-dot" style="background:#6366f1;"></span>
-            <span class="ws-icon" id="ws-active-icon">🌐</span>
-            <span id="ws-active-name">Default</span>
-            <span id="mode-badge-text" class="visually-hidden">Workspace</span>
-            <span class="ws-chevron" aria-hidden="true">▾</span>
-          </button>
-          <div class="workspace-dropdown hidden" id="workspace-dropdown-menu" role="menu" aria-label="Workspaces">
-            <div class="ws-menu-header">
-              <span>MULTI-LOGIN WORKSPACES</span>
-              <button class="ws-add-btn" id="btn-add-workspace-open" type="button" title="Add New Workspace">+ Add Workspace</button>
-            </div>
-            <div class="ws-list" id="workspace-menu-list"></div>
-          </div>
-        </div>
+        <span id="mode-badge-text" class="visually-hidden">Workspace</span>
+      </div>
+
+      <div class="workspace-tabs-strip" id="workspace-tabs-strip" role="tablist" aria-label="Workspaces">
+        <div class="workspace-tabs-container" id="workspace-tabs-container"></div>
+        <button class="ws-add-tab-btn" id="btn-add-workspace-open" type="button" title="Add New Multi-Login Workspace">+ Workspace</button>
       </div>
       <div class="titlebar-status" id="titlebar-status" role="status" aria-live="polite"></div>
       <div class="window-controls">
