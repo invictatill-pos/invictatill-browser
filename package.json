@@ -1,7 +1,7 @@
 {
   "name": "invictatill-browser",
-  "version": "2.1.4",
-  "description": "InvictaTill Browser - a secure, AI-powered productivity browser",
+  "version": "2.1.5",
+  "description": "A secure Chromium-based Windows productivity browser with private-by-default page assistance, direct InvictaTill AI integration, split view, session restore, and modern browsing tools.",
   "main": "main.js",
   "author": "InvictaTill",
   "license": "MIT",

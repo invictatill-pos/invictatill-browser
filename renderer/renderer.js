@@ -100,6 +100,7 @@ const els = {
   savePasswordForm: $('save-password-form'),
   pwdInputDomain: $('pwd-input-domain'),
   pwdInputUsername: $('pwd-input-username'),
+  pwdInputPassword: $('pwd-input-password'),
   passwordsList: $('passwords-list'),
   screenPickerBackdrop: $('screen-picker-modal-backdrop'),
   screenPickerModal: $('screen-picker-modal'),
@@ -394,6 +395,11 @@ async function refreshBrowserState() {
 function upsertTab(rawTab) {
   if (!rawTab || rawTab.id === undefined || rawTab.id === null) return;
   const tab = normalizeTab(rawTab);
+  
+  if (tab.workspaceId !== (state.activeWorkspaceId || 'default')) {
+    return;
+  }
+
   const index = state.tabs.findIndex(function (item) { return sameId(item.id, tab.id); });
   if (index >= 0) state.tabs[index] = Object.assign({}, state.tabs[index], tab);
   else state.tabs.push(tab);
@@ -2818,7 +2824,8 @@ function wireUi() {
     if (!state.selectedScreenSource) return;
     try {
       if (typeof api.selectScreenShareSource === 'function') {
-        await api.selectScreenShareSource({ sourceId: state.selectedScreenSource.id });
+        const shareAudio = els.chkShareAudio ? els.chkShareAudio.checked : false;
+        await api.selectScreenShareSource({ sourceId: state.selectedScreenSource.id, audio: shareAudio });
         notify('Started screen share: ' + state.selectedScreenSource.title, 'success', 3000);
       }
     } catch (err) {
