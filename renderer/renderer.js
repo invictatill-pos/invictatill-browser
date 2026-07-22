@@ -69,7 +69,15 @@ const els = {
   modalFeatures: $('modal-feature-list'),
   modalFixes: $('modal-bug-list'),
   modalInstall: $('btn-modal-install'),
-  zoomDisplay: $('zoom-display')
+  zoomDisplay: $('zoom-display'),
+  siteInfoModalBackdrop: $('site-info-modal-backdrop'),
+  siteInfoModal: $('site-info-modal'),
+  siteInfoOrigin: $('site-info-origin'),
+  siteInfoSecurityDetails: $('site-info-security-details'),
+  sitePermissionsList: $('site-permissions-list'),
+  btnCloseSiteInfo: $('btn-close-site-info'),
+  btnCloseSiteInfoDone: $('btn-close-site-info-done'),
+  btnResetSitePermissions: $('btn-reset-site-permissions'),
 };
 
 const state = {
@@ -518,12 +526,12 @@ function updateSecurityIndicator(url) {
       indicator.classList.add('secure');
       els.securityIcon.textContent = '🔒';
       els.securityText.textContent = 'HTTPS';
-      indicator.title = 'This page uses HTTPS: ' + parsed.hostname;
+      indicator.title = 'This page uses HTTPS: ' + parsed.hostname + ' (Click for site permissions)';
     } else if (parsed.protocol === 'http:') {
       indicator.classList.add('insecure');
       els.securityIcon.textContent = '⚠';
       els.securityText.textContent = 'Not secure';
-      indicator.title = 'This page does not use HTTPS';
+      indicator.title = 'This page does not use HTTPS (Click for site permissions)';
     } else if (parsed.protocol === 'file:') {
       els.securityIcon.textContent = '▣';
       els.securityText.textContent = 'Local file';
@@ -538,6 +546,111 @@ function updateSecurityIndicator(url) {
     els.securityIcon.textContent = '!';
     els.securityText.textContent = 'Invalid';
     indicator.title = 'Invalid address';
+  }
+}
+
+const PERM_METADATA = [
+  { key: 'camera', label: 'Camera', icon: '📷' },
+  { key: 'microphone', label: 'Microphone', icon: '🎙️' },
+  { key: 'geolocation', label: 'Location', icon: '📍' },
+  { key: 'notifications', label: 'Notifications', icon: '🔔' },
+  { key: 'display-capture', label: 'Screen sharing', icon: '🖥️' }
+];
+
+async function openSiteInfoModal() {
+  const tab = activeTab();
+  if (!tab || !tab.url || isNewTabUrl(tab.url)) return;
+  let origin = '';
+  let protocol = '';
+  try {
+    const parsed = new URL(tab.url);
+    origin = parsed.origin;
+    protocol = parsed.protocol;
+  } catch (error) {
+    return;
+  }
+
+  els.siteInfoOrigin.textContent = origin;
+  if (protocol === 'https:') {
+    els.siteInfoSecurityDetails.textContent = '🔒 Connection is secure. Your information (for example, passwords or camera access) is private when sent to this site.';
+  } else if (protocol === 'http:') {
+    els.siteInfoSecurityDetails.textContent = '⚠ Connection is not secure. You should not enter sensitive information on this site.';
+  } else {
+    els.siteInfoSecurityDetails.textContent = 'ⓘ Internal or local system address.';
+  }
+
+  clearNode(els.sitePermissionsList);
+
+  let siteData = { origin, permissions: {} };
+  try {
+    if (typeof api.getSitePermissions === 'function') {
+      siteData = await api.getSitePermissions(tab.url);
+    }
+  } catch (error) {}
+
+  PERM_METADATA.forEach(function (perm) {
+    const row = createElement('div', 'perm-row');
+    const labelBox = createElement('div', 'perm-label');
+    labelBox.append(
+      createElement('span', 'perm-icon', perm.icon),
+      createElement('span', '', perm.label)
+    );
+
+    const select = createElement('select', 'perm-select');
+    select.dataset.permKey = perm.key;
+    const currentState = siteData && siteData.permissions ? (siteData.permissions[perm.key] || 'ask') : 'ask';
+
+    const optAsk = createElement('option', '', 'Ask (default)');
+    optAsk.value = 'ask';
+    const optAllow = createElement('option', '', 'Allow');
+    optAllow.value = 'allow';
+    const optDeny = createElement('option', '', 'Deny');
+    optDeny.value = 'deny';
+
+    if (currentState === 'allow') optAllow.selected = true;
+    else if (currentState === 'deny') optDeny.selected = true;
+    else optAsk.selected = true;
+
+    select.append(optAsk, optAllow, optDeny);
+    select.addEventListener('change', async function () {
+      try {
+        if (typeof api.setSitePermission === 'function') {
+          await api.setSitePermission(tab.url, perm.key, select.value);
+          notify(perm.label + ' set to ' + select.value + ' for ' + origin, 'success', 3000);
+        }
+      } catch (err) {
+        notify('Failed to update permission: ' + errorMessage(err), 'error');
+      }
+    });
+
+    row.append(labelBox, select);
+    els.sitePermissionsList.appendChild(row);
+  });
+
+  setHidden(els.siteInfoModalBackdrop, false);
+  state.modalOpen = true;
+  scheduleLayout();
+}
+
+function closeSiteInfoModal() {
+  setHidden(els.siteInfoModalBackdrop, true);
+  state.modalOpen = false;
+  scheduleLayout();
+}
+
+async function resetSitePermissions() {
+  const tab = activeTab();
+  if (!tab || !tab.url) return;
+  try {
+    for (const perm of PERM_METADATA) {
+      if (typeof api.setSitePermission === 'function') {
+        await api.setSitePermission(tab.url, perm.key, 'ask');
+      }
+    }
+    notify('Reset all site permissions', 'info', 3000);
+    await openSiteInfoModal();
+  } catch (error) {
+    notify('Failed to reset permissions: ' + errorMessage(error), 'error');
   }
 }
 
@@ -1995,6 +2108,10 @@ function wireUi() {
   bindClick('menu-settings', function () { closeMenu(); openDrawer('settings'); });
   bindClick('menu-release-notes', function () { closeMenu(); openUpdateModal(); });
 
+  bindClick('security-indicator', openSiteInfoModal);
+  bindClick('btn-close-site-info', closeSiteInfoModal);
+  bindClick('btn-close-site-info-done', closeSiteInfoModal);
+  bindClick('btn-reset-site-permissions', resetSitePermissions);
   bindClick('btn-dismiss-update', function () { setUpdateBannerVisible(false); });
   bindClick('btn-install-update', installUpdate);
   bindClick('btn-close-update-modal', closeUpdateModal);
@@ -2003,6 +2120,7 @@ function wireUi() {
 
   document.addEventListener('click', function (event) {
     if (state.menuOpen && !els.menu.contains(event.target) && !els.menuButton.contains(event.target)) closeMenu();
+    if (event.target === els.siteInfoModalBackdrop) closeSiteInfoModal();
   });
   els.menu.addEventListener('keydown', function (event) {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
@@ -2026,7 +2144,10 @@ function handleGlobalShortcuts(event) {
   const ctrl = event.ctrlKey || event.metaKey;
   const key = String(event.key || '').toLowerCase();
   if (event.key === 'Escape') {
-    if (state.modalOpen) {
+    if (!els.siteInfoModalBackdrop.classList.contains('hidden')) {
+      event.preventDefault();
+      closeSiteInfoModal();
+    } else if (state.modalOpen) {
       event.preventDefault();
       closeUpdateModal();
     } else if (state.menuOpen) {
@@ -2132,6 +2253,7 @@ async function initialize() {
   closeMenu(false);
   setHidden(els.findBar, true);
   setHidden(els.updateModalBackdrop, true);
+  setHidden(els.siteInfoModalBackdrop, true);
   setHidden(els.updateBanner, true);
   await Promise.all([
     loadSettings(),

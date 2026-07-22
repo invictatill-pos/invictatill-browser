@@ -111,6 +111,9 @@ const api = {
   showDownload: (id) => ipcRenderer.invoke('show-download', id),
   clearBrowsingData: (options) =>
     ipcRenderer.invoke('clear-browsing-data', options),
+  getSitePermissions: (url) => ipcRenderer.invoke('get-site-permissions', url),
+  setSitePermission: (url, permission, state) =>
+    ipcRenderer.invoke('set-site-permission', { originUrl: url, permission, state }),
 
   // Compatible download aliases used by older/newer renderer surfaces.
   clearDownloads: () => ipcRenderer.invoke('clear-downloads'),

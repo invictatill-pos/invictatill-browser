@@ -410,6 +410,27 @@
         <button class="secondary-button" id="btn-modal-later" type="button">Later</button>
         <button class="primary-button hidden" id="btn-modal-install" type="button" disabled>Restart and update</button>
       </footer>
+  </div>
+
+  <div class="modal-backdrop hidden" id="site-info-modal-backdrop">
+    <section class="update-modal site-info-modal" id="site-info-modal" role="dialog" aria-modal="true" aria-labelledby="site-info-title" tabindex="-1">
+      <header class="modal-header">
+        <div>
+          <p class="eyebrow" id="site-info-security-label">Page Information</p>
+          <h2 id="site-info-title">Site & Security Details</h2>
+        </div>
+        <button class="icon-button" id="btn-close-site-info" type="button" aria-label="Close site details">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="site-origin-display" id="site-info-origin"></p>
+        <div class="security-details-box" id="site-info-security-details"></div>
+        <h3 class="section-title">Permissions for this site</h3>
+        <div class="permissions-list" id="site-permissions-list"></div>
+      </div>
+      <footer class="modal-footer">
+        <button class="secondary-button" id="btn-reset-site-permissions" type="button">Reset site permissions</button>
+        <button class="primary-button" id="btn-close-site-info-done" type="button">Done</button>
+      </footer>
     </section>
   </div>
 

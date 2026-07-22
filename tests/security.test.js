@@ -30,6 +30,9 @@ test('the browser core keeps Chromium security boundaries enabled', () => {
   assert.match(main, /WebContentsView/);
   assert.match(main, /sandbox:\s*true/);
   assert.match(main, /setPermissionRequestHandler/);
+  assert.match(main, /setPermissionCheckHandler/);
+  assert.match(main, /'camera'/);
+  assert.match(main, /'microphone'/);
   assert.match(main, /setWindowOpenHandler/);
 });
 

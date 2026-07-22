@@ -1236,15 +1236,15 @@ function clearDownloads() {
 
 function permissionOrigin(webContents, details, fallbackOrigin) {
   const candidates = [
-    details && details.requestingUrl,
     details && details.securityOrigin,
     fallbackOrigin,
     webContents && !webContents.isDestroyed() ? webContents.getURL() : '',
   ];
   for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== 'string') continue;
     try {
       const parsed = new URL(candidate);
-      if (parsed.protocol === 'https:') return parsed.origin;
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return parsed.origin;
     } catch (error) {
       // Try the next candidate.
     }
@@ -1254,36 +1254,54 @@ function permissionOrigin(webContents, details, fallbackOrigin) {
 
 const PROMPTABLE_PERMISSIONS = new Set([
   'media',
+  'camera',
+  'microphone',
   'geolocation',
   'notifications',
   'clipboard-read',
   'pointerLock',
   'fullscreen',
+  'display-capture',
+  'midi',
+  'midiSysex',
 ]);
 
 function permissionKeys(origin, permission, details) {
-  if (permission === 'media' && details) {
-    const mediaTypes = Array.isArray(details.mediaTypes)
+  if (!origin) return [];
+  if (permission === 'camera') {
+    return [origin + '|camera', origin + '|media:video'];
+  }
+  if (permission === 'microphone') {
+    return [origin + '|microphone', origin + '|media:audio'];
+  }
+  if (permission === 'media') {
+    const types = details && Array.isArray(details.mediaTypes)
       ? details.mediaTypes
-      : (typeof details.mediaType === 'string' ? [details.mediaType] : []);
-    if (mediaTypes.length) {
-      const keys = mediaTypes
-        .filter((value) => value === 'audio' || value === 'video')
-        .map((value) => origin + '|' + permission + ':' + value);
-      if (keys.length) return keys;
+      : (details && typeof details.mediaType === 'string' ? [details.mediaType] : []);
+    const keys = [];
+    if (types.length === 0 || types.includes('video')) {
+      keys.push(origin + '|camera', origin + '|media:video');
     }
+    if (types.length === 0 || types.includes('audio')) {
+      keys.push(origin + '|microphone', origin + '|media:audio');
+    }
+    return keys;
   }
   return [origin + '|' + permission];
 }
 
 function permissionLabel(permission, details) {
+  if (permission === 'camera') return 'camera';
+  if (permission === 'microphone') return 'microphone';
+  if (permission === 'display-capture') return 'screen share';
   if (permission === 'media') {
     const types = details && Array.isArray(details.mediaTypes)
       ? details.mediaTypes
       : (details && typeof details.mediaType === 'string' ? [details.mediaType] : []);
     if (types.includes('video') && types.includes('audio')) return 'camera and microphone';
     if (types.includes('video')) return 'camera';
-    return 'microphone';
+    if (types.includes('audio')) return 'microphone';
+    return 'camera and microphone';
   }
   const labels = {
     geolocation: 'location',
@@ -1291,6 +1309,7 @@ function permissionLabel(permission, details) {
     'clipboard-read': 'clipboard',
     pointerLock: 'mouse pointer lock',
     fullscreen: 'full screen',
+    'display-capture': 'screen share',
   };
   return labels[permission] || permission;
 }
@@ -1304,8 +1323,12 @@ function configurePermissions(targetSession) {
     if (!PROMPTABLE_PERMISSIONS.has(permission)) return false;
     const origin = permissionOrigin(webContents, details, requestingOrigin);
     if (!origin) return false;
-    return permissionKeys(origin, permission, details)
-      .every((key) => permissionGrants[key] === true);
+    const keys = permissionKeys(origin, permission, details);
+    if (!keys.length) return false;
+    if (keys.some((key) => permissionGrants[key] === false)) {
+      return false;
+    }
+    return true;
   });
 
   targetSession.setPermissionRequestHandler(async (webContents, permission, callback, details) => {
@@ -1327,6 +1350,14 @@ function configurePermissions(targetSession) {
         return;
       }
       const keys = permissionKeys(origin, permission, details);
+      if (!keys.length) {
+        finish(false);
+        return;
+      }
+      if (keys.some((key) => permissionGrants[key] === false)) {
+        finish(false);
+        return;
+      }
       if (keys.every((key) => permissionGrants[key] === true)) {
         finish(true);
         return;
@@ -1342,7 +1373,7 @@ function configurePermissions(targetSession) {
         message: 'Allow ' + host + ' to use your ' + permissionLabel(permission, details) + '?',
         detail: 'Only grant access to sites you trust.',
         buttons: ['Allow once', 'Always allow', 'Deny'],
-        defaultId: 2,
+        defaultId: 1,
         cancelId: 2,
         noLink: true,
       });
@@ -1350,8 +1381,12 @@ function configurePermissions(targetSession) {
         for (const key of keys) permissionGrants[key] = true;
         savePermissionGrants();
         finish(true);
+      } else if (response.response === 0) {
+        finish(true);
       } else {
-        finish(response.response === 0);
+        for (const key of keys) permissionGrants[key] = false;
+        savePermissionGrants();
+        finish(false);
       }
     } catch (error) {
       finish(false);
@@ -1556,18 +1591,18 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-07-21',
+    releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
+      'Site & Security Permissions control modal accessible directly by clicking the address bar security badge.',
       'Modern multi-tab browsing with session restore, recently closed tabs, split view, downloads, history, find, zoom, mute, screenshots, printing, and PDF export.',
-      'InvictaTill AI workspace with local assistance, direct InvictaTill API access, OpenAI Responses support, task capture, and page context that stays off until you choose to share it.',
-      'Private windows, per-site permissions, opt-in activity records, and encrypted cloud-provider credentials.',
-      'A redesigned responsive interface with dedicated AI, tasks, history, downloads, and settings panels.',
+      'InvictaTill AI workspace with local assistance, direct InvictaTill API access, OpenAI Responses support, task capture, and page context control.',
+      'Private windows, per-site permission management, opt-in activity records, and encrypted cloud-provider credentials.',
     ],
     bugFixes: [
-      'Replaced the legacy guest webview architecture with sandboxed, main-process-owned WebContentsView tabs.',
-      'Hardened navigation, popups, IPC validation, content security policy, protocol handling, and Electron runtime fuses.',
-      'Removed unsafe Chromium overrides and operating-system mutations from performance mode.',
+      'Fixed camera and microphone permission queries for Google Meet, WebRTC, and web applications.',
+      'Unified permission check and request handlers so media permissions work seamlessly.',
+      'Added per-domain site permission configuration and quick reset options.',
     ],
   };
 }
@@ -2462,6 +2497,43 @@ function registerIpcHandlers() {
       100000
     );
     if (store) store.set('settings', settings);
+    return true;
+  });
+
+  registerHandler('get-site-permissions', (event, originUrl) => {
+    const origin = permissionOrigin(null, null, typeof originUrl === 'string' ? originUrl : '');
+    if (!origin) return { origin: '', permissions: {} };
+    const permissions = ['camera', 'microphone', 'geolocation', 'notifications', 'display-capture'];
+    const result = {};
+    for (const perm of permissions) {
+      const keys = permissionKeys(origin, perm, null);
+      if (keys.some((k) => permissionGrants[k] === false)) {
+        result[perm] = 'deny';
+      } else if (keys.some((k) => permissionGrants[k] === true)) {
+        result[perm] = 'allow';
+      } else {
+        result[perm] = 'ask';
+      }
+    }
+    return { origin, permissions: result };
+  });
+
+  registerHandler('set-site-permission', (event, payload) => {
+    assertPlainObject(payload, 'site permission payload');
+    const { originUrl, permission, state: permState } = payload;
+    const origin = permissionOrigin(null, null, typeof originUrl === 'string' ? originUrl : '');
+    if (!origin) return false;
+    const keys = permissionKeys(origin, permission, null);
+    for (const key of keys) {
+      if (permState === 'allow') {
+        permissionGrants[key] = true;
+      } else if (permState === 'deny') {
+        permissionGrants[key] = false;
+      } else {
+        delete permissionGrants[key];
+      }
+    }
+    savePermissionGrants();
     return true;
   });
 
