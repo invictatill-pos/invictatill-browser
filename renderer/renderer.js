@@ -460,8 +460,41 @@ function renderTabs() {
       wsDot.title = 'Workspace: ' + (tab.workspaceName || 'Default');
       selectButton.prepend(wsDot);
     }
-    selectButton.append(faviconWrap, title);
     item.append(selectButton, audioButton, closeButton);
+
+    item.draggable = true;
+    item.addEventListener('dragstart', function (event) {
+      event.dataTransfer.setData('text/plain', String(tab.id));
+      event.dataTransfer.effectAllowed = 'move';
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', function () {
+      item.classList.remove('dragging');
+    });
+    item.addEventListener('dragover', function (event) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    });
+    item.addEventListener('drop', async function (event) {
+      event.preventDefault();
+      const draggedId = event.dataTransfer.getData('text/plain');
+      if (!draggedId || sameId(draggedId, tab.id)) return;
+      const ids = state.tabs.map(function (t) { return t.id; });
+      const fromIdx = ids.findIndex(function (id) { return sameId(id, draggedId); });
+      const toIdx = ids.findIndex(function (id) { return sameId(id, tab.id); });
+      if (fromIdx >= 0 && toIdx >= 0) {
+        ids.splice(fromIdx, 1);
+        ids.splice(toIdx, 0, draggedId);
+        try {
+          if (typeof api.reorderTabs === 'function') {
+            const res = await api.reorderTabs(ids);
+            applyBrowserState(res);
+          }
+        } catch (err) {
+          notify('Could not reorder tabs', 'error');
+        }
+      }
+    });
     selectButton.addEventListener('click', function () { switchTab(tab.id); });
     selectButton.addEventListener('auxclick', function (event) {
       if (event.button === 1) {
@@ -724,6 +757,57 @@ function renderWorkspaces() {
         }
       } catch (err) {
         notify('Failed to switch workspace: ' + errorMessage(err), 'error');
+      }
+    });
+
+    pill.addEventListener('dblclick', async function (event) {
+      event.stopPropagation();
+      const currentName = w.name || 'Workspace';
+      const promptName = prompt('Rename workspace "' + currentName + '":', currentName);
+      if (promptName && promptName.trim() && promptName.trim() !== currentName) {
+        try {
+          if (typeof api.renameWorkspace === 'function') {
+            const res = await api.renameWorkspace(w.id, promptName.trim());
+            applyBrowserState(res);
+            notify('Renamed workspace to: ' + promptName.trim(), 'success', 2500);
+          }
+        } catch (err) {
+          notify('Could not rename workspace: ' + errorMessage(err), 'error');
+        }
+      }
+    });
+
+    pill.draggable = true;
+    pill.addEventListener('dragstart', function (event) {
+      event.dataTransfer.setData('text/plain', w.id);
+      event.dataTransfer.effectAllowed = 'move';
+      pill.classList.add('dragging');
+    });
+    pill.addEventListener('dragend', function () {
+      pill.classList.remove('dragging');
+    });
+    pill.addEventListener('dragover', function (event) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+    });
+    pill.addEventListener('drop', async function (event) {
+      event.preventDefault();
+      const draggedId = event.dataTransfer.getData('text/plain');
+      if (!draggedId || draggedId === w.id) return;
+      const ids = state.workspaces.map(function (item) { return item.id; });
+      const fromIdx = ids.indexOf(draggedId);
+      const toIdx = ids.indexOf(w.id);
+      if (fromIdx >= 0 && toIdx >= 0) {
+        ids.splice(fromIdx, 1);
+        ids.splice(toIdx, 0, draggedId);
+        try {
+          if (typeof api.reorderWorkspaces === 'function') {
+            const res = await api.reorderWorkspaces(ids);
+            applyBrowserState(res);
+          }
+        } catch (err) {
+          notify('Could not reorder workspaces', 'error');
+        }
       }
     });
 

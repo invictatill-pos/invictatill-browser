@@ -12,6 +12,7 @@ const {
   dialog,
   shell,
   clipboard,
+  desktopCapturer,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -93,6 +94,49 @@ function getWorkspaceDetails(workspaceId) {
   const found = workspaceList.find((w) => w.id === targetId);
   if (found) return found;
   return { id: targetId, name: targetId, icon: '📂', color: '#6366f1' };
+}
+
+function configurePermissions(targetSession) {
+  if (!targetSession) return;
+
+  try {
+    targetSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      if (permission === 'display-capture' || permission === 'media' || permission === 'videoCapture' || permission === 'audioCapture') {
+        return callback(true);
+      }
+      const requestingUrl = details && details.requestingUrl ? details.requestingUrl : (webContents && !webContents.isDestroyed() ? webContents.getURL() : '');
+      const origin = permissionOrigin(null, null, requestingUrl);
+      if (!origin) return callback(true);
+
+      const keys = permissionKeys(origin, permission, details ? details.mediaTypes : null);
+      for (const key of keys) {
+        if (permissionGrants[key] === false) return callback(false);
+        if (permissionGrants[key] === true) return callback(true);
+      }
+      return callback(true);
+    });
+
+    targetSession.setPermissionCheckHandler((webContents, permission) => {
+      if (permission === 'display-capture' || permission === 'media') return true;
+      return true;
+    });
+
+    if (typeof targetSession.setDisplayMediaRequestHandler === 'function') {
+      targetSession.setDisplayMediaRequestHandler((request, callback) => {
+        desktopCapturer.getSources({ types: ['screen', 'window'] }).then((sources) => {
+          if (sources && sources.length > 0) {
+            callback({ video: sources[0], audio: 'loopback' });
+          } else {
+            callback({});
+          }
+        }).catch(() => {
+          callback({});
+        });
+      });
+    }
+  } catch (error) {
+    // Ignore permissions setup errors
+  }
 }
 
 function getWorkspaceSession(workspaceId) {
@@ -1674,17 +1718,17 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Complete Browser Inside Browser per Workspace: Each workspace functions as an independent browser instance with its own dedicated tabs, active page state, and session partition.',
-      'Isolated Tab Strips per Workspace: Opening, closing, or switching tabs in one workspace does not affect tabs in other workspaces.',
-      'Top Header Workspace Tabs Strip: Workspaces are listed side-by-side on the top titlebar right after the logo.',
-      '1-Click Workspace Management: Add new workspaces with + Workspace button and close them one-by-one with ✕ on each workspace tab.',
+      'Seamless Meeting Screen Share: Enabled full display capture for Google Meet, Zoom, MS Teams, Webex, and Discord meetings.',
+      'Double-Click Workspace Renaming: Double-click any workspace tab (including the Default workspace) to quickly rename it.',
+      'Drag-and-Drop Workspace & Tab Reordering: Reorder both workspace tabs and web tabs simply by dragging them into position.',
+      'Complete Browser Inside Browser per Workspace: Independent tabs, page state, and session partition for every workspace.',
       '1-Click Toolbar Zoom Controls: Quick Zoom In (+), Zoom Out (-), and Zoom Reset (100%) controls on main toolbar.',
       'Built-in InvictaTill AI Cloud API integration with zero manual key setup required.',
       '24-Hour WFH Activity Report & Gmail Task Extractor.',
     ],
     bugFixes: [
-      'Guaranteed tabs created in new workspaces remain strictly scoped to that workspace.',
-      'Session state saving preserves workspace association across browser restarts.',
+      'Fixed display-capture permissions and setDisplayMediaRequestHandler for meeting screen sharing.',
+      'Saved workspace reordering and custom names persistently.',
     ],
   };
 }
@@ -2773,6 +2817,55 @@ function registerIpcHandlers() {
       }
     }
     saveWorkspaces();
+    return getBrowserState();
+  });
+
+  registerHandler('rename-workspace', (event, payload) => {
+    assertPlainObject(payload, 'rename workspace payload');
+    const id = boundedString(payload.id, 'workspace id', 100, false);
+    const name = boundedString(payload.name, 'workspace name', 100, true);
+    const found = workspaceList.find((w) => w.id === id);
+    if (found) {
+      found.name = name;
+      saveWorkspaces();
+    }
+    return getBrowserState();
+  });
+
+  registerHandler('reorder-workspaces', (event, workspaceIds) => {
+    if (!Array.isArray(workspaceIds)) {
+      throw new TypeError('workspaceIds must be an array');
+    }
+    const reordered = [];
+    for (const id of workspaceIds) {
+      const found = workspaceList.find((w) => w.id === id);
+      if (found) reordered.push(found);
+    }
+    for (const w of workspaceList) {
+      if (!reordered.includes(w)) reordered.push(w);
+    }
+    workspaceList = reordered;
+    saveWorkspaces();
+    return getBrowserState();
+  });
+
+  registerHandler('reorder-tabs', (event, tabIds) => {
+    if (!Array.isArray(tabIds)) {
+      throw new TypeError('tabIds must be an array');
+    }
+    const newMap = new Map();
+    for (const id of tabIds) {
+      const numId = Number(id);
+      if (tabs.has(numId)) {
+        newMap.set(numId, tabs.get(numId));
+      }
+    }
+    for (const [id, tab] of tabs.entries()) {
+      if (!newMap.has(id)) {
+        newMap.set(id, tab);
+      }
+    }
+    tabs = newMap;
     return getBrowserState();
   });
 
