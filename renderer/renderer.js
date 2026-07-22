@@ -379,9 +379,24 @@ function upsertTab(rawTab) {
   renderBrowserControls();
 }
 
+function formatTabTitle(tab) {
+  if (tab && typeof tab.title === 'string' && tab.title.trim()) {
+    return tab.title.trim();
+  }
+  if (tab && typeof tab.url === 'string' && tab.url && tab.url !== 'about:blank') {
+    try {
+      const parsed = new URL(tab.url);
+      return parsed.hostname.replace(/^www\./, '') || parsed.pathname || tab.url;
+    } catch (e) {
+      return tab.url;
+    }
+  }
+  return 'New Tab';
+}
+
 function tabButtonLabel(tab) {
   let label = tab.muted ? 'Unmute ' : 'Mute ';
-  label += tab.title || 'tab';
+  label += formatTabTitle(tab);
   return label;
 }
 
@@ -432,7 +447,9 @@ function renderTabs() {
       faviconWrap.appendChild(createElement('span', 'tab-fallback-icon', tab.crashed ? '!' : '◌'));
     }
 
-    const title = createElement('span', 'tab-title', tab.title);
+    const displayTitle = formatTabTitle(tab);
+    const title = createElement('span', 'tab-title', displayTitle);
+    selectButton.setAttribute('title', displayTitle);
     const audioButton = createElement('button', 'tab-state-button', tab.muted ? '🔇' : '🔊');
     audioButton.type = 'button';
     audioButton.classList.toggle('audible', tab.audible);
@@ -447,7 +464,7 @@ function renderTabs() {
 
     const closeButton = createElement('button', 'tab-close-button', '✕');
     closeButton.type = 'button';
-    closeButton.setAttribute('aria-label', 'Close ' + tab.title);
+    closeButton.setAttribute('aria-label', 'Close ' + displayTitle);
     closeButton.title = 'Close tab';
     closeButton.addEventListener('click', function (event) {
       event.stopPropagation();
@@ -460,6 +477,7 @@ function renderTabs() {
       wsDot.title = 'Workspace: ' + (tab.workspaceName || 'Default');
       selectButton.prepend(wsDot);
     }
+    selectButton.append(faviconWrap, title);
     item.append(selectButton, audioButton, closeButton);
 
     item.draggable = true;

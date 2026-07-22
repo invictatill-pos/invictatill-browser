@@ -1605,13 +1605,6 @@ function restoreTabs() {
     createdIds.push(created.id);
   }
 
-  for (const w of workspaceList) {
-    const hasTabs = Array.from(tabs.values()).some((t) => (t.workspaceId || 'default') === w.id);
-    if (!hasTabs) {
-      createTab('about:blank', { workspaceId: w.id, activate: false });
-    }
-  }
-
   const activeIndex = Number.isInteger(saved.activeIndex)
     ? Math.min(Math.max(saved.activeIndex, 0), createdIds.length - 1)
     : 0;
@@ -1739,17 +1732,16 @@ function getReleaseDetails() {
     releaseDate: '2026-07-22',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Workspace Tab Persistence on Restart: Reopening the browser now restores every tab into its exact workspace without merging.',
+      'Visible Tab Titles: Restored tab title DOM element rendering and hostname fallback formatting on all web tabs.',
+      'Exact Clean Session Restore: Reopening the browser restores only your open pages and tabs per workspace without opening extra blank tabs or extra workspaces.',
       '1-Click Pencil ✏️ & Double-Click Workspace Renaming: Edit and rename any workspace (including Default) using the pencil icon or double-clicking.',
       'Seamless Meeting Screen Share: Full screen & window capture support for Google Meet, Zoom, MS Teams, Webex, and Discord meetings.',
       'Drag-and-Drop Workspace & Tab Reordering: Reorder workspace tabs and web tabs simply by dragging them into position.',
       'Complete Browser Inside Browser per Workspace: Independent tab strips, page state, and session partition for every workspace.',
-      '1-Click Toolbar Zoom Controls: Quick Zoom In (+), Zoom Out (-), and Zoom Reset (100%) controls on main toolbar.',
-      'Built-in InvictaTill AI Cloud API integration with zero manual key setup required.',
     ],
     bugFixes: [
-      'Saved workspaceId for each tab in session state so tabs stay isolated per workspace across restarts.',
-      'Added inline rename input overlay on workspace tabs for instant renaming.',
+      'Appended tab title and favicon to selectButton in renderer tab items.',
+      'Removed extra workspace tab initialization loop on browser startup.',
     ],
   };
 }
