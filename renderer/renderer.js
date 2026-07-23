@@ -1725,8 +1725,18 @@ async function switchTab(id) {
       return;
     }
     state.activeTabId = id;
+    // ── Fix Bug 1: sync zoom immediately from the IPC result so the
+    //    badge shows the correct zoom for this tab before rendering.
+    if (result && Number.isFinite(Number(result.zoom))) {
+      state.zoomFactor = Number(result.zoom);
+      // Also update the cached tab object so renderBrowserControls reads correctly.
+      const cachedIdx = state.tabs.findIndex(function (t) { return sameId(t.id, id); });
+      if (cachedIdx >= 0) state.tabs[cachedIdx] = Object.assign({}, state.tabs[cachedIdx], { zoom: Number(result.zoom) });
+    }
     renderTabs();
     renderBrowserControls();
+    animateZoomBadge();
+    if (state.zoomPopupOpen) syncZoomPopup();
   } catch (error) {
     notify('Could not switch tab: ' + errorMessage(error), 'error');
   }
@@ -3498,6 +3508,13 @@ function registerBrowserEvents() {
     if (tab && tab.id !== undefined) {
       upsertTab(tab);
       state.activeTabId = tab.id;
+      // ── Fix Bug 1 (push path): when the main process broadcasts tab-switched
+      //    (e.g. keyboard shortcut or another renderer path), sync zoom too.
+      if (Number.isFinite(Number(tab.zoom))) {
+        state.zoomFactor = Number(tab.zoom);
+        animateZoomBadge();
+        if (state.zoomPopupOpen) syncZoomPopup();
+      }
       renderTabs();
       renderBrowserControls();
     } else {

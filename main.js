@@ -1704,9 +1704,11 @@ function createTab(url, options) {
     },
   });
   const restored = isPlainObject(settings.restored) ? settings.restored : {};
+  // Fix Bug 2: apply saved domain zoom immediately when creating a new tab so
+  // duplicated tabs and sub-links start at the right zoom before navigation fires.
   const zoom = Number.isFinite(restored.zoom)
     ? Math.min(3, Math.max(0.25, restored.zoom))
-    : 1;
+    : getZoomForUrl(normalizedUrl);
   const tab = {
     id,
     view,
