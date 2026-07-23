@@ -2245,101 +2245,147 @@ body.fullscreen .browser-stage {
   z-index: 890;
   right: 12px;
   bottom: 14px;
-  width: min(356px, calc(100vw - var(--app-rail-width) - 24px));
-  max-height: min(560px, calc(100vh - var(--chrome-height) - 28px));
+  width: min(320px, calc(100vw - var(--app-rail-width) - 24px));
+  max-height: min(520px, calc(100vh - var(--chrome-height) - 28px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
   color: var(--text-primary);
-  background: rgba(11, 16, 26, 0.99);
-  border: 1px solid rgba(112, 215, 255, 0.24);
+  background: #10141f;
+  border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 14px;
-  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.025);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.7),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: dl-popout-in 0.2s cubic-bezier(0.34, 1.4, 0.64, 1) both;
 }
 
+@keyframes dl-popout-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Header ── */
 .download-popout-header {
-  min-height: 62px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 11px 12px 9px 14px;
-  background: linear-gradient(110deg, rgba(54, 211, 153, 0.1), rgba(93, 169, 255, 0.06));
-  border-bottom: 1px solid var(--border);
+  gap: 10px;
+  padding: 11px 12px 11px 14px;
+  background: linear-gradient(135deg, rgba(0, 196, 110, 0.08), rgba(34, 211, 238, 0.04));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  flex-shrink: 0;
+}
+
+.download-popout-header .eyebrow {
+  margin: 0 0 2px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: rgba(0, 196, 110, 0.7);
 }
 
 .download-popout-header h2 {
-  margin: 1px 0 0;
-  font-size: 16px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1.2;
+  color: #fff;
 }
 
 .download-popout-header .icon-button {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
-  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  font-size: 17px;
+  color: rgba(255, 255, 255, 0.4);
+  background: transparent;
+  border-radius: 7px;
+  transition: color 0.14s, background 0.14s;
 }
 
+.download-popout-header .icon-button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Summary bar ── */
 .download-popout-summary {
   margin: 0;
-  padding: 8px 14px;
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.018);
-  border-bottom: 1px solid var(--border);
-  font-size: 10px;
+  padding: 6px 14px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 9.5px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+  line-height: 1.5;
 }
 
+/* ── Scrollable list ── */
 .download-popout-list {
   min-height: 0;
+  flex: 1;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.12) transparent;
 }
 
+/* ── Download item ── */
 .download-mini-item {
-  padding: 11px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 10px 12px 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background 0.14s;
+}
+
+.download-mini-item:last-child {
+  border-bottom: none;
 }
 
 .download-mini-item[data-state="active"] {
-  background: linear-gradient(90deg, rgba(93, 169, 255, 0.055), transparent);
+  background: linear-gradient(90deg, rgba(34, 211, 238, 0.05), transparent 80%);
 }
 
 .download-mini-item[data-state="completed"] {
-  background: linear-gradient(90deg, rgba(54, 211, 153, 0.045), transparent);
+  background: linear-gradient(90deg, rgba(0, 196, 110, 0.05), transparent 80%);
 }
 
+.download-mini-item[data-state="stopped"] {
+  background: linear-gradient(90deg, rgba(251, 113, 133, 0.05), transparent 80%);
+}
+
+/* ── Item heading row ── */
 .download-mini-heading {
-  min-width: 0;
   display: flex;
   align-items: center;
   gap: 9px;
 }
 
 .download-mini-icon {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   display: grid;
   place-items: center;
-  color: var(--blue);
-  background: rgba(93, 169, 255, 0.1);
-  border: 1px solid rgba(93, 169, 255, 0.2);
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
+  color: rgba(34, 211, 238, 0.9);
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.18);
 }
 
 .download-mini-item[data-state="completed"] .download-mini-icon {
-  color: var(--green);
-  background: rgba(54, 211, 153, 0.1);
-  border-color: rgba(54, 211, 153, 0.22);
+  color: #00c46e;
+  background: rgba(0, 196, 110, 0.1);
+  border-color: rgba(0, 196, 110, 0.22);
 }
 
 .download-mini-item[data-state="stopped"] .download-mini-icon {
-  color: var(--red);
-  background: rgba(251, 113, 133, 0.09);
+  color: #fb7185;
+  background: rgba(251, 113, 133, 0.1);
   border-color: rgba(251, 113, 133, 0.2);
 }
 
@@ -2357,95 +2403,174 @@ body.fullscreen .browser-stage {
 }
 
 .download-mini-title {
-  color: var(--text-primary);
+  color: rgba(255, 255, 255, 0.9);
   font-size: 11px;
-  font-weight: 680;
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .download-mini-meta {
   margin-top: 2px;
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.32);
   font-size: 9px;
 }
 
 .download-mini-dismiss {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  color: var(--text-muted);
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.25);
   background: transparent;
-  border-radius: 7px;
-  font-size: 16px;
+  border-radius: 5px;
+  font-size: 15px;
+  line-height: 1;
+  transition: color 0.12s, background 0.12s;
 }
 
 .download-mini-dismiss:hover {
   color: #fff;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.08);
 }
 
+/* ── Progress bar ── */
 .download-mini-progress {
-  width: 100%;
-  height: 5px;
+  -webkit-appearance: none;
+  appearance: none;
   display: block;
-  margin: 9px 0 0;
-  accent-color: var(--blue);
+  width: 100%;
+  height: 3px;
+  margin: 8px 0 0;
+  border: none;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
 }
 
+.download-mini-progress::-webkit-progress-bar {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+}
+
+.download-mini-progress::-webkit-progress-value {
+  background: linear-gradient(90deg, #22d3ee, #00c46e);
+  border-radius: 99px;
+}
+
+.download-mini-progress::-moz-progress-bar {
+  background: linear-gradient(90deg, #22d3ee, #00c46e);
+  border-radius: 99px;
+}
+
+/* ── Action buttons ── */
 .download-mini-actions {
   display: flex;
-  justify-content: flex-end;
   gap: 6px;
   margin-top: 8px;
+  justify-content: flex-end;
 }
 
 .download-mini-actions button {
-  min-height: 27px;
-  padding: 3px 9px;
-  color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  font-size: 9px;
-  font-weight: 680;
+  height: 24px;
+  padding: 0 9px;
+  font-size: 9.5px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.13s, color 0.13s, border-color 0.13s;
+  color: rgba(255, 255, 255, 0.55);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .download-mini-actions button:hover {
   color: #fff;
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
+/* "Open" — solid green primary */
 .download-mini-actions .download-mini-primary {
-  color: #06120d;
-  background: var(--green);
-  border-color: var(--green);
+  color: #05130d;
+  background: #00c46e;
+  border-color: #00c46e;
+  font-weight: 700;
 }
 
+.download-mini-actions .download-mini-primary:hover {
+  background: #00d977;
+  border-color: #00d977;
+  color: #04120c;
+}
+
+/* "Show in folder" — ghost style */
+.download-mini-actions .download-mini-secondary {
+  color: rgba(255, 255, 255, 0.5);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.download-mini-actions .download-mini-secondary:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* "Cancel" */
 .download-mini-actions .download-mini-cancel {
-  color: var(--red);
+  color: #fb7185;
+  border-color: rgba(251, 113, 133, 0.2);
+  background: rgba(251, 113, 133, 0.06);
 }
 
+.download-mini-actions .download-mini-cancel:hover {
+  color: #fff;
+  background: rgba(251, 113, 133, 0.15);
+  border-color: rgba(251, 113, 133, 0.35);
+}
+
+/* ── Empty state ── */
 .download-mini-empty {
   margin: 0;
-  padding: 24px 18px;
-  color: var(--text-muted);
+  padding: 28px 18px;
+  color: rgba(255, 255, 255, 0.25);
   text-align: center;
   font-size: 10px;
+  flex: 1;
 }
 
+/* ── Footer ── */
 .download-popout-footer {
-  min-height: 38px;
-  flex: 0 0 38px;
-  color: var(--cyan);
-  background: rgba(56, 217, 245, 0.04);
-  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  color: rgba(34, 211, 238, 0.7);
+  background: rgba(34, 211, 238, 0.03);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.14s, background 0.14s;
+}
+
+.download-popout-footer::after {
+  content: '→';
+  font-size: 11px;
+  opacity: 0.6;
+  transition: transform 0.14s;
 }
 
 .download-popout-footer:hover {
   color: #fff;
-  background: rgba(56, 217, 245, 0.09);
+  background: rgba(34, 211, 238, 0.07);
+}
+
+.download-popout-footer:hover::after {
+  transform: translateX(3px);
 }
 
 .password-save-popout {

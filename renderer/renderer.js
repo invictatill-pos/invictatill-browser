@@ -2381,7 +2381,7 @@ function renderDownloadPopout() {
       const open = createElement('button', 'download-mini-primary', 'Open');
       open.type = 'button';
       open.addEventListener('click', function () { runDownloadAction(['openDownload', 'showDownload'], item); });
-      const folder = createElement('button', '', 'Show in folder');
+      const folder = createElement('button', 'download-mini-secondary', 'Show in folder');
       folder.type = 'button';
       folder.addEventListener('click', function () { runDownloadAction(['showDownloadInFolder', 'showItemInFolder'], item); });
       actions.append(open, folder);
