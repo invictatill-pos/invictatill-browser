@@ -802,9 +802,19 @@ function renderBrowserControls() {
   if (els.addressBar && document.activeElement !== els.addressBar) {
     els.addressBar.value = tab && !isNewTabUrl(tab.url) ? tab.url : '';
   }
-  const currentZoom = tab && Number.isFinite(Number(tab.zoom))
-    ? Number(tab.zoom)
-    : (Number.isFinite(Number(state.zoomFactor)) ? Number(state.zoomFactor) : 1.0);
+  // ── Display fix: use state.zoomFactor as source of truth.
+  //    setZoom / switchTab already update state.zoomFactor *before* calling
+  //    renderBrowserControls, so we must NOT let a stale tab.zoom cache
+  //    override it. Only fall back to tab.zoom on a cold load where
+  //    state.zoomFactor hasn't been set for this tab yet.
+  const tabZoom = tab && Number.isFinite(Number(tab.zoom)) ? Number(tab.zoom) : null;
+  const stateZoom = Number.isFinite(Number(state.zoomFactor)) ? Number(state.zoomFactor) : null;
+  const currentZoom = stateZoom !== null ? stateZoom : (tabZoom !== null ? tabZoom : 1.0);
+  // Keep cached tab in sync so future reads are consistent.
+  if (tab && tabZoom !== currentZoom) {
+    const idx = state.tabs.findIndex(function (t) { return sameId(t.id, state.activeTabId); });
+    if (idx >= 0) state.tabs[idx] = Object.assign({}, state.tabs[idx], { zoom: currentZoom });
+  }
   state.zoomFactor = currentZoom;
   const zoomPct = Math.round(currentZoom * 100) + '%';
   // Update the inner label span (the button now contains SVG for +/−, label for %)
@@ -1881,6 +1891,11 @@ async function setZoom(factor) {
       state.zoomFactor = Number(result.zoom);
     } else {
       state.zoomFactor = next;
+    }
+    // Patch the cached tab so renderBrowserControls never reads stale tab.zoom.
+    const cachedIdx = state.tabs.findIndex(function (t) { return sameId(t.id, state.activeTabId); });
+    if (cachedIdx >= 0) {
+      state.tabs[cachedIdx] = Object.assign({}, state.tabs[cachedIdx], { zoom: state.zoomFactor });
     }
     renderBrowserControls();
     animateZoomBadge();

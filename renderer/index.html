@@ -103,21 +103,14 @@
             <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2v8M2 6h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
           </button>
 
-          <!-- Zoom Popup Panel -->
+          <!-- Zoom Popup Panel – compact -->
           <div class="zoom-popup hidden" id="zoom-popup" role="dialog" aria-label="Zoom controls" aria-modal="false">
-            <div class="zoom-popup-header">
-              <span class="zoom-popup-title">Page Zoom</span>
+            <div class="zoom-main-row">
               <span class="zoom-popup-pct" id="zoom-popup-pct">100%</span>
-            </div>
-
-            <div class="zoom-slider-row">
-              <span class="zoom-slider-label">25%</span>
               <input class="zoom-slider" id="zoom-slider" type="range"
                      min="25" max="500" step="5" value="100"
                      aria-label="Zoom level" aria-valuemin="25" aria-valuemax="500" aria-valuenow="100" aria-valuetext="100%">
-              <span class="zoom-slider-label">500%</span>
             </div>
-
             <div class="zoom-presets">
               <button class="zoom-preset-btn" data-zoom="0.5"  type="button" aria-label="Set zoom to 50%">50%</button>
               <button class="zoom-preset-btn" data-zoom="0.75" type="button" aria-label="Set zoom to 75%">75%</button>
@@ -126,10 +119,7 @@
               <button class="zoom-preset-btn" data-zoom="1.5"  type="button" aria-label="Set zoom to 150%">150%</button>
               <button class="zoom-preset-btn" data-zoom="2.0"  type="button" aria-label="Set zoom to 200%">200%</button>
             </div>
-
-            <div class="zoom-popup-footer">
-              <span class="zoom-hint"><kbd>Ctrl</kbd><kbd>+</kbd> / <kbd>−</kbd> Zoom &nbsp;·&nbsp; <kbd>Ctrl</kbd><kbd>0</kbd> Reset &nbsp;·&nbsp; Scroll on % badge</span>
-            </div>
+            <p class="zoom-hint"><kbd>Ctrl</kbd>+/− zoom &nbsp;·&nbsp; <kbd>0</kbd> reset</p>
           </div>
         </div>
         <button class="chrome-button action-button" id="btn-mute" type="button" aria-label="Mute current tab" aria-pressed="false" title="Mute tab (Ctrl+M)">

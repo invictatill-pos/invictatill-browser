@@ -3385,20 +3385,19 @@ kbd {
 /* ── Zoom Popup Panel ─────────────────────────── */
 .zoom-popup {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + 8px);
   right: 0;
   z-index: 900;
-  width: 260px;
-  background: var(--bg-elevated, #1e2030);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  padding: 14px 14px 12px;
+  width: 192px;
+  background: #181c28;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+  padding: 10px 10px 8px;
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.55),
-    0 2px 8px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    0 12px 36px rgba(0, 0, 0, 0.65),
+    0 2px 8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transform-origin: top right;
-  transition: opacity 0.18s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .zoom-popup.hidden {
@@ -3406,66 +3405,45 @@ kbd {
 }
 
 .zoom-popup:not(.hidden) {
-  animation: zoom-popup-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: zoom-popup-in 0.18s cubic-bezier(0.34, 1.45, 0.64, 1) both;
 }
 
 @keyframes zoom-popup-in {
-  from { opacity: 0; transform: scale(0.9) translateY(-6px); }
+  from { opacity: 0; transform: scale(0.92) translateY(-5px); }
   to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Popup header */
-.zoom-popup-header {
+/* ── Main row: big % + slider side by side ── */
+.zoom-main-row {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.zoom-popup-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted, #8892a4);
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
 }
 
 .zoom-popup-pct {
-  font-size: 20px;
+  font-size: 17px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   color: #fff;
-  letter-spacing: -0.03em;
-  transition: color 0.2s ease;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+  min-width: 44px;
+  transition: color 0.18s ease;
 }
 
 .zoom-popup-pct.is-zoomed-color {
   color: #00c46e;
 }
 
-/* Slider row */
-.zoom-slider-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.zoom-slider-label {
-  font-size: 9px;
-  color: var(--text-subtle, #586170);
-  flex-shrink: 0;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Range slider – cross-browser */
+/* Range slider */
 .zoom-slider {
   -webkit-appearance: none;
   appearance: none;
   flex: 1;
-  height: 4px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.12);
+  height: 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.13);
   accent-color: #22d3ee;
   outline: none;
   cursor: pointer;
@@ -3473,90 +3451,97 @@ kbd {
 
 .zoom-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #fff;
-  border: 3px solid #22d3ee;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  border: 2.5px solid #22d3ee;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
   cursor: grab;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 .zoom-slider::-webkit-slider-thumb:active {
   cursor: grabbing;
-  transform: scale(1.2);
-  box-shadow: 0 2px 12px rgba(34, 211, 238, 0.5);
+  transform: scale(1.25);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25);
 }
 
 .zoom-slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   background: #fff;
-  border: 3px solid #22d3ee;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  border: 2.5px solid #22d3ee;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.55);
   cursor: grab;
 }
 
-/* Preset chips */
+/* ── Preset chips ── */
 .zoom-presets {
   display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
+  gap: 4px;
+  margin-bottom: 7px;
 }
 
 .zoom-preset-btn {
   flex: 1;
-  min-width: 36px;
-  padding: 4px 6px;
-  font-size: 10px;
+  padding: 3px 0;
+  font-size: 9.5px;
   font-weight: 600;
-  color: var(--text-secondary, #9aa3b0);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 7px;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
   cursor: pointer;
-  transition: color 0.14s ease, background 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
+  transition: color 0.12s, background 0.12s, border-color 0.12s, transform 0.1s;
   text-align: center;
   white-space: nowrap;
 }
 
 .zoom-preset-btn:hover {
   color: #fff;
-  background: rgba(34, 211, 238, 0.15);
-  border-color: rgba(34, 211, 238, 0.4);
+  background: rgba(34, 211, 238, 0.12);
+  border-color: rgba(34, 211, 238, 0.35);
   transform: translateY(-1px);
 }
 
 .zoom-preset-btn:active {
-  transform: translateY(0) scale(0.96);
+  transform: scale(0.95);
 }
 
 .zoom-preset-btn.zoom-preset-default {
-  color: var(--cyan, #22d3ee);
-  border-color: rgba(34, 211, 238, 0.25);
+  color: rgba(34, 211, 238, 0.8);
+  border-color: rgba(34, 211, 238, 0.2);
 }
 
 .zoom-preset-btn.is-active-preset {
   color: #fff;
-  background: rgba(34, 211, 238, 0.18);
-  border-color: rgba(34, 211, 238, 0.5);
-  box-shadow: 0 0 8px rgba(34, 211, 238, 0.2);
+  background: rgba(0, 196, 110, 0.18);
+  border-color: rgba(0, 196, 110, 0.45);
+  box-shadow: 0 0 6px rgba(0, 196, 110, 0.18);
 }
 
-/* Footer hints */
-.zoom-popup-footer {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  padding-top: 8px;
-}
-
+/* ── Keyboard hint ── */
 .zoom-hint {
-  font-size: 9px;
-  color: var(--text-subtle, #586170);
-  line-height: 1.5;
   display: block;
+  font-size: 8.5px;
+  color: rgba(255, 255, 255, 0.25);
+  text-align: center;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.zoom-hint kbd {
+  display: inline-block;
+  font-size: 7.5px;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  padding: 0px 3px;
+  line-height: 1.6;
 }
 
 .workspace-tabs-strip {
