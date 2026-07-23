@@ -105,7 +105,9 @@ test('live writing suggestions stay origin-checked, reviewed, and away from sens
   assert.match(remotePreload, /password\|passcode\|login/);
   assert.match(remotePreload, /payment\|card\|cvv\|cvc/);
   assert.match(remotePreload, /search\|query\|find/);
-  assert.match(remotePreload, /currentSentence|CurrentSentence|Current Sentence|Current sentence/);
+  assert.match(main, /STRICT PROOFREADING TASK/);
+  assert.match(main, /isConversationalReply/);
+  assert.match(main, /builtInWritingCorrection/);
   assert.doesNotMatch(remotePreload, /contextBridge|exposeInMainWorld|Authorization\s*:/i);
 });
 
