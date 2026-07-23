@@ -25,6 +25,7 @@ const els = {
   splitButton: $('btn-split-screen'),
   appRail: $('app-rail'),
   whatsappButton: $('btn-whatsapp'),
+  aiRailButton: $('btn-invicta-ai'),
   whatsappPanel: $('whatsapp-panel'),
   whatsappPanelHost: $('whatsapp-panel-view-host'),
   whatsappPanelStatus: $('whatsapp-panel-status'),
@@ -88,6 +89,7 @@ const els = {
   passwordSaveUsername: $('password-save-username'),
   passwordSaveConfirm: $('btn-confirm-password-save'),
   aiMessages: $('ai-chat-messages'),
+  aiChatScroll: $('ai-chat-scroll'),
   aiInput: $('ai-chat-input'),
   aiSend: $('btn-send-ai'),
   aiStop: $('btn-stop-ai'),
@@ -372,7 +374,7 @@ function shouldShowPageView() {
   if (tab.crashed || tab.status === 'crashed') return false;
   if (state.modalOpen) return false;
   if (state.menuOpen && window.innerWidth <= 600) return false;
-  if (state.drawerOpen && window.innerWidth <= 720) return false;
+  if (state.drawerOpen && window.innerWidth <= 900) return false;
   if (state.downloadPopoutOpen && window.innerWidth <= 720) return false;
   if (state.passwordSaveRequest && window.innerWidth <= 720) return false;
   if (state.whatsappPanelOpen && window.innerWidth <= 1100) return false;
@@ -391,8 +393,8 @@ function updateViewLayout() {
     left = Math.ceil(els.whatsappPanel.getBoundingClientRect().right);
   }
   let right = 0;
-  if (state.drawerOpen && window.innerWidth > 720 && els.drawer) {
-    right = Math.ceil(els.drawer.getBoundingClientRect().width);
+  if (state.drawerOpen && !state.isFullscreen && window.innerWidth > 900 && els.drawer) {
+    left = Math.max(left, Math.ceil(els.drawer.getBoundingClientRect().right));
   }
   if (state.menuOpen && window.innerWidth > 600) right = Math.max(right, 304);
   if (state.downloadPopoutOpen && window.innerWidth > 720 && els.downloadPopout) {
@@ -463,6 +465,7 @@ function scheduleLayout() {
 
 function setWhatsappPanelOpen(open) {
   const visible = Boolean(open);
+  if (visible && state.drawerOpen) closeDrawer(false);
   state.whatsappPanelOpen = visible;
   document.body.classList.toggle('whatsapp-panel-open', visible);
   setHidden(els.whatsappPanel, !visible);
@@ -2479,26 +2482,44 @@ function setDrawerPanel(panelName, focusTab) {
 }
 
 function openDrawer(panelName) {
+  if (state.whatsappPanelOpen) setWhatsappPanelOpen(false);
   state.drawerOpen = true;
+  document.body.classList.add('ai-panel-open');
   setHidden(els.drawer, false);
   els.drawer.setAttribute('aria-hidden', 'false');
   els.aiButton.setAttribute('aria-expanded', 'true');
+  if (els.aiRailButton) {
+    els.aiRailButton.classList.add('active');
+    els.aiRailButton.setAttribute('aria-expanded', 'true');
+    els.aiRailButton.title = 'Close InvictaTill AI';
+  }
   const targetPanel = panelName || 'chat';
   setDrawerPanel(targetPanel, false);
+  state.lastLayoutKey = '';
   scheduleLayout();
   window.setTimeout(function () {
-    const tab = document.querySelector('.drawer-tab[data-panel="' + targetPanel + '"]');
-    if (tab) tab.focus();
+    const drawerTab = document.querySelector('.drawer-tab[data-panel="' + targetPanel + '"]');
+    const panel = document.querySelector('.drawer-panel[data-panel="' + targetPanel + '"]');
+    if (panel) panel.scrollTop = 0;
+    if (targetPanel === 'chat' && els.aiChatScroll) els.aiChatScroll.scrollTop = 0;
+    if (drawerTab) drawerTab.focus();
   }, 0);
 }
 
 function closeDrawer(restoreFocus) {
   state.drawerOpen = false;
+  document.body.classList.remove('ai-panel-open');
   setHidden(els.drawer, true);
   els.drawer.setAttribute('aria-hidden', 'true');
   els.aiButton.setAttribute('aria-expanded', 'false');
+  if (els.aiRailButton) {
+    els.aiRailButton.classList.remove('active');
+    els.aiRailButton.setAttribute('aria-expanded', 'false');
+    els.aiRailButton.title = 'Open InvictaTill AI';
+  }
+  state.lastLayoutKey = '';
   scheduleLayout();
-  if (restoreFocus) els.aiButton.focus();
+  if (restoreFocus) (els.aiRailButton || els.aiButton).focus();
 }
 
 function toggleDrawer() {
@@ -2688,7 +2709,8 @@ function createMessage(content, sender, options) {
   }
   message.append(avatar, bubble);
   els.aiMessages.appendChild(message);
-  els.aiMessages.scrollTop = els.aiMessages.scrollHeight;
+  if (els.aiChatScroll) els.aiChatScroll.scrollTop = els.aiChatScroll.scrollHeight;
+  else els.aiMessages.scrollTop = els.aiMessages.scrollHeight;
   return message;
 }
 
@@ -2697,7 +2719,9 @@ function setAiBusy(busy) {
   els.aiSend.disabled = busy;
   els.aiInput.disabled = busy;
   setHidden(els.aiStop, !busy);
-  els.aiStatus.textContent = busy ? 'InvictaTill AI is responding…' : '';
+  els.aiStatus.textContent = busy
+    ? 'InvictaTill AI is thinking…'
+    : 'Enter to send · Shift+Enter for a new line';
 }
 
 function timeoutPromise(milliseconds) {
@@ -3425,6 +3449,7 @@ function wireUi() {
   bindClick('btn-whatsapp', function () {
     setWhatsappPanelOpen(!state.whatsappPanelOpen);
   });
+  bindClick('btn-invicta-ai', toggleDrawer);
   bindClick('btn-close-whatsapp', function () { setWhatsappPanelOpen(false); });
   bindClick('btn-whatsapp-reload', async function () {
     state.whatsappPanelStatus = 'loading';

@@ -140,6 +140,10 @@
       <span class="app-rail-badge hidden" id="whatsapp-unread-badge" aria-label="Unread WhatsApp messages">0</span>
       <span class="app-rail-label">WhatsApp</span>
     </button>
+    <button class="app-rail-button invicta-ai-rail-button" id="btn-invicta-ai" type="button" aria-label="Open InvictaTill AI side panel" aria-expanded="false" aria-controls="workspace-drawer" title="Open InvictaTill AI">
+      <span class="rail-ai-spark" aria-hidden="true">✦</span>
+      <span class="app-rail-label">InvictaTill AI</span>
+    </button>
   </aside>
 
   <aside class="whatsapp-panel hidden" id="whatsapp-panel" aria-labelledby="whatsapp-panel-title" aria-hidden="true">
@@ -302,13 +306,16 @@
     </div>
   </section>
 
-  <aside class="workspace-drawer hidden" id="workspace-drawer" aria-labelledby="drawer-title">
+  <aside class="workspace-drawer hidden" id="workspace-drawer" aria-labelledby="drawer-title" aria-hidden="true">
     <div class="drawer-header">
-      <div>
-        <p class="eyebrow">Page context off by default</p>
-        <h2 id="drawer-title">InvictaTill AI workspace</h2>
+      <div class="drawer-brand">
+        <span class="drawer-brand-mark" aria-hidden="true">✦</span>
+        <div>
+          <h2 id="drawer-title">InvictaTill AI</h2>
+          <p>Your friendly browser assistant</p>
+        </div>
       </div>
-      <button class="icon-button" id="btn-close-drawer" type="button" aria-label="Close workspace drawer">✕</button>
+      <button class="icon-button" id="btn-close-drawer" type="button" aria-label="Close InvictaTill AI panel" title="Close InvictaTill AI">✕</button>
     </div>
     <div class="drawer-tabs" role="tablist" aria-label="Workspace sections">
       <button class="drawer-tab active" id="drawer-tab-chat" type="button" role="tab" aria-selected="true" aria-controls="drawer-panel-chat" tabindex="0" data-panel="chat">Chat</button>
@@ -321,38 +328,46 @@
 
     <div class="drawer-body">
       <section class="drawer-panel active" id="drawer-panel-chat" role="tabpanel" aria-labelledby="drawer-tab-chat" data-panel="chat">
+        <div class="ai-chat-scroll" id="ai-chat-scroll">
+        <div class="ai-welcome-card">
+          <div class="ai-welcome-heading">
+            <span class="ai-welcome-orb" aria-hidden="true">✦</span>
+            <div>
+              <strong>How can I help you today?</strong>
+              <p>Ask a question, understand a page, polish your writing, or organize your work.</p>
+            </div>
+          </div>
+          <div class="ai-friendly-points" aria-label="InvictaTill AI capabilities">
+            <span><b aria-hidden="true">✓</b> Works across your browser</span>
+            <span><b aria-hidden="true">◇</b> Page access stays private</span>
+          </div>
+        </div>
         <div class="ai-privacy-row">
           <span class="provider-badge invicta" id="ai-provider-badge">InvictaTill AI</span>
           <label class="toggle-row compact-toggle" for="ai-context-toggle">
             <input id="ai-context-toggle" type="checkbox">
             <span class="toggle-control" aria-hidden="true"></span>
-            <span>Share this page for this message</span>
+            <span>Use current page</span>
           </label>
         </div>
         <p class="privacy-note" id="ai-context-note">Page context is off. InvictaTill AI receives only what you type.</p>
-        <p class="ai-capability-note">Right-click inside Gmail or any text editor to fix spelling, grammar, tone, and clarity with InvictaTill AI. Shortcut: Ctrl+Shift+G.</p>
+        <p class="ai-capability-note" title="Writing shortcut: Ctrl+Shift+G"><span aria-hidden="true">✎</span> Writing help is available in Gmail and other editors. Right-click your draft, or press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>.</p>
         <div class="quick-actions" aria-label="AI quick actions">
-          <button class="chip-button" type="button" data-ai-action="Summarize this page clearly.">Summarize</button>
-          <button class="chip-button" type="button" data-ai-action="Explain the key ideas on this page.">Explain</button>
-          <button class="chip-button" type="button" data-ai-action="Extract useful tasks from this page.">Extract tasks</button>
-          <button class="chip-button" id="btn-ai-gmail-tasks" type="button">📬 Gmail tasks</button>
-          <button class="chip-button" id="btn-ai-24h-report" type="button">📊 24H WFH Report</button>
+          <button class="chip-button" type="button" data-ai-action="Summarize this page clearly."><span aria-hidden="true">≡</span><span><strong>Summarize page</strong><small>Get the main points</small></span></button>
+          <button class="chip-button" type="button" data-ai-action="Explain the key ideas on this page."><span aria-hidden="true">?</span><span><strong>Explain this</strong><small>Make it easier to understand</small></span></button>
+          <button class="chip-button" type="button" data-ai-action="Extract useful tasks from this page."><span aria-hidden="true">✓</span><span><strong>Find tasks</strong><small>Turn the page into actions</small></span></button>
+          <button class="chip-button" id="btn-ai-gmail-tasks" type="button"><span aria-hidden="true">@</span><span><strong>Email actions</strong><small>Find follow-ups and deadlines</small></span></button>
+          <button class="chip-button wide" id="btn-ai-24h-report" type="button"><span aria-hidden="true">↗</span><span><strong>Daily work report</strong><small>Review your last 24 hours</small></span></button>
         </div>
-        <div class="ai-chat-messages" id="ai-chat-messages" role="log" aria-live="polite" aria-relevant="additions">
-          <div class="chat-message assistant">
-            <span class="message-avatar" aria-hidden="true">✦</span>
-            <div class="message-bubble">
-              <p>Hi, I’m InvictaTill AI. Ask me anything, or right-click in an editor for writing help. Page access stays off until you enable it.</p>
-            </div>
-          </div>
+        <div class="ai-chat-messages" id="ai-chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
         </div>
         <div class="ai-composer">
           <label class="visually-hidden" for="ai-chat-input">Message InvictaTill AI</label>
-          <textarea id="ai-chat-input" rows="2" placeholder="Ask InvictaTill AI anything…" maxlength="12000"></textarea>
+          <textarea id="ai-chat-input" rows="2" placeholder="Ask me anything…" maxlength="12000"></textarea>
           <div class="composer-actions">
-            <span class="composer-status" id="ai-composer-status" role="status" aria-live="polite"></span>
+            <span class="composer-status" id="ai-composer-status" role="status" aria-live="polite">Enter to send · Shift+Enter for a new line</span>
             <button class="secondary-button compact hidden" id="btn-stop-ai" type="button">Stop</button>
-            <button class="primary-button compact" id="btn-send-ai" type="button">Send</button>
+            <button class="primary-button compact ai-send-button" id="btn-send-ai" type="button">Send <span aria-hidden="true">↗</span></button>
           </div>
         </div>
       </section>

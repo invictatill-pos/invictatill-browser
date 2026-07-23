@@ -228,7 +228,7 @@ async function main() {
     assert.ok(modalParents.every((item) => item.parent === 'BODY'),
       `Expected top-level modal backdrops, received ${JSON.stringify(modalParents)}`);
     const initialLayout = await assertViewportContained([
-      '#titlebar', '#tabs-bar', '#nav-bar', '#app-rail', '#btn-whatsapp', '#new-tab-page', '.ntp-content', '#ntp-search-form', '#quick-links',
+      '#titlebar', '#tabs-bar', '#nav-bar', '#app-rail', '#btn-whatsapp', '#btn-invicta-ai', '#new-tab-page', '.ntp-content', '#ntp-search-form', '#quick-links',
     ], 'Initial new-tab layout');
     assert.ok(initialLayout.elements.find((item) => item.selector === '.ntp-content').width >= 800,
       'Expected a usable desktop new-tab content width');
@@ -756,13 +756,36 @@ async function main() {
     );
     assert.ok(history.some((entry) => entry.title === 'Invicta smoke page'));
 
-    await window.locator('#btn-ai-drawer').click();
-    log('Opening productivity drawer');
+    await window.locator('#btn-invicta-ai').click();
+    log('Opening InvictaTill AI in the shared left app panel');
     const drawer = window.locator('#workspace-drawer');
     await drawer.waitFor({ state: 'visible' });
     assert.equal(await drawer.getAttribute('aria-hidden'), 'false');
+    assert.equal(await window.locator('#btn-invicta-ai').getAttribute('aria-expanded'), 'true');
+    assert.equal(await window.locator('#btn-invicta-ai').evaluate((button) => button.classList.contains('active')), true);
+    assert.equal(await window.locator('#btn-ai-drawer').getAttribute('aria-expanded'), 'true');
+    assert.equal(await whatsappPanel.isHidden(), true);
+    assert.equal((await window.evaluate(() => window.electronAPI.getWhatsappPanelState())).visible, false);
+    const aiPanelGeometry = await window.evaluate(() => {
+      const rect = (selector) => {
+        const bounds = document.querySelector(selector).getBoundingClientRect();
+        return { left: bounds.left, right: bounds.right, top: bounds.top, width: bounds.width, height: bounds.height };
+      };
+      return {
+        viewportWidth: window.innerWidth,
+        rail: rect('#app-rail'),
+        panel: rect('#workspace-drawer'),
+        stage: rect('#browser-stage'),
+      };
+    });
+    assert.ok(Math.abs(aiPanelGeometry.panel.left - aiPanelGeometry.rail.right) <= 1,
+      `InvictaTill AI panel is detached from the app rail: ${JSON.stringify(aiPanelGeometry)}`);
+    if (aiPanelGeometry.viewportWidth > 900) {
+      assert.ok(aiPanelGeometry.stage.left >= aiPanelGeometry.panel.right - 1,
+        `Browser page did not make room for InvictaTill AI: ${JSON.stringify(aiPanelGeometry)}`);
+    }
     assert.equal((await window.locator('#ai-provider-badge').textContent()).trim(), 'InvictaTill AI · Cloud');
-    assert.match(await drawer.textContent(), /Page context off by default/);
+    assert.match(await drawer.textContent(), /Page access stays private/);
     assert.equal(await window.locator('#setting-ai-provider option[value="invicta"]').count(), 1);
     await capture('05a-invicta-ai-chat.png');
 

@@ -42,7 +42,7 @@ test('find-in-page controls and accessible landmarks exist', () => {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }
   for (const id of [
-    'app-rail', 'btn-whatsapp', 'btn-download-popout', 'download-popout',
+    'app-rail', 'btn-whatsapp', 'btn-invicta-ai', 'btn-download-popout', 'download-popout',
     'download-popout-list', 'btn-close-download-popout', 'btn-open-all-downloads',
     'password-save-popout', 'password-save-domain', 'password-save-username',
     'btn-close-password-save', 'btn-dismiss-password-save', 'btn-confirm-password-save',
@@ -56,6 +56,7 @@ test('find-in-page controls and accessible landmarks exist', () => {
   assert.match(html, /Available for autofill in every normal workspace/);
   assert.match(html, /Your sign-in stays available across every workspace/);
   assert.match(html, /aria-controls=["']whatsapp-panel["']/);
+  assert.match(html, /id=["']btn-invicta-ai["'][^>]+aria-controls=["']workspace-drawer["']/);
   assert.match(html, /Ctrl\+Shift\+G/);
 });
 
