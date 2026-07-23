@@ -796,9 +796,22 @@ function renderBrowserControls() {
   if (els.addressBar && document.activeElement !== els.addressBar) {
     els.addressBar.value = tab && !isNewTabUrl(tab.url) ? tab.url : '';
   }
+  const currentZoom = tab && Number.isFinite(Number(tab.zoom))
+    ? Number(tab.zoom)
+    : (Number.isFinite(Number(state.zoomFactor)) ? Number(state.zoomFactor) : 1.0);
+  state.zoomFactor = currentZoom;
+  const zoomPct = Math.round(currentZoom * 100) + '%';
   if (els.btnZoomReset) {
-    const zoomPct = Math.round((state.zoomFactor || 1) * 100) + '%';
     els.btnZoomReset.textContent = zoomPct;
+    els.btnZoomReset.title = 'Reset zoom (' + zoomPct + ' -> 100%)';
+  }
+  if (els.zoomDisplay) {
+    els.zoomDisplay.textContent = zoomPct;
+  }
+  const zoomStrip = $('zoom-controls-strip');
+  if (zoomStrip) {
+    const isZoomed = Math.abs(currentZoom - 1.0) > 0.01;
+    zoomStrip.classList.toggle('is-zoomed', isZoomed);
   }
   els.backButton.disabled = !(tab && tab.canGoBack);
   els.forwardButton.disabled = !(tab && tab.canGoForward);
@@ -1457,6 +1470,26 @@ async function handleAddWorkspaceSubmit(event) {
   }
 }
 
+const CHROME_ZOOM_STEPS = Object.freeze([
+  0.25, 0.33, 0.50, 0.67, 0.75, 0.80, 0.90, 1.00, 1.10, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00
+]);
+
+function getNextZoomIn(current) {
+  const rounded = Math.round((current || 1.0) * 100) / 100;
+  for (const step of CHROME_ZOOM_STEPS) {
+    if (step > rounded + 0.005) return step;
+  }
+  return CHROME_ZOOM_STEPS[CHROME_ZOOM_STEPS.length - 1];
+}
+
+function getNextZoomOut(current) {
+  const rounded = Math.round((current || 1.0) * 100) / 100;
+  for (let i = CHROME_ZOOM_STEPS.length - 1; i >= 0; i--) {
+    if (CHROME_ZOOM_STEPS[i] < rounded - 0.005) return CHROME_ZOOM_STEPS[i];
+  }
+  return CHROME_ZOOM_STEPS[0];
+}
+
 async function zoomIn() {
   try {
     if (typeof api.zoomIn === 'function') {
@@ -1466,10 +1499,10 @@ async function zoomIn() {
         renderBrowserControls();
       }
     } else {
-      setZoom(state.zoomFactor + 0.1);
+      setZoom(getNextZoomIn(state.zoomFactor));
     }
   } catch (err) {
-    setZoom(state.zoomFactor + 0.1);
+    setZoom(getNextZoomIn(state.zoomFactor));
   }
 }
 
@@ -1482,10 +1515,10 @@ async function zoomOut() {
         renderBrowserControls();
       }
     } else {
-      setZoom(state.zoomFactor - 0.1);
+      setZoom(getNextZoomOut(state.zoomFactor));
     }
   } catch (err) {
-    setZoom(state.zoomFactor - 0.1);
+    setZoom(getNextZoomOut(state.zoomFactor));
   }
 }
 
@@ -1741,7 +1774,7 @@ function updateZoomDisplay() {
 }
 
 async function setZoom(factor) {
-  const next = clamp(factor, 0.25, 3.0);
+  const next = clamp(factor, 0.25, 5.0);
   try {
     const result = await invoke('setZoom', next);
     if (result && Number.isFinite(Number(result.zoom))) {
@@ -4082,15 +4115,15 @@ function handleGlobalShortcuts(event) {
   } else if (ctrl && event.shiftKey && key === 's') {
     event.preventDefault();
     takeScreenshot();
-  } else if (ctrl && (key === '+' || key === '=')) {
+  } else if (ctrl && (key === '+' || key === '=' || event.code === 'NumpadAdd')) {
     event.preventDefault();
-    setZoom(state.zoomFactor + 0.1);
-  } else if (ctrl && key === '-') {
+    zoomIn();
+  } else if (ctrl && (key === '-' || event.code === 'NumpadSubtract')) {
     event.preventDefault();
-    setZoom(state.zoomFactor - 0.1);
-  } else if (ctrl && key === '0') {
+    zoomOut();
+  } else if (ctrl && (key === '0' || event.code === 'Numpad0')) {
     event.preventDefault();
-    setZoom(1);
+    resetZoom();
   } else if (ctrl && key === 'tab') {
     event.preventDefault();
     const current = state.tabs.findIndex(function (tab) { return sameId(tab.id, state.activeTabId); });

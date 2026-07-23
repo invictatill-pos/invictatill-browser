@@ -68,8 +68,10 @@ test('tabwise zoom preservation and zoom bounds contract', () => {
 
   assert.match(main, /contents\.on\('zoom-changed'/);
   assert.match(main, /tab\.view\.webContents\.setZoomFactor/);
+  assert.match(main, /CHROME_ZOOM_STEPS/);
+  assert.match(renderer, /CHROME_ZOOM_STEPS/);
   assert.match(renderer, /sameId\(rawTab\.id, state\.activeTabId\).*tab\.zoom/);
-  assert.match(renderer, /clamp\(factor, 0\.25, 3\.0\)/);
+  assert.match(renderer, /clamp\(factor, 0\.25, 5\.0\)/);
   assert.match(renderer, /Number\.isFinite\(Number\(res\.zoom\)\)/);
 });
 

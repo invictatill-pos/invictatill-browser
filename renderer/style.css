@@ -3295,6 +3295,18 @@ kbd {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 2px;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.zoom-controls-strip.is-zoomed {
+  background: rgba(0, 196, 110, 0.12);
+  border-color: rgba(0, 196, 110, 0.4);
+  box-shadow: 0 0 12px rgba(0, 196, 110, 0.2);
+}
+
+.zoom-controls-strip.is-zoomed .zoom-badge-btn {
+  color: #00c46e;
+  font-weight: 700;
 }
 
 .zoom-btn {

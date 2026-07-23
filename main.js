@@ -928,21 +928,21 @@ function handleShortcut(event, input, tabId) {
   } else if (alt && key === 'right') {
     goForwardActive();
     handled = true;
-  } else if (command && (key === '+' || key === '=')) {
+  } else if (command && (key === '+' || key === '=' || input.code === 'NumpadAdd')) {
     const tab = tabs.get(tabId || activeTabId);
     if (tab) {
-      const nextZoom = Math.min(3.0, Math.round((tab.zoom + 0.1) * 100) / 100);
+      const nextZoom = getNextZoomIn(tab.zoom);
       setActiveZoom(nextZoom);
     }
     handled = true;
-  } else if (command && key === '-') {
+  } else if (command && (key === '-' || input.code === 'NumpadSubtract')) {
     const tab = tabs.get(tabId || activeTabId);
     if (tab) {
-      const nextZoom = Math.max(0.25, Math.round((tab.zoom - 0.1) * 100) / 100);
+      const nextZoom = getNextZoomOut(tab.zoom);
       setActiveZoom(nextZoom);
     }
     handled = true;
-  } else if (command && key === '0') {
+  } else if (command && (key === '0' || input.code === 'Numpad0')) {
     setActiveZoom(1.0);
     handled = true;
   } else if (key === 'f5') {
@@ -1584,6 +1584,11 @@ function attachTabEvents(tab) {
     if (!isAllowedRemoteUrl(url, true)) return;
     tab.url = url;
     tab.crashed = false;
+    const domainZoom = getZoomForUrl(url);
+    if (domainZoom !== tab.zoom) {
+      tab.zoom = domainZoom;
+      tab.view.webContents.setZoomFactor(domainZoom);
+    }
     emitTab('tab-navigated', tab);
     recordHistory(tab, url);
     resizeViews();
@@ -1634,8 +1639,8 @@ function attachTabEvents(tab) {
 
   contents.on('zoom-changed', (event, zoomDirection) => {
     let currentFactor = contents.getZoomFactor();
-    if (zoomDirection === 'in') currentFactor = Math.min(3.0, Math.round((currentFactor + 0.1) * 100) / 100);
-    else if (zoomDirection === 'out') currentFactor = Math.max(0.25, Math.round((currentFactor - 0.1) * 100) / 100);
+    if (zoomDirection === 'in') currentFactor = getNextZoomIn(currentFactor);
+    else if (zoomDirection === 'out') currentFactor = getNextZoomOut(currentFactor);
     tab.zoom = currentFactor;
     contents.setZoomFactor(currentFactor);
     emitTab('tab-update', tab);
@@ -1955,12 +1960,80 @@ function setTabMuted(id, muted) {
   return publicTab(tab);
 }
 
+const CHROME_ZOOM_STEPS = Object.freeze([
+  0.25, 0.33, 0.50, 0.67, 0.75, 0.80, 0.90, 1.00, 1.10, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00
+]);
+
+function getNextZoomIn(current) {
+  const rounded = Math.round((current || 1.0) * 100) / 100;
+  for (const step of CHROME_ZOOM_STEPS) {
+    if (step > rounded + 0.005) return step;
+  }
+  return CHROME_ZOOM_STEPS[CHROME_ZOOM_STEPS.length - 1];
+}
+
+function getNextZoomOut(current) {
+  const rounded = Math.round((current || 1.0) * 100) / 100;
+  for (let i = CHROME_ZOOM_STEPS.length - 1; i >= 0; i--) {
+    if (CHROME_ZOOM_STEPS[i] < rounded - 0.005) return CHROME_ZOOM_STEPS[i];
+  }
+  return CHROME_ZOOM_STEPS[0];
+}
+
+let siteZoomGrants = {};
+
+function loadSiteZoomGrants() {
+  if (privateInstance || !store) {
+    siteZoomGrants = {};
+    return;
+  }
+  const saved = store.get('site_zoom_levels_v1', {});
+  siteZoomGrants = isPlainObject(saved) ? saved : {};
+}
+
+function saveSiteZoomGrants() {
+  if (privateInstance || !store) return;
+  store.set('site_zoom_levels_v1', siteZoomGrants);
+}
+
+function extractSiteHost(url) {
+  if (!url || typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.hostname.toLowerCase();
+    }
+  } catch (error) {}
+  return null;
+}
+
+function getZoomForUrl(url) {
+  const host = extractSiteHost(url);
+  if (host && Number.isFinite(siteZoomGrants[host])) {
+    return Math.min(5.0, Math.max(0.25, siteZoomGrants[host]));
+  }
+  return 1.0;
+}
+
+function saveZoomForUrl(url, factor) {
+  const host = extractSiteHost(url);
+  if (!host) return;
+  const rounded = Math.round(factor * 100) / 100;
+  if (Math.abs(rounded - 1.0) < 0.01) {
+    delete siteZoomGrants[host];
+  } else {
+    siteZoomGrants[host] = rounded;
+  }
+  saveSiteZoomGrants();
+}
+
 function setActiveZoom(factor) {
-  boundedNumber(factor, 'zoom factor', 0.25, 3);
+  boundedNumber(factor, 'zoom factor', 0.25, 5.0);
   const tab = getActiveTab();
   if (!tab) return null;
   tab.zoom = factor;
   tab.view.webContents.setZoomFactor(factor);
+  saveZoomForUrl(tab.url, factor);
   emitTab('tab-update', tab);
   scheduleSessionSave();
   return publicTab(tab);
@@ -2638,6 +2711,7 @@ function loadPersistentBrowserData() {
   if (!store) return;
   loadWorkspaces();
   loadSavedPasswords();
+  loadSiteZoomGrants();
   if (!privateInstance) {
     const storedHistory = store.get('browser_history_v2', []);
     historyRecords = Array.isArray(storedHistory)
@@ -4567,14 +4641,14 @@ function registerIpcHandlers() {
   registerHandler('zoom-in', () => {
     const tab = getActiveTab();
     if (!tab) return null;
-    const nextZoom = Math.min(3.0, Math.round((tab.zoom + 0.1) * 100) / 100);
+    const nextZoom = getNextZoomIn(tab.zoom);
     return setActiveZoom(nextZoom);
   });
 
   registerHandler('zoom-out', () => {
     const tab = getActiveTab();
     if (!tab) return null;
-    const nextZoom = Math.max(0.25, Math.round((tab.zoom - 0.1) * 100) / 100);
+    const nextZoom = getNextZoomOut(tab.zoom);
     return setActiveZoom(nextZoom);
   });
 
