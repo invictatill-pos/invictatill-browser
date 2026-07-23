@@ -127,6 +127,10 @@ const els = {
   btnZoomOut: $('btn-zoom-out'),
   btnZoomIn: $('btn-zoom-in'),
   btnZoomReset: $('btn-zoom-reset'),
+  zoomPctLabel: $('zoom-pct-label'),
+  zoomPopup: $('zoom-popup'),
+  zoomPopupPct: $('zoom-popup-pct'),
+  zoomSlider: $('zoom-slider'),
   workspaceTabsStrip: $('workspace-tabs-strip'),
   workspaceTabsContainer: $('workspace-tabs-container'),
   btnAddWorkspaceOpen: $('btn-add-workspace-open'),
@@ -173,6 +177,8 @@ const state = {
   splitScreen: false,
   secondaryTabId: null,
   zoomFactor: 1,
+  zoomPopupOpen: false,
+  zoomAnimTimer: null,
   isPrivate: false,
   workspaces: [],
   activeWorkspaceId: 'default',
@@ -801,9 +807,14 @@ function renderBrowserControls() {
     : (Number.isFinite(Number(state.zoomFactor)) ? Number(state.zoomFactor) : 1.0);
   state.zoomFactor = currentZoom;
   const zoomPct = Math.round(currentZoom * 100) + '%';
+  // Update the inner label span (the button now contains SVG for +/−, label for %)
+  if (els.zoomPctLabel) {
+    els.zoomPctLabel.textContent = zoomPct;
+  }
   if (els.btnZoomReset) {
-    els.btnZoomReset.textContent = zoomPct;
-    els.btnZoomReset.title = 'Reset zoom (' + zoomPct + ' -> 100%)';
+    els.btnZoomReset.title = state.zoomPopupOpen
+      ? 'Click to close zoom panel'
+      : 'Click to open zoom panel · Scroll to zoom (currently ' + zoomPct + ')';
   }
   if (els.zoomDisplay) {
     els.zoomDisplay.textContent = zoomPct;
@@ -1474,6 +1485,8 @@ const CHROME_ZOOM_STEPS = Object.freeze([
   0.25, 0.33, 0.50, 0.67, 0.75, 0.80, 0.90, 1.00, 1.10, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00
 ]);
 
+const ZOOM_PRESETS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
 function getNextZoomIn(current) {
   const rounded = Math.round((current || 1.0) * 100) / 100;
   for (const step of CHROME_ZOOM_STEPS) {
@@ -1490,6 +1503,71 @@ function getNextZoomOut(current) {
   return CHROME_ZOOM_STEPS[0];
 }
 
+// ── Zoom Popup ─────────────────────────────────
+function openZoomPopup() {
+  if (!els.zoomPopup) return;
+  state.zoomPopupOpen = true;
+  els.zoomPopup.classList.remove('hidden');
+  if (els.btnZoomReset) els.btnZoomReset.setAttribute('aria-expanded', 'true');
+  syncZoomPopup();
+}
+
+function closeZoomPopup() {
+  if (!els.zoomPopup) return;
+  state.zoomPopupOpen = false;
+  els.zoomPopup.classList.add('hidden');
+  if (els.btnZoomReset) els.btnZoomReset.setAttribute('aria-expanded', 'false');
+}
+
+function toggleZoomPopup() {
+  if (state.zoomPopupOpen) {
+    closeZoomPopup();
+  } else {
+    openZoomPopup();
+  }
+}
+
+function syncZoomPopup() {
+  const pct = Math.round(state.zoomFactor * 100);
+  const isZoomed = Math.abs(state.zoomFactor - 1.0) > 0.01;
+
+  // Update big percentage label in popup
+  if (els.zoomPopupPct) {
+    els.zoomPopupPct.textContent = pct + '%';
+    els.zoomPopupPct.classList.toggle('is-zoomed-color', isZoomed);
+  }
+
+  // Sync slider value and CSS fill gradient
+  if (els.zoomSlider) {
+    els.zoomSlider.value = pct;
+    els.zoomSlider.setAttribute('aria-valuenow', pct);
+    els.zoomSlider.setAttribute('aria-valuetext', pct + '%');
+  }
+
+  // Highlight active preset chip
+  if (els.zoomPopup) {
+    els.zoomPopup.querySelectorAll('.zoom-preset-btn').forEach(function (btn) {
+      const bZoom = parseFloat(btn.dataset.zoom);
+      btn.classList.toggle('is-active-preset', Math.abs(bZoom - state.zoomFactor) < 0.01);
+    });
+  }
+}
+
+// Animate the % badge in the nav bar
+function animateZoomBadge() {
+  const el = els.zoomPctLabel;
+  if (!el) return;
+  el.classList.remove('zoom-animate');
+  // Force reflow so animation restarts
+  void el.offsetWidth;
+  el.classList.add('zoom-animate');
+  if (state.zoomAnimTimer) clearTimeout(state.zoomAnimTimer);
+  state.zoomAnimTimer = setTimeout(function () {
+    el.classList.remove('zoom-animate');
+    state.zoomAnimTimer = null;
+  }, 350);
+}
+
 async function zoomIn() {
   try {
     if (typeof api.zoomIn === 'function') {
@@ -1497,12 +1575,14 @@ async function zoomIn() {
       if (res && Number.isFinite(Number(res.zoom))) {
         state.zoomFactor = Number(res.zoom);
         renderBrowserControls();
+        animateZoomBadge();
+        if (state.zoomPopupOpen) syncZoomPopup();
+        return;
       }
-    } else {
-      setZoom(getNextZoomIn(state.zoomFactor));
     }
+    await setZoom(getNextZoomIn(state.zoomFactor));
   } catch (err) {
-    setZoom(getNextZoomIn(state.zoomFactor));
+    await setZoom(getNextZoomIn(state.zoomFactor));
   }
 }
 
@@ -1513,12 +1593,14 @@ async function zoomOut() {
       if (res && Number.isFinite(Number(res.zoom))) {
         state.zoomFactor = Number(res.zoom);
         renderBrowserControls();
+        animateZoomBadge();
+        if (state.zoomPopupOpen) syncZoomPopup();
+        return;
       }
-    } else {
-      setZoom(getNextZoomOut(state.zoomFactor));
     }
+    await setZoom(getNextZoomOut(state.zoomFactor));
   } catch (err) {
-    setZoom(getNextZoomOut(state.zoomFactor));
+    await setZoom(getNextZoomOut(state.zoomFactor));
   }
 }
 
@@ -1529,12 +1611,14 @@ async function resetZoom() {
       if (res && Number.isFinite(Number(res.zoom))) {
         state.zoomFactor = Number(res.zoom);
         renderBrowserControls();
+        animateZoomBadge();
+        if (state.zoomPopupOpen) syncZoomPopup();
+        return;
       }
-    } else {
-      setZoom(1.0);
     }
+    await setZoom(1.0);
   } catch (err) {
-    setZoom(1.0);
+    await setZoom(1.0);
   }
 }
 
@@ -1770,7 +1854,13 @@ async function takeScreenshot() {
 }
 
 function updateZoomDisplay() {
-  if (els.zoomDisplay) els.zoomDisplay.textContent = Math.round(state.zoomFactor * 100) + '%';
+  const pct = Math.round(state.zoomFactor * 100) + '%';
+  // Legacy zoomDisplay element (menu, etc.)
+  if (els.zoomDisplay) els.zoomDisplay.textContent = pct;
+  // Nav-bar badge label
+  if (els.zoomPctLabel) els.zoomPctLabel.textContent = pct;
+  // Sync popup if open
+  if (state.zoomPopupOpen) syncZoomPopup();
 }
 
 async function setZoom(factor) {
@@ -1783,6 +1873,8 @@ async function setZoom(factor) {
       state.zoomFactor = next;
     }
     renderBrowserControls();
+    animateZoomBadge();
+    if (state.zoomPopupOpen) syncZoomPopup();
   } catch (error) {
     notify('Could not change zoom: ' + errorMessage(error), 'error');
   }
@@ -3863,7 +3955,71 @@ function wireUi() {
   bindClick('btn-tasks-24h-report', trigger24HReport);
   bindClick('btn-zoom-out', zoomOut);
   bindClick('btn-zoom-in', zoomIn);
-  bindClick('btn-zoom-reset', resetZoom);
+  // Badge click → toggle popup (reset on middle/right click handled below)
+  if (els.btnZoomReset) {
+    els.btnZoomReset.addEventListener('click', function (e) {
+      e.stopPropagation();
+      toggleZoomPopup();
+    });
+    // Middle-click resets zoom without opening popup
+    els.btnZoomReset.addEventListener('auxclick', function (e) {
+      if (e.button === 1) { e.preventDefault(); resetZoom(); }
+    });
+    // Scroll wheel on badge for fast zoom
+    els.btnZoomReset.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      if (e.deltaY < 0) zoomIn();
+      else zoomOut();
+    }, { passive: false });
+  }
+
+  // Zoom popup – slider input
+  if (els.zoomSlider) {
+    els.zoomSlider.addEventListener('input', function () {
+      const factor = Number(els.zoomSlider.value) / 100;
+      state.zoomFactor = factor; // optimistic update for UI responsiveness
+      const pct = Math.round(factor * 100) + '%';
+      if (els.zoomPopupPct) {
+        els.zoomPopupPct.textContent = pct;
+        els.zoomPopupPct.classList.toggle('is-zoomed-color', Math.abs(factor - 1.0) > 0.01);
+      }
+      if (els.zoomPctLabel) els.zoomPctLabel.textContent = pct;
+      // Highlight preset chips
+      if (els.zoomPopup) {
+        els.zoomPopup.querySelectorAll('.zoom-preset-btn').forEach(function (btn) {
+          btn.classList.toggle('is-active-preset', Math.abs(parseFloat(btn.dataset.zoom) - factor) < 0.01);
+        });
+      }
+    });
+    els.zoomSlider.addEventListener('change', function () {
+      setZoom(Number(els.zoomSlider.value) / 100);
+    });
+  }
+
+  // Zoom popup – preset chips (delegated)
+  if (els.zoomPopup) {
+    els.zoomPopup.addEventListener('click', function (e) {
+      const btn = e.target.closest('.zoom-preset-btn');
+      if (btn) {
+        const factor = parseFloat(btn.dataset.zoom);
+        if (Number.isFinite(factor)) setZoom(factor);
+      }
+    });
+    // Prevent popup from closing when clicking inside it
+    els.zoomPopup.addEventListener('click', function (e) { e.stopPropagation(); });
+    // Escape closes popup
+    els.zoomPopup.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') { e.stopPropagation(); closeZoomPopup(); }
+    });
+  }
+
+  // Close zoom popup on outside click
+  document.addEventListener('click', function (e) {
+    if (state.zoomPopupOpen) {
+      const strip = $('zoom-controls-strip');
+      if (strip && !strip.contains(e.target)) closeZoomPopup();
+    }
+  }, true);
 
   bindClick('btn-add-workspace-open', openAddWorkspaceModal);
   bindClick('btn-close-add-ws', closeAddWorkspaceModal);
