@@ -25,6 +25,10 @@ const els = {
   splitButton: $('btn-split-screen'),
   appRail: $('app-rail'),
   whatsappButton: $('btn-whatsapp'),
+  whatsappPanel: $('whatsapp-panel'),
+  whatsappPanelHost: $('whatsapp-panel-view-host'),
+  whatsappPanelStatus: $('whatsapp-panel-status'),
+  whatsappUnreadBadge: $('whatsapp-unread-badge'),
   aiButton: $('btn-ai-drawer'),
   drawer: $('workspace-drawer'),
   drawerClose: $('btn-close-drawer'),
@@ -190,6 +194,9 @@ const state = {
   downloads: [],
   downloadPopoutOpen: false,
   dismissedDownloads: new Set(),
+  whatsappPanelOpen: false,
+  whatsappPanelStatus: 'idle',
+  lastWhatsappLayoutKey: '',
   passwordSaveRequest: null,
   historyRange: 'day',
   historyQuery: '',
@@ -202,6 +209,7 @@ const state = {
   aiConfig: {
     provider: 'invicta',
     endpoint: '',
+    connectionMode: 'offline',
   },
   aiBusy: false,
   aiRequestId: 0,
@@ -367,6 +375,7 @@ function shouldShowPageView() {
   if (state.drawerOpen && window.innerWidth <= 720) return false;
   if (state.downloadPopoutOpen && window.innerWidth <= 720) return false;
   if (state.passwordSaveRequest && window.innerWidth <= 720) return false;
+  if (state.whatsappPanelOpen && window.innerWidth <= 1100) return false;
   return true;
 }
 
@@ -376,6 +385,10 @@ function updateViewLayout() {
   let left = 0;
   if (!state.isFullscreen && els.appRail) {
     left = Math.ceil(els.appRail.getBoundingClientRect().width);
+  }
+  const whatsappPanelShown = state.whatsappPanelOpen && !state.isFullscreen;
+  if (whatsappPanelShown && window.innerWidth > 1100 && els.whatsappPanel) {
+    left = Math.ceil(els.whatsappPanel.getBoundingClientRect().right);
   }
   let right = 0;
   if (state.drawerOpen && window.innerWidth > 720 && els.drawer) {
@@ -403,6 +416,35 @@ function updateViewLayout() {
     state.lastLayoutKey = layoutKey;
     invokeOptional('setViewLayout', layout).catch(function () {});
   }
+  const whatsappSurfaceVisible = whatsappPanelShown && !state.modalOpen && els.whatsappPanelHost;
+  let whatsappPayload = { visible: false };
+  if (whatsappSurfaceVisible) {
+    const hostRect = els.whatsappPanelHost.getBoundingClientRect();
+    if (hostRect.width >= 1 && hostRect.height >= 1) {
+      whatsappPayload = {
+        visible: true,
+        bounds: {
+          x: Math.max(0, Math.ceil(hostRect.left)),
+          y: Math.max(0, Math.ceil(hostRect.top)),
+          width: Math.max(1, Math.floor(hostRect.width)),
+          height: Math.max(1, Math.floor(hostRect.height))
+        }
+      };
+    }
+  }
+  const whatsappLayoutKey = whatsappPayload.visible && whatsappPayload.bounds
+    ? '1:' + whatsappPayload.bounds.x + ':' + whatsappPayload.bounds.y + ':' +
+      whatsappPayload.bounds.width + ':' + whatsappPayload.bounds.height
+    : '0';
+  if (whatsappLayoutKey !== state.lastWhatsappLayoutKey) {
+    state.lastWhatsappLayoutKey = whatsappLayoutKey;
+    invokeOptional('setWhatsappPanel', whatsappPayload).catch(function (error) {
+      if (state.whatsappPanelOpen && els.whatsappPanelStatus) {
+        els.whatsappPanelStatus.textContent = 'Could not open WhatsApp: ' + errorMessage(error);
+        els.whatsappPanelStatus.dataset.status = 'error';
+      }
+    });
+  }
   const visible = shouldShowPageView();
   if (visible !== state.lastViewVisible) {
     state.lastViewVisible = visible;
@@ -417,6 +459,51 @@ function scheduleLayout() {
     resizeFrame = 0;
     updateViewLayout();
   });
+}
+
+function setWhatsappPanelOpen(open) {
+  const visible = Boolean(open);
+  state.whatsappPanelOpen = visible;
+  document.body.classList.toggle('whatsapp-panel-open', visible);
+  setHidden(els.whatsappPanel, !visible);
+  if (els.whatsappPanel) els.whatsappPanel.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  if (els.whatsappButton) {
+    els.whatsappButton.classList.toggle('active', visible);
+    els.whatsappButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
+    els.whatsappButton.title = visible ? 'Close WhatsApp side panel' : 'Open WhatsApp side panel';
+  }
+  if (visible && els.whatsappPanelStatus && state.whatsappPanelStatus === 'idle') {
+    els.whatsappPanelStatus.textContent = 'Loading WhatsApp...';
+    els.whatsappPanelStatus.dataset.status = 'loading';
+  }
+  state.lastLayoutKey = '';
+  state.lastWhatsappLayoutKey = '';
+  scheduleLayout();
+}
+
+function handleWhatsappPanelStatus(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  const status = typeof payload.status === 'string' ? payload.status : 'idle';
+  state.whatsappPanelStatus = status;
+  if (els.whatsappPanelStatus) {
+    const defaults = {
+      idle: 'Ready to connect',
+      loading: 'Loading WhatsApp...',
+      ready: 'Connected across every workspace',
+      error: 'WhatsApp could not load',
+    };
+    els.whatsappPanelStatus.textContent = payload.message || defaults[status] || defaults.idle;
+    els.whatsappPanelStatus.dataset.status = status;
+  }
+  const unreadCount = Math.max(0, Math.min(999, Number(payload.unreadCount) || 0));
+  if (els.whatsappUnreadBadge) {
+    els.whatsappUnreadBadge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+    els.whatsappUnreadBadge.setAttribute(
+      'aria-label',
+      unreadCount + ' unread WhatsApp message' + (unreadCount === 1 ? '' : 's')
+    );
+    setHidden(els.whatsappUnreadBadge, unreadCount === 0);
+  }
 }
 
 function setMode(mode) {
@@ -2666,6 +2753,8 @@ async function sendAiMessage(promptValue, includePageContext, echoUser) {
     });
     if (result && result.provider) {
       state.aiConfig.provider = result.provider;
+      state.aiConfig.connectionMode = String(result.engine || '').replace(/^invicta-/, '') ||
+        state.aiConfig.connectionMode;
       updateAiProviderBadge();
     }
     await maybeSaveExtractedTask(result && result.taskExtracted);
@@ -2700,9 +2789,26 @@ function updateAiContextNote() {
 }
 
 function updateAiProviderBadge() {
-  els.aiProviderBadge.textContent = 'InvictaTill AI';
+  const mode = String(state.aiConfig.connectionMode || '').toLowerCase();
+  const labels = {
+    local: 'InvictaTill AI · Local',
+    cloud: 'InvictaTill AI · Cloud',
+    remote: 'InvictaTill AI · Connected',
+    'built-in': 'InvictaTill AI · Built-in',
+    starting: 'InvictaTill AI · Starting',
+  };
+  els.aiProviderBadge.textContent = labels[mode] || 'InvictaTill AI';
   els.aiProviderBadge.classList.remove('cloud', 'local');
   els.aiProviderBadge.classList.add('invicta');
+}
+
+function handleAiServiceStatus(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  const mode = String(payload.status || '').toLowerCase();
+  if (mode) state.aiConfig.connectionMode = mode;
+  updateAiProviderBadge();
+  const status = $('ai-settings-status');
+  if (status && payload.message) status.textContent = String(payload.message);
 }
 
 async function loadAiConfig() {
@@ -2712,6 +2818,7 @@ async function loadAiConfig() {
       state.aiConfig = {
         provider: 'invicta',
         endpoint: String(config.endpoint || ''),
+        connectionMode: String(config.connectionMode || 'offline'),
       };
     }
   } catch (error) {}
@@ -2757,6 +2864,9 @@ async function saveAiSettings(event) {
       endpoint: result && result.endpoint
         ? String(result.endpoint)
         : (config.endpoint || state.aiConfig.endpoint || ''),
+      connectionMode: result && result.connectionMode
+        ? String(result.connectionMode)
+        : state.aiConfig.connectionMode,
     };
     $('setting-ai-key').value = '';
     $('setting-ai-clear-key').checked = false;
@@ -2778,6 +2888,10 @@ async function testAiSettings() {
       timeoutPromise(20000)
     ]);
     if (result && result.success === false) throw new Error(result.error || 'Connection failed');
+    if (result && (result.mode || result.engine)) {
+      state.aiConfig.connectionMode = String(result.mode || result.engine).replace(/^invicta-/, '');
+      updateAiProviderBadge();
+    }
     status.textContent = result && result.message ? String(result.message) : 'Connection successful.';
   } catch (error) {
     status.textContent = 'Test failed: ' + errorMessage(error);
@@ -3254,6 +3368,7 @@ function registerBrowserEvents() {
   registerEvent('download-created', function (payload) { upsertDownload(payload, true); });
   registerEvent('download-updated', function (payload) { upsertDownload(payload, false); });
   registerEvent('password-save-request', showPasswordSaveRequest);
+  registerEvent('whatsapp-panel-status', handleWhatsappPanelStatus);
   registerEvent('ai-writing-status', function (payload) {
     const status = payload && payload.status ? String(payload.status) : 'error';
     const message = payload && payload.message
@@ -3267,6 +3382,7 @@ function registerBrowserEvents() {
     setTitleStatus('');
     notify(message, status === 'completed' ? 'success' : 'error', status === 'completed' ? 3500 : 6500);
   });
+  registerEvent('ai-service-status', handleAiServiceStatus);
   registerEvent('fullscreen-change', function (isFullscreen) {
     state.isFullscreen = Boolean(isFullscreen);
     document.body.classList.toggle('fullscreen', state.isFullscreen);
@@ -3306,7 +3422,27 @@ function wireUi() {
   });
   bindClick('btn-split-screen', toggleSplitScreen);
   bindClick('btn-screenshot', takeScreenshot);
-  bindClick('btn-whatsapp', function () { newTab('https://web.whatsapp.com/'); });
+  bindClick('btn-whatsapp', function () {
+    setWhatsappPanelOpen(!state.whatsappPanelOpen);
+  });
+  bindClick('btn-close-whatsapp', function () { setWhatsappPanelOpen(false); });
+  bindClick('btn-whatsapp-reload', async function () {
+    state.whatsappPanelStatus = 'loading';
+    handleWhatsappPanelStatus({ status: 'loading', message: 'Reloading WhatsApp...' });
+    try {
+      await invoke('reloadWhatsappPanel');
+    } catch (error) {
+      handleWhatsappPanelStatus({ status: 'error', message: 'Reload failed: ' + errorMessage(error) });
+    }
+  });
+  bindClick('btn-whatsapp-open-tab', async function () {
+    try {
+      await invoke('openWhatsappTab');
+      setWhatsappPanelOpen(false);
+    } catch (error) {
+      notify('Could not open WhatsApp tab: ' + errorMessage(error), 'error');
+    }
+  });
   bindClick('btn-download-popout', function () {
     setDownloadPopoutOpen(!state.downloadPopoutOpen);
   });
@@ -3856,6 +3992,9 @@ function handleGlobalShortcuts(event) {
     } else if (state.passwordSaveRequest) {
       event.preventDefault();
       dismissPasswordSaveRequest();
+    } else if (state.whatsappPanelOpen) {
+      event.preventDefault();
+      setWhatsappPanelOpen(false);
     } else if (state.downloadPopoutOpen) {
       event.preventDefault();
       setDownloadPopoutOpen(false);
@@ -3964,6 +4103,7 @@ async function initialize() {
   closeDrawer(false);
   closeMenu(false);
   setDownloadPopoutOpen(false);
+  setWhatsappPanelOpen(false);
   setPasswordSavePromptVisible(false);
   setHidden(els.findBar, true);
   setHidden(els.updateModalBackdrop, true);

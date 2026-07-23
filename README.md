@@ -15,7 +15,7 @@ Regular tabs share the normal persistent browser session. Private windows use an
 - Searchable browsing history, bookmarks, and recent-page shortcuts.
 - Managed downloads with an automatic compact progress box; dismissing the box keeps transfers running, while Cancel explicitly stops them.
 - Automatic save/update prompts for submitted logins, with OS-encrypted storage and exact-site autofill shared across every normal workspace. Private windows never save or reuse vault passwords.
-- A compact left app rail with one-click WhatsApp Web access.
+- An Opera-style WhatsApp side panel with a persistent cross-workspace login, unread badge, reload/full-tab controls, calling permissions, and a WhatsApp-scoped supported Chrome identity.
 - Private windows backed by an isolated, non-persistent session.
 - Per-site permission prompts for capabilities such as camera, microphone, notifications, and location.
 - In-app tab, window, and entire-screen sharing with optional requested audio for WebRTC meeting sites.
@@ -26,7 +26,7 @@ Regular tabs share the normal persistent browser session. Private windows use an
 
 ## InvictaTill AI
 
-InvictaTill AI is the browser's single AI agent. It connects directly to the companion `self-learning-ai/invicta-space` service through `/api/v1/chat` for questions and `/api/v1/writing` for private draft rewriting. The default address is `http://127.0.0.1:7860/api/v1`; a secure remote InvictaTill AI address can be configured in Settings. A local extractive fallback keeps page summaries and task extraction available if the full service cannot be reached.
+InvictaTill AI is the browser's single AI agent. It connects to the companion `self-learning-ai/invicta-space` service through `/api/v1/chat` for questions and `/api/v1/writing` for private draft rewriting. The browser securely starts the local service at `http://127.0.0.1:7860/api/v1` when the source checkout and Python environment are available, then automatically recovers through the official InvictaTill AI cloud service if local AI is unavailable. Built-in page intelligence and writing correction remain available during a complete connection outage.
 
 In Gmail and other web editors, right-click inside a draft to use **Fix spelling & grammar**, **Improve writing**, **Make concise**, or **Make professional**. `Ctrl+Shift+G` runs spelling and grammar correction on the focused editor. The browser verifies that the original text has not changed before applying the result, so an AI response cannot overwrite typing entered while it was working.
 

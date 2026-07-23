@@ -18,6 +18,7 @@ const {
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { pathToFileURL, fileURLToPath } = require('url');
 const Store = require('electron-store');
@@ -58,12 +59,18 @@ if (!hasInstanceLock) {
 const SHELL_FILE = path.resolve(__dirname, 'renderer', 'index.html');
 const SHELL_URL = pathToFileURL(SHELL_FILE).toString();
 const REMOTE_PRELOAD_FILE = path.resolve(__dirname, 'remote-preload.js');
+const WHATSAPP_WEB_URL = testMode && /^https?:\/\//i.test(process.env.INVICTA_TEST_WHATSAPP_URL || '')
+  ? process.env.INVICTA_TEST_WHATSAPP_URL
+  : 'https://web.whatsapp.com/';
 const NORMAL_PARTITION = 'persist:invictatill';
 const PRIVATE_PARTITION = 'invictatill-private-' + process.pid;
 const REMOTE_PARTITION = privateInstance ? PRIVATE_PARTITION : NORMAL_PARTITION;
 const SHELL_PARTITION = privateInstance
   ? PRIVATE_PARTITION + '-shell'
   : 'persist:invictatill-shell';
+const WHATSAPP_PARTITION = privateInstance
+  ? PRIVATE_PARTITION + '-whatsapp'
+  : 'persist:invictatill-whatsapp';
 
 const MAX_TABS = 100;
 const MAX_CLOSED_TABS = 25;
@@ -76,10 +83,19 @@ const MAX_URL_LENGTH = 8192;
 const MAX_PAGE_CONTEXT = 50000;
 const MAX_WRITING_TEXT = 20000;
 const DEFAULT_INVICTA_AI_BASE_URL = 'http://127.0.0.1:7860/api/v1';
+const INVICTA_CLOUD_AI_BASE_URL = testMode && /^https?:\/\//i.test(process.env.INVICTA_TEST_AI_FALLBACK_URL || '')
+  ? process.env.INVICTA_TEST_AI_FALLBACK_URL.replace(/\/+$/, '')
+  : 'https://invictatill-invictatill-ai.hf.space/api/v1';
 const SCREEN_SHARE_REQUEST_TIMEOUT_MS = 120000;
 
 let mainWindow = null;
 let browserSession = null;
+let whatsappSession = null;
+let whatsappSurface = null;
+let whatsappPanelVisible = false;
+let whatsappPanelBounds = { x: 48, y: 176, width: 720, height: 640 };
+let whatsappPanelStatus = 'idle';
+let whatsappUnreadCount = 0;
 let store = null;
 let powerBlockerId = null;
 let currentGamingLevel = 0;
@@ -99,6 +115,11 @@ const liveDownloads = new Map();
 const aiRequests = new Map();
 const pendingCredentialPrompts = new Map();
 let invictaSessionToken = '';
+let localAiProcess = null;
+let localAiStartAttempted = false;
+let localAiLastStartAt = 0;
+let localAiLastError = '';
+let invictaConnectionMode = 'offline';
 let historyRecords = [];
 let downloadRecords = [];
 let permissionGrants = {};
@@ -648,6 +669,45 @@ function refreshHistoryTitle(tab) {
   }
 }
 
+function chromeCompatibilityUserAgent() {
+  const chromeVersion = /^\d+(?:\.\d+){3}$/.test(String(process.versions.chrome || ''))
+    ? process.versions.chrome
+    : '136.0.0.0';
+  return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+    'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/' + chromeVersion + ' Safari/537.36';
+}
+
+function isWhatsAppWebUrl(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    if (parsed.hostname.toLowerCase() === 'web.whatsapp.com') return true;
+    if (!testMode) return false;
+    const configured = new URL(WHATSAPP_WEB_URL);
+    return parsed.origin === configured.origin && parsed.pathname === configured.pathname;
+  } catch (error) {
+    return false;
+  }
+}
+
+function applyTabUserAgent(tab, url) {
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return;
+  const userAgent = isWhatsAppWebUrl(url)
+    ? chromeCompatibilityUserAgent()
+    : tab.defaultUserAgent;
+  if (userAgent && tab.view.webContents.getUserAgent() !== userAgent) {
+    tab.view.webContents.setUserAgent(userAgent);
+  }
+}
+
+function loadTabContents(tab, url) {
+  applyTabUserAgent(tab, url);
+  const options = isWhatsAppWebUrl(url)
+    ? { userAgent: chromeCompatibilityUserAgent() }
+    : undefined;
+  return tab.view.webContents.loadURL(url, options);
+}
+
 function safeViewSetVisible(view, visible) {
   try {
     view.setVisible(Boolean(visible));
@@ -673,6 +733,7 @@ function resizeViews() {
   for (const tab of tabs.values()) {
     safeViewSetVisible(tab.view, false);
   }
+  resizeWhatsappView();
 
   if (!tabsVisible || !primary) return;
   if ((primary.workspaceId || 'default') !== activeWorkspaceId) return;
@@ -996,7 +1057,10 @@ async function rewriteEditableText(tab, frame, capture, token, action) {
   });
   try {
     const replacement = await rewriteWithInvicta(capture.text, action);
-    if (!frame || frame.isDestroyed() || !tabs.has(tab.id)) {
+    const liveTab = tab && Number.isInteger(tab.id) && tabs.get(tab.id) === tab;
+    const liveWhatsapp = tab && tab === whatsappSurface && tab.view &&
+      !tab.view.webContents.isDestroyed();
+    if (!frame || frame.isDestroyed() || (!liveTab && !liveWhatsapp)) {
       throw new Error('The page changed before the correction was ready');
     }
     const result = await frame.executeJavaScript(
@@ -1152,10 +1216,277 @@ async function showContextMenu(tab, params) {
   });
 }
 
+async function showWhatsappContextMenu(params) {
+  const surface = whatsappSurface;
+  if (!surface || !surface.view || surface.view.webContents.isDestroyed()) return;
+  const contents = surface.view.webContents;
+  const template = [];
+  const linkUrl = safeRemoteUrl(params.linkURL);
+  const canUseWritingAi = params.isEditable && params.formControlType !== 'input-password';
+  const writingFrame = params.frame && !params.frame.isDestroyed() ? params.frame : null;
+  const writingToken = 'writing-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+  let writingCapture = null;
+  let writingActionStarted = false;
+
+  if (canUseWritingAi && writingFrame) {
+    try {
+      writingCapture = await captureWritingTarget(writingFrame, writingToken);
+    } catch (error) {
+      writingCapture = null;
+    }
+  }
+
+  if (linkUrl) {
+    template.push({
+      label: 'Open Link in New Tab',
+      click: () => createTab(linkUrl, { activate: true }),
+    });
+    template.push({ label: 'Copy Link Address', click: () => clipboard.writeText(linkUrl) });
+    template.push({ type: 'separator' });
+  }
+
+  if (params.isEditable) {
+    if (params.misspelledWord && Array.isArray(params.dictionarySuggestions)) {
+      for (const suggestion of params.dictionarySuggestions.slice(0, 5)) {
+        template.push({ label: suggestion, click: () => contents.replaceMisspelling(suggestion) });
+      }
+      if (params.dictionarySuggestions.length === 0) {
+        template.push({ label: 'No spelling suggestions', enabled: false });
+      }
+      template.push({
+        label: 'Add to dictionary',
+        click: () => contents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+      });
+      template.push({ type: 'separator' });
+    }
+    template.push({ role: 'undo' }, { role: 'redo' }, { type: 'separator' });
+    template.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' });
+    template.push({ type: 'separator' });
+  } else if (params.selectionText) {
+    template.push({ role: 'copy' }, { type: 'separator' });
+  }
+
+  if (writingCapture && writingFrame) {
+    template.push({
+      label: 'InvictaTill AI',
+      submenu: Object.entries(WRITING_ACTIONS).map(([action, details]) => ({
+        label: details.label,
+        click: () => {
+          writingActionStarted = true;
+          rewriteEditableText(surface, writingFrame, writingCapture, writingToken, action);
+        },
+      })),
+    });
+    template.push({ type: 'separator' });
+  } else {
+    clearWritingTarget(writingFrame, writingToken);
+  }
+
+  template.push({
+    label: 'Back',
+    enabled: canGoBack(contents),
+    click: () => {
+      const navigation = navigationApi(contents);
+      if (navigation && navigation.canGoBack()) navigation.goBack();
+    },
+  });
+  template.push({
+    label: 'Forward',
+    enabled: canGoForward(contents),
+    click: () => {
+      const navigation = navigationApi(contents);
+      if (navigation && navigation.canGoForward()) navigation.goForward();
+    },
+  });
+  template.push({ label: 'Reload WhatsApp', click: () => contents.reload() });
+
+  if (isDev) {
+    template.push({ type: 'separator' });
+    template.push({ label: 'Inspect Element', click: () => contents.inspectElement(params.x, params.y) });
+  }
+
+  Menu.buildFromTemplate(template).popup({
+    window: mainWindow,
+    callback: () => {
+      if (!writingActionStarted) clearWritingTarget(writingFrame, writingToken);
+    },
+  });
+}
+
+function publicWhatsappPanelState() {
+  return {
+    visible: whatsappPanelVisible,
+    status: whatsappPanelStatus,
+    unreadCount: whatsappUnreadCount,
+    url: whatsappSurface && whatsappSurface.view && !whatsappSurface.view.webContents.isDestroyed()
+      ? whatsappSurface.view.webContents.getURL()
+      : WHATSAPP_WEB_URL,
+    bounds: { ...whatsappPanelBounds },
+    persistent: !privateInstance,
+  };
+}
+
+function emitWhatsappPanelStatus(status, message) {
+  if (status) whatsappPanelStatus = status;
+  sendToShell('whatsapp-panel-status', {
+    ...publicWhatsappPanelState(),
+    message: typeof message === 'string' ? message.slice(0, 300) : '',
+  });
+}
+
+function getWhatsappSession() {
+  if (whatsappSession) return whatsappSession;
+  whatsappSession = session.fromPartition(WHATSAPP_PARTITION, { cache: true });
+  whatsappSession.setUserAgent(chromeCompatibilityUserAgent());
+  whatsappSession.setSpellCheckerEnabled(true);
+  configurePermissions(whatsappSession);
+  configureScreenSharePicker(whatsappSession);
+  configureDownloads(whatsappSession);
+  return whatsappSession;
+}
+
+function ensureWhatsappSurface() {
+  if (whatsappSurface && whatsappSurface.view && !whatsappSurface.view.webContents.isDestroyed()) {
+    return whatsappSurface;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    throw new Error('Browser window is not available');
+  }
+
+  const targetSession = getWhatsappSession();
+  const view = new WebContentsView({
+    webPreferences: {
+      session: targetSession,
+      preload: REMOTE_PRELOAD_FILE,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: false,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false,
+      spellcheck: true,
+      backgroundThrottling: false,
+    },
+  });
+  whatsappSurface = {
+    id: 'whatsapp-panel',
+    view,
+    url: WHATSAPP_WEB_URL,
+    title: 'WhatsApp',
+    isMuted: false,
+  };
+  view.setBackgroundColor('#0b141a');
+  view.webContents.setUserAgent(chromeCompatibilityUserAgent());
+  mainWindow.contentView.addChildView(view);
+  safeViewSetVisible(view, false);
+  attachNavigationGuards(view.webContents);
+
+  view.webContents.setWindowOpenHandler((details) => {
+    const url = safeRemoteUrl(details.url);
+    if (url) setImmediate(() => createTab(url, { activate: true }));
+    return { action: 'deny' };
+  });
+  view.webContents.on('context-menu', (event, params) => {
+    showWhatsappContextMenu(params).catch(() => {});
+  });
+  view.webContents.on('before-input-event', (event, input) => {
+    const command = Boolean(input && (input.control || input.meta));
+    if (input && input.type === 'keyDown' && command && input.shift && String(input.key).toLowerCase() === 'g') {
+      event.preventDefault();
+      rewriteActiveEditor(whatsappSurface, 'correct');
+    }
+  });
+  view.webContents.on('did-start-loading', () => {
+    emitWhatsappPanelStatus('loading', 'Loading WhatsApp...');
+  });
+  view.webContents.on('did-finish-load', () => {
+    emitWhatsappPanelStatus('ready', 'WhatsApp is ready');
+  });
+  view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (isMainFrame && errorCode !== -3) {
+      emitWhatsappPanelStatus('error', errorDescription || 'WhatsApp could not load');
+    }
+  });
+  view.webContents.on('page-title-updated', (event, title) => {
+    whatsappSurface.title = typeof title === 'string' ? title.slice(0, 300) : 'WhatsApp';
+    const match = /^\((\d+)\)/.exec(whatsappSurface.title);
+    whatsappUnreadCount = match ? Math.min(999, Number(match[1])) : 0;
+    emitWhatsappPanelStatus(null, '');
+  });
+  view.webContents.on('render-process-gone', () => {
+    emitWhatsappPanelStatus('error', 'WhatsApp stopped responding. Use Reload to reconnect.');
+  });
+
+  whatsappPanelStatus = 'loading';
+  view.webContents.loadURL(WHATSAPP_WEB_URL, {
+    userAgent: chromeCompatibilityUserAgent(),
+  }).catch((error) => {
+    emitWhatsappPanelStatus('error', error && error.message ? error.message : 'WhatsApp could not load');
+  });
+  return whatsappSurface;
+}
+
+function resizeWhatsappView() {
+  const surface = whatsappSurface;
+  if (!surface || !surface.view || surface.view.webContents.isDestroyed()) return;
+  if (!mainWindow || mainWindow.isDestroyed() || !whatsappPanelVisible) {
+    safeViewSetVisible(surface.view, false);
+    return;
+  }
+  const content = mainWindow.getContentBounds();
+  const x = Math.min(Math.max(0, Math.round(whatsappPanelBounds.x)), content.width);
+  const y = Math.min(Math.max(0, Math.round(whatsappPanelBounds.y)), content.height);
+  const width = Math.min(
+    Math.max(1, Math.round(whatsappPanelBounds.width)),
+    Math.max(1, content.width - x)
+  );
+  const height = Math.min(
+    Math.max(1, Math.round(whatsappPanelBounds.height)),
+    Math.max(1, content.height - y)
+  );
+  whatsappPanelBounds = { x, y, width, height };
+  surface.view.setBounds(whatsappPanelBounds);
+  safeViewSetVisible(surface.view, true);
+}
+
+function setWhatsappPanel(payload) {
+  assertPlainObject(payload, 'WhatsApp panel layout');
+  if (typeof payload.visible !== 'boolean') {
+    throw new TypeError('WhatsApp panel visibility must be a boolean');
+  }
+  whatsappPanelVisible = payload.visible;
+  if (payload.bounds !== undefined) {
+    assertPlainObject(payload.bounds, 'WhatsApp panel bounds');
+    whatsappPanelBounds = {
+      x: boundedNumber(payload.bounds.x, 'WhatsApp panel x', 0, 5000),
+      y: boundedNumber(payload.bounds.y, 'WhatsApp panel y', 0, 5000),
+      width: boundedNumber(payload.bounds.width, 'WhatsApp panel width', 1, 5000),
+      height: boundedNumber(payload.bounds.height, 'WhatsApp panel height', 1, 5000),
+    };
+  }
+  if (whatsappPanelVisible) ensureWhatsappSurface();
+  resizeViews();
+  return publicWhatsappPanelState();
+}
+
+function reloadWhatsappPanel() {
+  const surface = ensureWhatsappSurface();
+  whatsappPanelStatus = 'loading';
+  surface.view.webContents.setUserAgent(chromeCompatibilityUserAgent());
+  surface.view.webContents.loadURL(WHATSAPP_WEB_URL, {
+    userAgent: chromeCompatibilityUserAgent(),
+  }).catch((error) => {
+    emitWhatsappPanelStatus('error', error && error.message ? error.message : 'WhatsApp could not load');
+  });
+  return publicWhatsappPanelState();
+}
+
 function attachTabEvents(tab) {
   const contents = tab.view.webContents;
 
   attachNavigationGuards(contents);
+  contents.on('will-navigate', (event, url) => applyTabUserAgent(tab, url));
+  contents.on('will-redirect', (event, url) => applyTabUserAgent(tab, url));
   contents.setWindowOpenHandler((details) => {
     const url = safeRemoteUrl(details.url);
     if (url) {
@@ -1314,6 +1645,7 @@ function createTab(url, options) {
     audible: false,
     zoom,
     crashed: false,
+    defaultUserAgent: targetSession.getUserAgent(),
   };
 
   tabs.set(id, tab);
@@ -1333,8 +1665,9 @@ function createTab(url, options) {
     resizeViews();
   }
 
-  view.webContents.loadURL(normalizedUrl).catch((error) => {
-    if (!view.webContents.isDestroyed()) {
+  const loadingContents = view.webContents;
+  loadTabContents(tab, normalizedUrl).catch((error) => {
+    if (loadingContents && !loadingContents.isDestroyed() && tabs.get(tab.id) === tab) {
       tab.isLoading = false;
       emitTab('tab-update', tab);
     }
@@ -1487,7 +1820,9 @@ function navigateTab(id, input) {
   tab.crashed = false;
   resizeViews();
   emitTab('tab-update', tab);
-  tab.view.webContents.loadURL(url).catch(() => {
+  const loadingContents = tab.view.webContents;
+  loadTabContents(tab, url).catch(() => {
+    if (!loadingContents || loadingContents.isDestroyed() || tabs.get(tab.id) !== tab) return;
     tab.isLoading = false;
     emitTab('tab-update', tab);
   });
@@ -2502,6 +2837,206 @@ function setupFocusController() {
   return focusController.configure();
 }
 
+function isLoopbackAiBaseUrl(value) {
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.toLowerCase();
+    return hostname === 'localhost' || hostname === '::1' || hostname === '[::1]' ||
+      /^127(?:\.[0-9]{1,3}){3}$/.test(hostname);
+  } catch (error) {
+    return false;
+  }
+}
+
+function invictaStatusEndpoint(baseUrl) {
+  const clean = String(baseUrl || '').replace(/\/+$/, '');
+  if (/\/api\/v1\/(?:chat|writing|status|health)$/i.test(clean)) {
+    return clean.replace(/\/(?:chat|writing|health)$/i, '/status');
+  }
+  if (/\/api\/v1$/i.test(clean)) return clean + '/status';
+  return clean + '/api/v1/status';
+}
+
+function redactAiServiceDiagnostic(value) {
+  return String(value || '')
+    .replace(/(?:nvapi|sk|gsk)[-_][A-Za-z0-9_-]{12,}/g, '[redacted credential]')
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
+    .slice(0, 500);
+}
+
+function emitInvictaServiceStatus(status, message, details) {
+  invictaConnectionMode = status || invictaConnectionMode;
+  sendToShell('ai-service-status', {
+    status: invictaConnectionMode,
+    message: typeof message === 'string' ? message.slice(0, 500) : '',
+    ...(details && isPlainObject(details) ? details : {}),
+  });
+}
+
+function localAiProjectDirectory() {
+  const candidates = [];
+  if (process.env.INVICTA_AI_SERVICE_DIR) {
+    candidates.push(path.resolve(process.env.INVICTA_AI_SERVICE_DIR));
+  }
+  candidates.push(path.resolve(__dirname, '..', 'self-learning-ai', 'invicta-space'));
+  if (process.resourcesPath) candidates.push(path.resolve(process.resourcesPath, 'invicta-ai'));
+  return candidates.find((candidate) => fs.existsSync(path.join(candidate, 'app.py'))) || null;
+}
+
+function localAiPythonExecutable(serviceDirectory) {
+  const candidates = [];
+  if (process.env.INVICTA_AI_PYTHON) candidates.push(path.resolve(process.env.INVICTA_AI_PYTHON));
+  if (serviceDirectory) {
+    candidates.push(path.join(serviceDirectory, '.venv', 'Scripts', 'python.exe'));
+    candidates.push(path.resolve(serviceDirectory, '..', '..', '.venv', 'Scripts', 'python.exe'));
+  }
+  candidates.push(path.resolve(__dirname, '..', '.venv', 'Scripts', 'python.exe'));
+  const found = candidates.find((candidate) => fs.existsSync(candidate));
+  return found || 'python';
+}
+
+function startLocalInvictaService(baseUrl) {
+  if (!isLoopbackAiBaseUrl(baseUrl)) return { started: false, reason: 'not-local' };
+  if (testMode && process.env.INVICTA_TEST_ALLOW_AI_AUTOSTART !== '1') {
+    return { started: false, reason: 'disabled-in-tests' };
+  }
+  if (localAiProcess && localAiProcess.exitCode === null && !localAiProcess.killed) {
+    return { started: true, alreadyRunning: true };
+  }
+  if (localAiStartAttempted && Date.now() - localAiLastStartAt < 30000) {
+    return { started: false, reason: localAiLastError || 'already-attempted' };
+  }
+  localAiStartAttempted = true;
+  localAiLastStartAt = Date.now();
+  const serviceDirectory = localAiProjectDirectory();
+  if (!serviceDirectory) {
+    localAiLastError = 'InvictaTill AI source folder was not found';
+    emitInvictaServiceStatus('cloud', 'Local AI service is not bundled; using InvictaTill AI cloud.');
+    return { started: false, reason: localAiLastError };
+  }
+
+  let port = 7860;
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.port) port = Number(parsed.port);
+  } catch (error) {}
+  const python = localAiPythonExecutable(serviceDirectory);
+  const dataRoot = path.join(app.getPath('userData'), 'invicta-ai-data');
+  const uploadsRoot = path.join(app.getPath('userData'), 'invicta-ai-uploads');
+  fs.mkdirSync(dataRoot, { recursive: true });
+  fs.mkdirSync(uploadsRoot, { recursive: true });
+  emitInvictaServiceStatus('starting', 'Starting the local InvictaTill AI service...');
+
+  try {
+    const child = spawn(python, [path.join(serviceDirectory, 'app.py')], {
+      cwd: serviceDirectory,
+      env: {
+        ...process.env,
+        HOST: '127.0.0.1',
+        PORT: String(port),
+        PYTHONUTF8: '1',
+        PYTHONUNBUFFERED: '1',
+        PERSISTENT_ROOT: dataRoot,
+        UPLOADS_DIR: uploadsRoot,
+        SECRET_KEY: process.env.SECRET_KEY || crypto.randomBytes(48).toString('base64url'),
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    localAiProcess = child;
+    const captureError = (chunk) => {
+      const text = redactAiServiceDiagnostic(chunk);
+      if (text) localAiLastError = text;
+    };
+    if (child.stdout) child.stdout.on('data', captureError);
+    if (child.stderr) child.stderr.on('data', captureError);
+    child.once('error', (error) => {
+      localAiLastError = redactAiServiceDiagnostic(error.message) || 'Local AI service could not start';
+      localAiProcess = null;
+      emitInvictaServiceStatus('cloud', 'Local AI could not start; using InvictaTill AI cloud.', {
+        localError: localAiLastError,
+      });
+    });
+    child.once('exit', (code) => {
+      localAiProcess = null;
+      if (code !== 0) {
+        if (!localAiLastError) localAiLastError = 'Local AI service exited with code ' + code;
+        emitInvictaServiceStatus('cloud', 'Local AI stopped; using InvictaTill AI cloud.', {
+          localError: localAiLastError,
+        });
+      }
+    });
+    return { started: true, pid: child.pid };
+  } catch (error) {
+    localAiLastError = redactAiServiceDiagnostic(error.message) || 'Local AI service could not start';
+    localAiProcess = null;
+    emitInvictaServiceStatus('cloud', 'Local AI could not start; using InvictaTill AI cloud.', {
+      localError: localAiLastError,
+    });
+    return { started: false, reason: localAiLastError };
+  }
+}
+
+async function probeInvictaService(baseUrl, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs || 1200);
+  try {
+    const response = await fetch(invictaStatusEndpoint(baseUrl), {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    if (!response.ok) return false;
+    const payload = await response.json().catch(() => ({}));
+    return payload && (payload.status === 'ok' || payload.status === 'healthy');
+  } catch (error) {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function waitForLocalInvictaService(baseUrl, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await probeInvictaService(baseUrl, 350)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  return false;
+}
+
+function invictaEndpointCandidates(preferredBaseUrl) {
+  const values = [preferredBaseUrl, INVICTA_CLOUD_AI_BASE_URL];
+  const seen = new Set();
+  return values.filter((value) => {
+    const normalized = validateAiBaseUrl(value);
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function invictaModeForBaseUrl(baseUrl) {
+  if (baseUrl.replace(/\/+$/, '').toLowerCase() === INVICTA_CLOUD_AI_BASE_URL.toLowerCase()) {
+    return 'cloud';
+  }
+  if (isLoopbackAiBaseUrl(baseUrl)) return 'local';
+  return 'remote';
+}
+
+function warmLocalInvictaService() {
+  const config = internalAiConfig();
+  if (!isLoopbackAiBaseUrl(config.baseUrl)) return;
+  probeInvictaService(config.baseUrl, 800).then((healthy) => {
+    if (healthy) {
+      emitInvictaServiceStatus('local', 'Connected to local InvictaTill AI.');
+    } else {
+      startLocalInvictaService(config.baseUrl);
+    }
+  }).catch(() => {});
+}
+
 function getRawAiConfig() {
   const raw = store ? store.get('ai_config_v2', {}) : {};
   return isPlainObject(raw) ? raw : {};
@@ -2541,6 +3076,7 @@ function publicAiConfig(rawConfig) {
     baseUrl: internal.baseUrl,
     endpoint: internal.baseUrl,
     model: 'Managed by InvictaTill AI',
+    connectionMode: invictaConnectionMode,
     apiKeyConfigured: Boolean(raw.encryptedApiKey),
     defaultSharePageContext: Boolean(raw.defaultSharePageContext),
   };
@@ -2572,13 +3108,14 @@ function decryptInvictaSessionToken(rawConfig) {
   return invictaSessionToken;
 }
 
-function rememberInvictaSessionToken(value) {
+function rememberInvictaSessionToken(value, baseUrl) {
   const token = typeof value === 'string' ? value.trim() : '';
   if (!/^[A-Za-z0-9._~-]{16,4096}$/.test(token)) return;
   invictaSessionToken = token;
   if (!store || !safeStorage.isEncryptionAvailable()) return;
   const raw = getRawAiConfig();
   raw.encryptedSessionToken = safeStorage.encryptString(token).toString('base64');
+  raw.sessionTokenBaseUrl = validateAiBaseUrl(baseUrl);
   if (raw.provider !== 'invicta') raw.baseUrl = DEFAULT_INVICTA_AI_BASE_URL;
   raw.provider = 'invicta';
   store.set('ai_config_v2', raw);
@@ -2610,6 +3147,7 @@ function saveAiConfig(input) {
       : Boolean(input.defaultSharePageContext),
     encryptedApiKey: current.encryptedApiKey || '',
     encryptedSessionToken: current.encryptedSessionToken || '',
+    sessionTokenBaseUrl: current.sessionTokenBaseUrl || '',
   };
 
   if (input.clearApiKey === true) {
@@ -2642,16 +3180,32 @@ function invictaWritingEndpoint(baseUrl) {
   return clean + '/api/v1/writing';
 }
 
-function invictaRequestHeaders(rawConfig, apiKey) {
+function invictaSessionTokenMatches(rawConfig, baseUrl) {
+  if (!rawConfig || !rawConfig.encryptedSessionToken) return false;
+  if (typeof rawConfig.sessionTokenBaseUrl !== 'string') {
+    return validateAiBaseUrl(internalAiConfig(rawConfig).baseUrl) === validateAiBaseUrl(baseUrl);
+  }
+  try {
+    return validateAiBaseUrl(rawConfig.sessionTokenBaseUrl) === validateAiBaseUrl(baseUrl);
+  } catch (error) {
+    return false;
+  }
+}
+
+function invictaRequestHeaders(rawConfig, apiKey, baseUrl) {
   const headers = { 'Content-Type': 'application/json' };
-  const credential = apiKey || decryptInvictaSessionToken(rawConfig);
+  const credential = apiKey || (
+    invictaSessionTokenMatches(rawConfig, baseUrl)
+      ? decryptInvictaSessionToken(rawConfig)
+      : ''
+  );
   if (credential) headers.Authorization = 'Bearer ' + credential;
   return headers;
 }
 
-function captureInvictaResponseToken(response) {
+function captureInvictaResponseToken(response, baseUrl) {
   if (!response || !response.headers) return;
-  rememberInvictaSessionToken(response.headers.get('x-auth-token'));
+  rememberInvictaSessionToken(response.headers.get('x-auth-token'), baseUrl);
 }
 
 async function callInvictaAi(config, apiKey, prompt, pageContext, controller, timeoutMs) {
@@ -2668,11 +3222,11 @@ async function callInvictaAi(config, apiKey, prompt, pageContext, controller, ti
   try {
     const response = await fetch(invictaChatEndpoint(config.baseUrl), {
       method: 'POST',
-      headers: invictaRequestHeaders(rawConfig, apiKey),
+      headers: invictaRequestHeaders(rawConfig, apiKey, config.baseUrl),
       body: JSON.stringify({ message, stream: false, session_id: null }),
       signal: controller.signal,
     });
-    captureInvictaResponseToken(response);
+    captureInvictaResponseToken(response, config.baseUrl);
     const rawText = await response.text();
     let payload = null;
     try {
@@ -2699,6 +3253,84 @@ async function callInvictaAi(config, apiKey, prompt, pageContext, controller, ti
   }
 }
 
+async function withAiAttempt(parentController, timeoutMs, operation) {
+  const controller = new AbortController();
+  const forwardAbort = () => controller.abort(parentController.signal.reason);
+  if (parentController.signal.aborted) forwardAbort();
+  else parentController.signal.addEventListener('abort', forwardAbort, { once: true });
+  try {
+    return await operation(controller, timeoutMs);
+  } finally {
+    parentController.signal.removeEventListener('abort', forwardAbort);
+  }
+}
+
+async function callInvictaAiWithRecovery(
+  config,
+  apiKey,
+  prompt,
+  pageContext,
+  parentController,
+  timeoutMs
+) {
+  const deadline = Date.now() + timeoutMs;
+  const errors = [];
+  const preferredBaseUrl = validateAiBaseUrl(config.baseUrl);
+
+  for (const baseUrl of invictaEndpointCandidates(preferredBaseUrl)) {
+    if (parentController.signal.aborted) {
+      throw parentController.signal.reason || new Error('AI request cancelled');
+    }
+    const mode = invictaModeForBaseUrl(baseUrl);
+    if (mode === 'local' && !await probeInvictaService(baseUrl, 650)) {
+      const launch = startLocalInvictaService(baseUrl);
+      const remainingForStart = Math.max(0, deadline - Date.now());
+      const ready = launch.started && remainingForStart > 500
+        ? await waitForLocalInvictaService(baseUrl, Math.min(3000, remainingForStart - 250))
+        : false;
+      if (!ready) {
+        errors.push('local service unavailable' + (launch.reason ? ': ' + launch.reason : ''));
+        continue;
+      }
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining < 500) break;
+    const attemptTimeout = Math.max(500, Math.min(
+      remaining,
+      mode === 'cloud' ? 35000 : 9000
+    ));
+    try {
+      const answer = await withAiAttempt(parentController, attemptTimeout, (controller, limit) => (
+        callInvictaAi(
+          { ...config, baseUrl },
+          baseUrl === preferredBaseUrl ? apiKey : '',
+          prompt,
+          pageContext,
+          controller,
+          limit
+        )
+      ));
+      const recovered = baseUrl !== preferredBaseUrl;
+      emitInvictaServiceStatus(mode, mode === 'local'
+        ? 'Connected to local InvictaTill AI.'
+        : (mode === 'cloud'
+          ? (recovered
+            ? 'Local AI is unavailable; securely connected to InvictaTill AI cloud.'
+            : 'Connected to InvictaTill AI cloud.')
+          : 'Connected to InvictaTill AI.'));
+      return { answer, baseUrl, mode, recovered };
+    } catch (error) {
+      if (parentController.signal.aborted) {
+        throw parentController.signal.reason || error;
+      }
+      errors.push(mode + ': ' + redactAiServiceDiagnostic(error && error.message));
+    }
+  }
+
+  throw new Error(errors.filter(Boolean).join('; ') || 'InvictaTill AI is unavailable');
+}
+
 function cleanWritingResponse(value) {
   let text = String(value || '').trim();
   const fenced = text.match(/^```(?:text|markdown)?\s*([\s\S]*?)\s*```$/i);
@@ -2715,17 +3347,43 @@ async function rewriteWithInvicta(text, action) {
   const source = boundedString(text, 'writing text', MAX_WRITING_TEXT, false);
   const rawConfig = getRawAiConfig();
   const config = internalAiConfig(rawConfig);
+  const preferredBaseUrl = validateAiBaseUrl(config.baseUrl);
   const apiKey = decryptAiKey(rawConfig);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error('Writing request timed out')), 60000);
-  try {
-    const response = await fetch(invictaWritingEndpoint(config.baseUrl), {
+  const deadline = Date.now() + 60000;
+  const errors = [];
+
+  for (const baseUrl of invictaEndpointCandidates(preferredBaseUrl)) {
+    const mode = invictaModeForBaseUrl(baseUrl);
+    if (mode === 'local' && !await probeInvictaService(baseUrl, 650)) {
+      const launch = startLocalInvictaService(baseUrl);
+      const ready = launch.started
+        ? await waitForLocalInvictaService(baseUrl, 3000)
+        : false;
+      if (!ready) {
+        errors.push('local service unavailable' + (launch.reason ? ': ' + launch.reason : ''));
+        continue;
+      }
+    }
+    const remaining = deadline - Date.now();
+    if (remaining < 500) break;
+    const attemptController = new AbortController();
+    const attemptTimeout = Math.max(500, Math.min(remaining, mode === 'cloud' ? 35000 : 9000));
+    const timer = setTimeout(
+      () => attemptController.abort(new Error('Writing request timed out')),
+      attemptTimeout
+    );
+    try {
+    const response = await fetch(invictaWritingEndpoint(baseUrl), {
       method: 'POST',
-      headers: invictaRequestHeaders(rawConfig, apiKey),
+      headers: invictaRequestHeaders(
+        rawConfig,
+        baseUrl === preferredBaseUrl ? apiKey : '',
+        baseUrl
+      ),
       body: JSON.stringify({ text: source, action }),
-      signal: controller.signal,
+      signal: attemptController.signal,
     });
-    captureInvictaResponseToken(response);
+    captureInvictaResponseToken(response, baseUrl);
     if (response.status === 404 || response.status === 405) {
       clearTimeout(timer);
       const prompt =
@@ -2733,12 +3391,12 @@ async function rewriteWithInvicta(text, action) {
         'Return only the revised text. Do not add an introduction, explanation, quotes, or markdown fences.\n\n' +
         '<text_to_rewrite>\n' + source + '\n</text_to_rewrite>';
       return cleanWritingResponse(await callInvictaAi(
-        config,
-        apiKey,
+        { ...config, baseUrl },
+        baseUrl === preferredBaseUrl ? apiKey : '',
         prompt,
         null,
-        controller,
-        60000
+        attemptController,
+        Math.max(500, deadline - Date.now())
       ));
     }
     const rawText = await response.text();
@@ -2753,10 +3411,47 @@ async function rewriteWithInvicta(text, action) {
         : 'InvictaTill AI writing service returned HTTP ' + response.status);
     }
     const answer = payload && (payload.text || payload.rewritten || payload.reply);
-    return cleanWritingResponse(answer);
-  } finally {
-    clearTimeout(timer);
+      const cleaned = cleanWritingResponse(answer);
+      emitInvictaServiceStatus(mode, mode === 'local'
+        ? 'Writing assistance is using local InvictaTill AI.'
+        : 'Writing assistance is connected to InvictaTill AI cloud.');
+      return cleaned;
+    } catch (error) {
+      errors.push(mode + ': ' + redactAiServiceDiagnostic(error && error.message));
+    } finally {
+      clearTimeout(timer);
+    }
   }
+
+  emitInvictaServiceStatus('built-in', 'Using built-in writing correction while AI reconnects.');
+  return builtInWritingCorrection(source, action, errors);
+}
+
+function builtInWritingCorrection(source, action) {
+  const replacements = new Map([
+    ['teh', 'the'], ['recieve', 'receive'], ['recieved', 'received'],
+    ['seperate', 'separate'], ['definately', 'definitely'], ['occured', 'occurred'],
+    ['wich', 'which'], ['becuase', 'because'], ['adress', 'address'],
+    ['dont', "don't"], ['cant', "can't"], ['wont', "won't"],
+  ]);
+  let revised = String(source || '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\b[A-Za-z']+\b/g, (word) => {
+      const lower = word.toLowerCase();
+      const replacement = replacements.get(lower);
+      if (!replacement) return lower === 'i' ? 'I' : word;
+      return /^[A-Z]/.test(word)
+        ? replacement.charAt(0).toUpperCase() + replacement.slice(1)
+        : replacement;
+    })
+    .replace(/(^|[.!?]\s+)([a-z])/g, (match, prefix, letter) => prefix + letter.toUpperCase())
+    .trim();
+  if ((action === 'correct' || action === 'professional' || action === 'improve') &&
+      revised && !/[.!?]$/.test(revised)) {
+    revised += '.';
+  }
+  return cleanWritingResponse(revised);
 }
 
 const SUMMARY_STOP_WORDS = new Set([
@@ -3048,7 +3743,7 @@ async function askInvictaAi(prompt, options) {
   const controller = new AbortController();
   aiRequests.set(requestId, controller);
   try {
-    const response = await callInvictaAi(
+    const result = await callInvictaAiWithRecovery(
       config,
       apiKey,
       question,
@@ -3060,10 +3755,16 @@ async function askInvictaAi(prompt, options) {
       success: true,
       provider: 'invicta',
       apiProvider: 'invicta',
+      engine: result.mode === 'local'
+        ? 'invicta-local'
+        : (result.mode === 'cloud' ? 'invicta-cloud' : 'invicta-remote'),
       model: null,
       requestId,
       usedPageContext: Boolean(pageContext),
-      response,
+      response: result.answer,
+      fallbackReason: result.recovered
+        ? 'The configured local service was unavailable, so InvictaTill AI recovered through its secure cloud service.'
+        : '',
       taskExtracted: null,
     };
   } catch (error) {
@@ -3080,7 +3781,7 @@ async function askInvictaAi(prompt, options) {
       success: true,
       provider: 'invicta',
       apiProvider: 'invicta',
-      engine: 'invicta-local-fallback',
+      engine: 'invicta-built-in',
       model: null,
       requestId,
       usedPageContext: Boolean(pageContext),
@@ -3123,7 +3824,7 @@ async function testAiConfig(input) {
   }
   const controller = new AbortController();
   try {
-    const response = await callInvictaAi(
+    const result = await callInvictaAiWithRecovery(
       config,
       key,
       'Reply with the single word OK.',
@@ -3135,8 +3836,20 @@ async function testAiConfig(input) {
       success: true,
       provider: 'invicta',
       apiProvider: 'invicta',
+      engine: result.mode === 'local'
+        ? 'invicta-local'
+        : (result.mode === 'cloud' ? 'invicta-cloud' : 'invicta-remote'),
+      mode: result.mode,
       model: null,
-      response,
+      endpoint: result.baseUrl,
+      response: result.answer,
+      message: result.mode === 'local'
+        ? 'Connected to local InvictaTill AI.'
+        : (result.mode === 'cloud'
+          ? (result.recovered
+            ? 'Connected to InvictaTill AI cloud fallback. The local service is unavailable, but AI is working.'
+            : 'Connected to InvictaTill AI cloud.')
+          : 'Connected to InvictaTill AI.'),
     };
   } catch (error) {
     return { success: false, error: error.message };
@@ -3336,6 +4049,10 @@ function registerIpcHandlers() {
   });
   registerHandler('set-view-visible', (event, visible) => setViewVisible(visible));
   registerHandler('set-view-layout', (event, layout) => setViewLayout(layout));
+  registerHandler('get-whatsapp-panel-state', () => publicWhatsappPanelState());
+  registerHandler('set-whatsapp-panel', (event, payload) => setWhatsappPanel(payload));
+  registerHandler('reload-whatsapp-panel', () => reloadWhatsappPanel());
+  registerHandler('open-whatsapp-tab', () => createTab(WHATSAPP_WEB_URL, { activate: true }));
   registerHandler('set-split-screen', (event, options) => setSplitScreen(options));
   registerHandler('find-in-page', (event, text, options) => findInActivePage(text, options));
   registerHandler('stop-find', () => stopFindActive());
@@ -3866,6 +4583,8 @@ function createMainWindow() {
     resizeViews();
   });
   mainWindow.on('closed', () => {
+    whatsappSurface = null;
+    whatsappPanelVisible = false;
     mainWindow = null;
   });
 }
@@ -3896,6 +4615,7 @@ app.whenReady().then(() => {
   registerIpcHandlers();
   createMainWindow();
   restoreTabs();
+  setImmediate(warmLocalInvictaService);
   setupAutoUpdater();
 });
 
@@ -3909,6 +4629,10 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   completeScreenShareRequest({}, null);
+  if (localAiProcess && localAiProcess.exitCode === null && !localAiProcess.killed) {
+    try { localAiProcess.kill(); } catch (error) {}
+  }
+  localAiProcess = null;
   for (const pending of pendingCredentialPrompts.values()) clearTimeout(pending.timeout);
   pendingCredentialPrompts.clear();
   flushSessionState();
@@ -3920,6 +4644,11 @@ app.on('before-quit', () => {
   if (browserSession) {
     try {
       browserSession.cookies.flushStore();
+    } catch (e) {}
+  }
+  if (whatsappSession) {
+    try {
+      whatsappSession.cookies.flushStore();
     } catch (e) {}
   }
   if (historySaveTimer && !privateInstance && store) {

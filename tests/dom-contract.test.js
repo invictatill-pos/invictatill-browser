@@ -46,11 +46,16 @@ test('find-in-page controls and accessible landmarks exist', () => {
     'download-popout-list', 'btn-close-download-popout', 'btn-open-all-downloads',
     'password-save-popout', 'password-save-domain', 'password-save-username',
     'btn-close-password-save', 'btn-dismiss-password-save', 'btn-confirm-password-save',
+    'whatsapp-panel', 'whatsapp-panel-view-host', 'whatsapp-panel-status',
+    'whatsapp-unread-badge', 'btn-whatsapp-open-tab', 'btn-whatsapp-reload',
+    'btn-close-whatsapp',
   ]) {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }
   assert.match(html, /Close download box; downloads will continue/);
   assert.match(html, /Available for autofill in every normal workspace/);
+  assert.match(html, /Your sign-in stays available across every workspace/);
+  assert.match(html, /aria-controls=["']whatsapp-panel["']/);
   assert.match(html, /Ctrl\+Shift\+G/);
 });
 

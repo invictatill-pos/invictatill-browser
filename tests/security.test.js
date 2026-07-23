@@ -89,3 +89,18 @@ test('automatic password capture uses an isolated origin-checked page bridge', (
   assert.match(main, /get-saved-passwords[^\n]+publicSavedPasswords/);
   assert.match(main, /autofill payload[\s\S]+credentialId[\s\S]+credential\.domain !== activeDomain/);
 });
+
+test('WhatsApp compatibility is isolated to its sandboxed persistent surface', () => {
+  const main = read('main.js');
+  const preload = read('preload.js');
+
+  assert.match(main, /persist:invictatill-whatsapp/);
+  assert.match(main, /function chromeCompatibilityUserAgent/);
+  assert.match(main, /function isWhatsAppWebUrl/);
+  assert.match(main, /Chrome\/' \+ chromeVersion \+ ' Safari\/537\.36/);
+  assert.match(main, /function ensureWhatsappSurface/);
+  assert.match(main, /backgroundThrottling:\s*false/);
+  assert.doesNotMatch(main, /appendSwitch\(['"]user-agent/);
+  assert.match(preload, /set-whatsapp-panel/);
+  assert.match(preload, /reload-whatsapp-panel/);
+});

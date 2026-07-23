@@ -14,7 +14,9 @@ const allowedEvents = new Set([
   'download-updated',
   'download-created',
   'ai-writing-status',
+  'ai-service-status',
   'password-save-request',
+  'whatsapp-panel-status',
   'fullscreen-change',
   'update-checking',
   'update-not-available',
@@ -99,6 +101,10 @@ const api = {
   getActiveUrl: () => ipcRenderer.invoke('get-active-url'),
   setViewVisible: (visible) => ipcRenderer.invoke('set-view-visible', visible),
   setViewLayout: (layout) => ipcRenderer.invoke('set-view-layout', layout),
+  getWhatsappPanelState: () => ipcRenderer.invoke('get-whatsapp-panel-state'),
+  setWhatsappPanel: (details) => ipcRenderer.invoke('set-whatsapp-panel', details),
+  reloadWhatsappPanel: () => ipcRenderer.invoke('reload-whatsapp-panel'),
+  openWhatsappTab: () => ipcRenderer.invoke('open-whatsapp-tab'),
   setSplitScreen: (options) => ipcRenderer.invoke('set-split-screen', options),
 
   // Active-page operations.

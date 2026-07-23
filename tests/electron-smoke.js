@@ -28,7 +28,35 @@ async function main() {
     ? path.resolve(process.env.INVICTA_E2E_SCREENSHOT_DIR)
     : null;
   if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
+  let whatsappRequestUserAgent = '';
   const server = http.createServer((request, response) => {
+    if ((request.url === '/api/v1/status' || request.url === '/fallback/api/v1/status') &&
+        request.method === 'GET') {
+      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ status: 'ok' }));
+      return;
+    }
+    if (request.url === '/fallback/api/v1/chat' && request.method === 'POST') {
+      let body = '';
+      request.setEncoding('utf8');
+      request.on('data', (chunk) => { body += chunk; });
+      request.on('end', () => {
+        const payload = JSON.parse(body || '{}');
+        response.writeHead(200, {
+          'Content-Type': 'application/json; charset=utf-8',
+          'X-Auth-Token': 'invicta-cloud-test-token',
+        });
+        response.end(JSON.stringify({
+          reply: `Invicta cloud fallback received: ${payload.message || ''}`,
+        }));
+      });
+      return;
+    }
+    if (request.url === '/fallback/api/v1/writing' && request.method === 'POST') {
+      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ text: 'This sentence is corrected.' }));
+      return;
+    }
     if (request.url === '/api/v1/chat' && request.method === 'POST') {
       let body = '';
       request.setEncoding('utf8');
@@ -83,6 +111,21 @@ async function main() {
         <script>document.getElementById('login-test-form').addEventListener('submit', function (event) { event.preventDefault(); });</script>`);
       return;
     }
+    if (request.url === '/whatsapp-test') {
+      whatsappRequestUserAgent = String(request.headers['user-agent'] || '');
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html>
+        <title>WhatsApp panel test</title>
+        <style>
+          html,body{height:100%;margin:0;background:#0b141a;color:#e9edef;font:16px system-ui}
+          main{height:100%;display:grid;place-content:center;text-align:center;background:radial-gradient(circle,#17372d,#0b141a 56%)}
+          .mark{width:74px;height:74px;display:grid;place-items:center;margin:0 auto 18px;border:2px solid #25d366;border-radius:50%;color:#25d366;font-size:34px}
+          p{color:#8696a0}
+        </style>
+        <main><div><div class="mark">W</div><h1>WhatsApp side panel</h1><p>Persistent workspace session ready</p><output id="ua"></output></div></main>
+        <script>document.getElementById('ua').textContent = navigator.userAgent;</script>`);
+      return;
+    }
     if (request.url.startsWith('/visual-validation')) {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end('<!doctype html><title>Visual validation page with an intentionally extensive descriptive title for overflow testing</title><h1>Long history entry</h1>');
@@ -104,6 +147,8 @@ async function main() {
     ...process.env,
     INVICTA_TEST_MODE: '1',
     INVICTA_TEST_DOWNLOAD_DIR: path.join(profileDir, 'downloads'),
+    INVICTA_TEST_WHATSAPP_URL: `${pageUrl}whatsapp-test`,
+    INVICTA_TEST_AI_FALLBACK_URL: `${pageUrl}fallback/api/v1`,
   };
   delete electronEnvironment.ELECTRON_RUN_AS_NODE;
   let electronApp;
@@ -287,6 +332,97 @@ async function main() {
     });
     log('Per-workspace last-active tab restoration and pinned tabs verified');
 
+    const whatsappUrl = `${pageUrl}whatsapp-test`;
+    const tabsBeforeWhatsapp = await window.evaluate(() => window.electronAPI.getAllTabs());
+    await window.locator('#btn-whatsapp').click();
+    const whatsappPanel = window.locator('#whatsapp-panel');
+    await whatsappPanel.waitFor({ state: 'visible', timeout: 5000 });
+    assert.equal(await window.locator('#btn-whatsapp').getAttribute('aria-expanded'), 'true');
+    assert.equal(await window.locator('#btn-whatsapp').evaluate((button) => button.classList.contains('active')), true);
+    const whatsappState = await poll(
+      () => window.evaluate(() => window.electronAPI.getWhatsappPanelState()),
+      (panelState) => panelState.visible && panelState.status === 'ready' && panelState.url === whatsappUrl,
+    );
+    assert.equal(whatsappState.persistent, true);
+    assert.ok(whatsappState.bounds.width >= 500 && whatsappState.bounds.height >= 300,
+      `WhatsApp view bounds are too small: ${JSON.stringify(whatsappState.bounds)}`);
+    const whatsappIdentity = await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) return null;
+      return {
+        id: target.id,
+        userAgent: await target.executeJavaScript('navigator.userAgent', true),
+      };
+    }, whatsappUrl);
+    assert.ok(whatsappIdentity, 'Dedicated WhatsApp surface was not created');
+    assert.match(whatsappIdentity.userAgent, /Chrome\/\d+/);
+    assert.doesNotMatch(whatsappIdentity.userAgent, /Electron|InvictaTill/i);
+    assert.match(whatsappRequestUserAgent, /Chrome\/\d+/);
+    assert.doesNotMatch(whatsappRequestUserAgent, /Electron|InvictaTill/i);
+    const tabsWithWhatsappPanel = await window.evaluate(() => window.electronAPI.getAllTabs());
+    assert.equal(tabsWithWhatsappPanel.length, tabsBeforeWhatsapp.length,
+      'Opening the WhatsApp panel unexpectedly created a normal browser tab');
+    const whatsappGeometry = await window.evaluate(() => {
+      const rect = (selector) => {
+        const bounds = document.querySelector(selector).getBoundingClientRect();
+        return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, width: bounds.width, height: bounds.height };
+      };
+      return {
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        rail: rect('#app-rail'),
+        panel: rect('#whatsapp-panel'),
+        host: rect('#whatsapp-panel-view-host'),
+        stage: rect('#browser-stage'),
+      };
+    });
+    assert.ok(Math.abs(whatsappGeometry.panel.left - whatsappGeometry.rail.right) <= 1,
+      `WhatsApp panel is detached from its rail: ${JSON.stringify(whatsappGeometry)}`);
+    assert.ok(whatsappGeometry.host.top > whatsappGeometry.panel.top
+      && Math.abs(whatsappGeometry.host.width - whatsappGeometry.panel.width) <= 2,
+      `WhatsApp host does not fill its panel: ${JSON.stringify(whatsappGeometry)}`);
+    if (whatsappGeometry.viewport.width > 1100) {
+      assert.ok(whatsappGeometry.stage.left >= whatsappGeometry.panel.right - 1,
+        `Browser page did not make room for WhatsApp: ${JSON.stringify(whatsappGeometry)}`);
+    }
+    await capture('01c-whatsapp-panel.png');
+
+    await window.evaluate(() => window.electronAPI.setActiveWorkspace('work'));
+    const whatsappAcrossWorkspace = await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      return target ? { id: target.id, userAgent: await target.executeJavaScript('navigator.userAgent', true) } : null;
+    }, whatsappUrl);
+    assert.equal(whatsappAcrossWorkspace.id, whatsappIdentity.id,
+      'Workspace switching recreated the WhatsApp session');
+    assert.equal((await window.evaluate(() => window.electronAPI.getWhatsappPanelState())).visible, true);
+    await window.evaluate(() => window.electronAPI.setActiveWorkspace('default'));
+    await window.evaluate((id) => window.electronAPI.switchTab(id), defaultLastTabId);
+    await window.locator('#btn-close-whatsapp').click();
+    await whatsappPanel.waitFor({ state: 'hidden' });
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getWhatsappPanelState()),
+      (panelState) => panelState.visible === false,
+    );
+    await window.locator('#btn-whatsapp').click();
+    await whatsappPanel.waitFor({ state: 'visible' });
+    await window.locator('#btn-whatsapp-open-tab').click();
+    await whatsappPanel.waitFor({ state: 'hidden' });
+    const whatsappFullTabState = await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.tabs.find((tab) => tab.id === browserState.activeTabId && tab.url === whatsappUrl),
+    );
+    const whatsappFullTab = whatsappFullTabState.tabs.find((tab) => tab.id === whatsappFullTabState.activeTabId);
+    const whatsappFullTabIdentity = await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents()
+        .filter((contents) => contents.getURL() === targetUrl)
+        .sort((left, right) => right.id - left.id)[0];
+      return target ? target.executeJavaScript('navigator.userAgent', true) : null;
+    }, whatsappUrl);
+    assert.match(whatsappFullTabIdentity, /Chrome\/\d+/);
+    assert.doesNotMatch(whatsappFullTabIdentity, /Electron|InvictaTill/i);
+    await window.evaluate((id) => window.electronAPI.closeTab(id), whatsappFullTab.id);
+    await window.evaluate((id) => window.electronAPI.switchTab(id), defaultLastTabId);
+    log('Opera-style persistent WhatsApp panel and supported full-tab browser identity verified');
+
     const loginUrl = `${pageUrl}login-test`;
     const loginUsername = 'workspace.user@example.test';
     const firstPassword = 'Invicta-workspace-secret-1!';
@@ -316,7 +452,7 @@ async function main() {
     assert.doesNotMatch(await passwordPrompt.textContent(), /Invicta-workspace-secret/,
       'Password secret leaked into the shell prompt');
     await assertViewportContained(['#password-save-popout'], 'Password save prompt');
-    await capture('01c-password-save-prompt.png');
+    await capture('01d-password-save-prompt.png');
     await window.locator('#btn-confirm-password-save').click();
     await passwordPrompt.waitFor({ state: 'hidden' });
     const credentialDomain = `127.0.0.1:${address.port}`;
@@ -608,7 +744,9 @@ async function main() {
       'Summarize this page in one sentence',
       { includePageContext: true },
     ));
-    log('Local AI response received');
+    log('InvictaTill AI cloud recovery response received');
+    assert.equal(aiResult.engine, 'invicta-cloud');
+    assert.match(aiResult.response, /Invicta cloud fallback received/);
     assert.equal(typeof aiResult.response, 'string');
     assert.ok(aiResult.response.length > 20);
 
@@ -623,7 +761,7 @@ async function main() {
     const drawer = window.locator('#workspace-drawer');
     await drawer.waitFor({ state: 'visible' });
     assert.equal(await drawer.getAttribute('aria-hidden'), 'false');
-    assert.equal((await window.locator('#ai-provider-badge').textContent()).trim(), 'InvictaTill AI');
+    assert.equal((await window.locator('#ai-provider-badge').textContent()).trim(), 'InvictaTill AI · Cloud');
     assert.match(await drawer.textContent(), /Page context off by default/);
     assert.equal(await window.locator('#setting-ai-provider option[value="invicta"]').count(), 1);
     await capture('05a-invicta-ai-chat.png');
@@ -659,6 +797,15 @@ async function main() {
     log('Persistent focus session controls and remote-work launcher verified');
     await window.locator('#drawer-tab-chat').click();
     log('Update settings state and geometry verified');
+
+    const recoveredConnection = await window.evaluate(() => window.electronAPI.testAiConfig({
+      provider: 'invicta',
+      endpoint: 'http://127.0.0.1:7860/api/v1',
+    }));
+    assert.equal(recoveredConnection.success, true);
+    assert.equal(recoveredConnection.mode, 'cloud');
+    assert.match(recoveredConnection.message, /cloud fallback.*AI is working/i);
+    log('InvictaTill AI settings recovery verified');
 
     const invictaResult = await window.evaluate(
       async ({ endpoint }) => {
