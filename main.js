@@ -928,6 +928,23 @@ function handleShortcut(event, input, tabId) {
   } else if (alt && key === 'right') {
     goForwardActive();
     handled = true;
+  } else if (command && (key === '+' || key === '=')) {
+    const tab = tabs.get(tabId || activeTabId);
+    if (tab) {
+      const nextZoom = Math.min(3.0, Math.round((tab.zoom + 0.1) * 100) / 100);
+      setActiveZoom(nextZoom);
+    }
+    handled = true;
+  } else if (command && key === '-') {
+    const tab = tabs.get(tabId || activeTabId);
+    if (tab) {
+      const nextZoom = Math.max(0.25, Math.round((tab.zoom - 0.1) * 100) / 100);
+      setActiveZoom(nextZoom);
+    }
+    handled = true;
+  } else if (command && key === '0') {
+    setActiveZoom(1.0);
+    handled = true;
   } else if (key === 'f5') {
     reloadActive(Boolean(shift));
     handled = true;
@@ -1615,6 +1632,16 @@ function attachTabEvents(tab) {
     sendToShell('found-in-page-result', { tabId: tab.id, ...result });
   });
 
+  contents.on('zoom-changed', (event, zoomDirection) => {
+    let currentFactor = contents.getZoomFactor();
+    if (zoomDirection === 'in') currentFactor = Math.min(3.0, Math.round((currentFactor + 0.1) * 100) / 100);
+    else if (zoomDirection === 'out') currentFactor = Math.max(0.25, Math.round((currentFactor - 0.1) * 100) / 100);
+    tab.zoom = currentFactor;
+    contents.setZoomFactor(currentFactor);
+    emitTab('tab-update', tab);
+    scheduleSessionSave();
+  });
+
   contents.on('render-process-gone', (event, details) => {
     tab.crashed = true;
     tab.isLoading = false;
@@ -1798,6 +1825,9 @@ function switchTab(id) {
     const replacement = getWorkspaceTabs(activeWorkspaceId).find((item) => item.id !== tab.id);
     splitScreen.secondaryTabId = replacement ? replacement.id : null;
     splitScreen.enabled = Boolean(replacement);
+  }
+  if (tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+    tab.view.webContents.setZoomFactor(Number.isFinite(tab.zoom) ? tab.zoom : 1.0);
   }
   resizeViews();
   emitTab('tab-switched', tab);

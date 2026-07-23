@@ -63,6 +63,16 @@ test('find-in-page controls and accessible landmarks exist', () => {
   assert.match(html, /Ctrl\+Shift\+G/);
 });
 
+test('tabwise zoom preservation and zoom bounds contract', () => {
+  const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
+
+  assert.match(main, /contents\.on\('zoom-changed'/);
+  assert.match(main, /tab\.view\.webContents\.setZoomFactor/);
+  assert.match(renderer, /sameId\(rawTab\.id, state\.activeTabId\).*tab\.zoom/);
+  assert.match(renderer, /clamp\(factor, 0\.25, 3\.0\)/);
+  assert.match(renderer, /Number\.isFinite\(Number\(res\.zoom\)\)/);
+});
+
 test('InvictaTill AI is the only user-selectable AI agent', () => {
   assert.equal((html.match(/<option\s+value=["']invicta["']/g) || []).length, 1);
   assert.doesNotMatch(html, /<option\s+value=["'](?:openai|local)["']/i);

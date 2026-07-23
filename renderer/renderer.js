@@ -595,6 +595,9 @@ function upsertTab(rawTab) {
   if (index >= 0) state.tabs[index] = Object.assign({}, state.tabs[index], tab);
   else state.tabs.push(tab);
   if (rawTab.active) state.activeTabId = rawTab.id;
+  if ((rawTab.active || sameId(rawTab.id, state.activeTabId)) && Number.isFinite(Number(tab.zoom))) {
+    state.zoomFactor = Number(tab.zoom);
+  }
   renderTabs();
   renderBrowserControls();
 }
@@ -1458,8 +1461,8 @@ async function zoomIn() {
   try {
     if (typeof api.zoomIn === 'function') {
       const res = await api.zoomIn();
-      if (res && res.zoom) {
-        state.zoomFactor = res.zoom;
+      if (res && Number.isFinite(Number(res.zoom))) {
+        state.zoomFactor = Number(res.zoom);
         renderBrowserControls();
       }
     } else {
@@ -1474,8 +1477,8 @@ async function zoomOut() {
   try {
     if (typeof api.zoomOut === 'function') {
       const res = await api.zoomOut();
-      if (res && res.zoom) {
-        state.zoomFactor = res.zoom;
+      if (res && Number.isFinite(Number(res.zoom))) {
+        state.zoomFactor = Number(res.zoom);
         renderBrowserControls();
       }
     } else {
@@ -1490,8 +1493,8 @@ async function resetZoom() {
   try {
     if (typeof api.resetZoom === 'function') {
       const res = await api.resetZoom();
-      if (res && res.zoom) {
-        state.zoomFactor = res.zoom;
+      if (res && Number.isFinite(Number(res.zoom))) {
+        state.zoomFactor = Number(res.zoom);
         renderBrowserControls();
       }
     } else {
@@ -1738,12 +1741,15 @@ function updateZoomDisplay() {
 }
 
 async function setZoom(factor) {
-  const next = clamp(factor, 0.5, 2);
+  const next = clamp(factor, 0.25, 3.0);
   try {
     const result = await invoke('setZoom', next);
-    if (result && Number.isFinite(Number(result.zoomFactor))) state.zoomFactor = Number(result.zoomFactor);
-    else state.zoomFactor = next;
-    updateZoomDisplay();
+    if (result && Number.isFinite(Number(result.zoom))) {
+      state.zoomFactor = Number(result.zoom);
+    } else {
+      state.zoomFactor = next;
+    }
+    renderBrowserControls();
   } catch (error) {
     notify('Could not change zoom: ' + errorMessage(error), 'error');
   }
