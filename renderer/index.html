@@ -109,9 +109,13 @@
         <button class="chrome-button action-button" id="btn-passwords" type="button" aria-label="Password manager across workspaces" title="Passwords & Autofill">
           <span aria-hidden="true">🔑</span>
         </button>
-        <button class="chrome-button ai-button" id="btn-ai-drawer" type="button" aria-label="Open Invicta AI workspace" aria-expanded="false" aria-controls="workspace-drawer" title="Invicta AI workspace">
+        <button class="chrome-button action-button download-nav-button" id="btn-download-popout" type="button" aria-label="Show downloads" aria-expanded="false" aria-controls="download-popout" title="Downloads">
+          <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="M9 2.5v8m0 0 3-3m-3 3-3-3M3 13.5v1.2c0 .45.35.8.8.8h10.4c.45 0 .8-.35.8-.8v-1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          <span class="download-nav-badge hidden" id="download-popout-badge">0</span>
+        </button>
+        <button class="chrome-button ai-button" id="btn-ai-drawer" type="button" aria-label="Open InvictaTill AI workspace" aria-expanded="false" aria-controls="workspace-drawer" title="InvictaTill AI workspace">
           <span class="ai-spark" aria-hidden="true">✦</span>
-          <span class="ai-button-label">Invicta AI</span>
+          <span class="ai-button-label">InvictaTill AI</span>
         </button>
         <button class="chrome-button action-button" id="btn-menu" type="button" aria-label="Browser menu" aria-expanded="false" aria-controls="browser-menu" title="Menu">
           <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="3.5" r="1.2" fill="currentColor"></circle><circle cx="9" cy="9" r="1.2" fill="currentColor"></circle><circle cx="9" cy="14.5" r="1.2" fill="currentColor"></circle></svg>
@@ -129,6 +133,14 @@
     </section>
   </header>
 
+  <aside class="app-rail" id="app-rail" aria-label="Pinned apps">
+    <span class="app-rail-line" aria-hidden="true"></span>
+    <button class="app-rail-button whatsapp-button" id="btn-whatsapp" type="button" aria-label="Open WhatsApp" title="Open WhatsApp">
+      <svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.1 3.9A10 10 0 0 0 4.4 16l-1.3 4.8 4.9-1.3A10 10 0 0 0 20.1 3.9Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path><path d="M8.1 7.6c.3-.3.7-.2.9.1l1 2c.1.3 0 .6-.2.8l-.7.7c.7 1.5 1.9 2.7 3.4 3.4l.7-.8c.2-.2.5-.3.8-.1l1.9.9c.4.2.5.6.3.9-.5.9-1.4 1.4-2.4 1.3-3.4-.5-6.1-3.2-6.6-6.6-.1-1 .2-1.9.9-2.6Z" fill="currentColor"></path></svg>
+      <span class="app-rail-label">WhatsApp</span>
+    </button>
+  </aside>
+
   <main class="browser-stage" id="browser-stage">
     <section class="new-tab-page visible" id="new-tab-page" aria-labelledby="new-tab-heading">
       <div class="ntp-backdrop" aria-hidden="true"></div>
@@ -137,7 +149,7 @@
           <span class="ntp-logo" aria-hidden="true">✦</span>
           <p class="eyebrow">Workspace browser</p>
           <h1 id="new-tab-heading">Browse with clarity.</h1>
-          <p class="ntp-subtitle" id="ntp-subtitle">Invicta AI shares page context only when you choose.</p>
+          <p class="ntp-subtitle" id="ntp-subtitle">InvictaTill AI shares page context only when you choose.</p>
         </div>
         <form class="ntp-search" id="ntp-search-form">
           <label class="visually-hidden" for="ntp-search">Search the web or enter an address</label>
@@ -221,11 +233,47 @@
     </section>
   </main>
 
+  <section class="download-popout hidden" id="download-popout" aria-labelledby="download-popout-title" aria-hidden="true">
+    <div class="download-popout-header">
+      <div>
+        <p class="eyebrow">Background downloads</p>
+        <h2 id="download-popout-title">Downloads</h2>
+      </div>
+      <button class="icon-button" id="btn-close-download-popout" type="button" aria-label="Close download box; downloads will continue" title="Close — downloads continue">×</button>
+    </div>
+    <p class="download-popout-summary" id="download-popout-summary">Your files will appear here.</p>
+    <div class="download-popout-list" id="download-popout-list" aria-live="polite"></div>
+    <button class="download-popout-footer" id="btn-open-all-downloads" type="button">View all downloads</button>
+  </section>
+
+  <section class="password-save-popout hidden" id="password-save-popout" role="dialog" aria-labelledby="password-save-title" aria-describedby="password-save-description" aria-hidden="true">
+    <div class="password-save-header">
+      <span class="password-save-icon" aria-hidden="true">
+        <svg width="19" height="19" viewBox="0 0 20 20"><path d="M10 1.8 16.5 4v4.8c0 4.1-2.7 7.7-6.5 9.2-3.8-1.5-6.5-5.1-6.5-9.2V4L10 1.8Z" fill="none" stroke="currentColor" stroke-width="1.4"></path><path d="M7.3 9.5 9.1 11.3l3.7-4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+      </span>
+      <div>
+        <p class="eyebrow" id="password-save-eyebrow">Cross-workspace vault</p>
+        <h2 id="password-save-title">Save password?</h2>
+      </div>
+      <button class="icon-button" id="btn-close-password-save" type="button" aria-label="Do not save this password" title="Not now">×</button>
+    </div>
+    <div class="password-save-body">
+      <p id="password-save-description">Keep this login for the next time you visit.</p>
+      <strong id="password-save-domain"></strong>
+      <span id="password-save-username"></span>
+      <p class="password-save-scope"><span aria-hidden="true">◇</span> Available for autofill in every normal workspace</p>
+    </div>
+    <div class="password-save-actions">
+      <button class="secondary-button compact" id="btn-dismiss-password-save" type="button">Not now</button>
+      <button class="primary-button compact" id="btn-confirm-password-save" type="button">Save password</button>
+    </div>
+  </section>
+
   <aside class="workspace-drawer hidden" id="workspace-drawer" aria-labelledby="drawer-title">
     <div class="drawer-header">
       <div>
         <p class="eyebrow">Page context off by default</p>
-        <h2 id="drawer-title">Invicta workspace</h2>
+        <h2 id="drawer-title">InvictaTill AI workspace</h2>
       </div>
       <button class="icon-button" id="btn-close-drawer" type="button" aria-label="Close workspace drawer">✕</button>
     </div>
@@ -241,14 +289,15 @@
     <div class="drawer-body">
       <section class="drawer-panel active" id="drawer-panel-chat" role="tabpanel" aria-labelledby="drawer-tab-chat" data-panel="chat">
         <div class="ai-privacy-row">
-          <span class="provider-badge local" id="ai-provider-badge">Local</span>
+          <span class="provider-badge invicta" id="ai-provider-badge">InvictaTill AI</span>
           <label class="toggle-row compact-toggle" for="ai-context-toggle">
             <input id="ai-context-toggle" type="checkbox">
             <span class="toggle-control" aria-hidden="true"></span>
             <span>Share this page for this message</span>
           </label>
         </div>
-        <p class="privacy-note" id="ai-context-note">Page context is off. Invicta AI receives only what you type.</p>
+        <p class="privacy-note" id="ai-context-note">Page context is off. InvictaTill AI receives only what you type.</p>
+        <p class="ai-capability-note">Right-click inside Gmail or any text editor to fix spelling, grammar, tone, and clarity with InvictaTill AI. Shortcut: Ctrl+Shift+G.</p>
         <div class="quick-actions" aria-label="AI quick actions">
           <button class="chip-button" type="button" data-ai-action="Summarize this page clearly.">Summarize</button>
           <button class="chip-button" type="button" data-ai-action="Explain the key ideas on this page.">Explain</button>
@@ -260,13 +309,13 @@
           <div class="chat-message assistant">
             <span class="message-avatar" aria-hidden="true">✦</span>
             <div class="message-bubble">
-              <p>Hi, I’m Invicta AI. Page access is off until you enable it for a message.</p>
+              <p>Hi, I’m InvictaTill AI. Ask me anything, or right-click in an editor for writing help. Page access stays off until you enable it.</p>
             </div>
           </div>
         </div>
         <div class="ai-composer">
-          <label class="visually-hidden" for="ai-chat-input">Message Invicta AI</label>
-          <textarea id="ai-chat-input" rows="2" placeholder="Ask Invicta AI…" maxlength="12000"></textarea>
+          <label class="visually-hidden" for="ai-chat-input">Message InvictaTill AI</label>
+          <textarea id="ai-chat-input" rows="2" placeholder="Ask InvictaTill AI anything…" maxlength="12000"></textarea>
           <div class="composer-actions">
             <span class="composer-status" id="ai-composer-status" role="status" aria-live="polite"></span>
             <button class="secondary-button compact hidden" id="btn-stop-ai" type="button">Stop</button>
@@ -406,25 +455,19 @@
 
         <form id="ai-settings-form">
           <fieldset class="settings-group">
-            <legend>Invicta AI provider</legend>
+            <legend>InvictaTill AI connection</legend>
             <label class="setting-row" for="setting-ai-provider">
-              <span>AI provider</span>
-              <select id="setting-ai-provider">
-                <option value="invicta">InvictaTill AI (Built-in)</option>
-                <option value="local">Private Local Assistance (Extractive)</option>
-                <option value="openai">OpenAI Responses API</option>
+              <span>AI agent</span>
+              <select id="setting-ai-provider" disabled>
+                <option value="invicta">InvictaTill AI</option>
               </select>
             </label>
             <label class="setting-row" for="setting-ai-endpoint">
               <span>API Base URL</span>
               <input id="setting-ai-endpoint" type="text" placeholder="https://invictatill.shop">
             </label>
-            <label class="setting-row" for="setting-ai-model">
-              <span>Model</span>
-              <input id="setting-ai-model" type="text" placeholder="invicta-ai-v1">
-            </label>
             <label class="setting-row" for="setting-ai-key">
-              <span>API key</span>
+              <span>API key (optional locally)</span>
               <input id="setting-ai-key" type="password" placeholder="Key is saved; enter new key to replace">
             </label>
             <label class="toggle-row" for="setting-ai-clear-key">
@@ -436,6 +479,7 @@
               <button class="primary-button compact" type="submit">Save AI settings</button>
               <button class="secondary-button compact" id="btn-test-ai-settings" type="button">Test connection</button>
             </div>
+            <p class="privacy-note">InvictaTill AI is the browser’s only AI agent. The local service works without an API key; remote services may require one.</p>
             <p class="settings-status" id="ai-settings-status" role="status" aria-live="polite"></p>
           </fieldset>
         </form>

@@ -13,6 +13,8 @@ const allowedEvents = new Set([
   'found-in-page-result',
   'download-updated',
   'download-created',
+  'ai-writing-status',
+  'password-save-request',
   'fullscreen-change',
   'update-checking',
   'update-not-available',
@@ -136,6 +138,8 @@ const api = {
   reorderTabs: (tabIds) => ipcRenderer.invoke('reorder-tabs', tabIds),
   getSavedPasswords: () => ipcRenderer.invoke('get-saved-passwords'),
   savePassword: (credentials) => ipcRenderer.invoke('save-password', credentials),
+  resolvePasswordSaveRequest: (requestId, decision) =>
+    ipcRenderer.invoke('resolve-password-save-request', { requestId, decision }),
   deletePassword: (id) => ipcRenderer.invoke('delete-password', id),
   autofillCredentials: (credentials) => ipcRenderer.invoke('autofill-credentials', credentials),
   onShowScreenPicker: (callback) => {

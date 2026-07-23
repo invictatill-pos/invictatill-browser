@@ -49,15 +49,17 @@ test('the privileged renderer has a strict script policy and no guest webview', 
   assert.match(html, /base-uri\s+'none'/);
 });
 
-test('cloud AI secrets stay behind the main-process bridge', () => {
+test('InvictaTill AI secrets and writing access stay behind the main-process bridge', () => {
   const main = read('main.js');
   const preload = read('preload.js');
   const renderer = read(path.join('renderer', 'renderer.js'));
 
   assert.match(main, /safeStorage/);
-  assert.match(main, /\/responses/);
   assert.match(main, /\/api\/v1\/chat/);
-  assert.match(main, /raw\.provider === 'openai' \? 'openai' : 'local'|raw\.provider === 'openai'/);
+  assert.match(main, /\/api\/v1\/writing/);
+  assert.match(main, /writingReplacementScript/);
+  assert.match(main, /The text changed while InvictaTill AI was working/);
+  assert.doesNotMatch(main, /api\.openai\.com|callOpenAi|responsesEndpoint/);
   assert.ok(!/Authorization\s*:/i.test(preload));
   assert.ok(!/Authorization\s*:/i.test(renderer));
   assert.ok(!/invicta_sk_[A-Za-z0-9_-]+/.test(main), 'Embedded InvictaTill service credential remains');
@@ -68,4 +70,22 @@ test('saved passwords never fall back to plaintext persistence', () => {
   assert.match(main, /Secure OS key storage is not available; passwords/);
   assert.doesNotMatch(main, /password:\s*encrypted\s*\?/);
   assert.doesNotMatch(main, /password:\s*item\.password/);
+});
+
+test('automatic password capture uses an isolated origin-checked page bridge', () => {
+  const main = read('main.js');
+  const preload = read('preload.js');
+  const remotePreload = read('remote-preload.js');
+
+  assert.match(main, /preload:\s*REMOTE_PRELOAD_FILE/);
+  assert.match(main, /trustedCredentialSender/);
+  assert.match(main, /new URL\(claimedOrigin\)\.origin !== parsed\.origin/);
+  assert.match(main, /pendingCredentialPrompts/);
+  assert.match(remotePreload, /credential-submitted/);
+  assert.match(remotePreload, /get-page-credential/);
+  assert.match(remotePreload, /autocomplete === 'new-password'/);
+  assert.doesNotMatch(remotePreload, /contextBridge|exposeInMainWorld/);
+  assert.match(preload, /resolve-password-save-request/);
+  assert.match(main, /get-saved-passwords[^\n]+publicSavedPasswords/);
+  assert.match(main, /autofill payload[\s\S]+credentialId[\s\S]+credential\.domain !== activeDomain/);
 });

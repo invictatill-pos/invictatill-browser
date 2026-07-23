@@ -23,6 +23,8 @@ const els = {
   muteButton: $('btn-mute'),
   muteIcon: $('mute-icon'),
   splitButton: $('btn-split-screen'),
+  appRail: $('app-rail'),
+  whatsappButton: $('btn-whatsapp'),
   aiButton: $('btn-ai-drawer'),
   drawer: $('workspace-drawer'),
   drawerClose: $('btn-close-drawer'),
@@ -69,6 +71,18 @@ const els = {
   downloadsEmpty: $('downloads-empty'),
   downloadsSummary: $('downloads-summary'),
   downloadBadge: $('download-badge-count'),
+  downloadPopout: $('download-popout'),
+  downloadPopoutButton: $('btn-download-popout'),
+  downloadPopoutClose: $('btn-close-download-popout'),
+  downloadPopoutList: $('download-popout-list'),
+  downloadPopoutSummary: $('download-popout-summary'),
+  downloadPopoutBadge: $('download-popout-badge'),
+  passwordSavePopout: $('password-save-popout'),
+  passwordSaveTitle: $('password-save-title'),
+  passwordSaveDescription: $('password-save-description'),
+  passwordSaveDomain: $('password-save-domain'),
+  passwordSaveUsername: $('password-save-username'),
+  passwordSaveConfirm: $('btn-confirm-password-save'),
   aiMessages: $('ai-chat-messages'),
   aiInput: $('ai-chat-input'),
   aiSend: $('btn-send-ai'),
@@ -174,6 +188,9 @@ const state = {
   tasks: [],
   history: [],
   downloads: [],
+  downloadPopoutOpen: false,
+  dismissedDownloads: new Set(),
+  passwordSaveRequest: null,
   historyRange: 'day',
   historyQuery: '',
   settings: {
@@ -183,9 +200,8 @@ const state = {
     activityTracking: false
   },
   aiConfig: {
-    provider: 'local',
+    provider: 'invicta',
     endpoint: '',
-    model: ''
   },
   aiBusy: false,
   aiRequestId: 0,
@@ -349,27 +365,40 @@ function shouldShowPageView() {
   if (state.modalOpen) return false;
   if (state.menuOpen && window.innerWidth <= 600) return false;
   if (state.drawerOpen && window.innerWidth <= 720) return false;
+  if (state.downloadPopoutOpen && window.innerWidth <= 720) return false;
+  if (state.passwordSaveRequest && window.innerWidth <= 720) return false;
   return true;
 }
 
 function updateViewLayout() {
   if (!els.browserChrome) return;
   const chromeRect = els.browserChrome.getBoundingClientRect();
+  let left = 0;
+  if (!state.isFullscreen && els.appRail) {
+    left = Math.ceil(els.appRail.getBoundingClientRect().width);
+  }
   let right = 0;
   if (state.drawerOpen && window.innerWidth > 720 && els.drawer) {
     right = Math.ceil(els.drawer.getBoundingClientRect().width);
   }
   if (state.menuOpen && window.innerWidth > 600) right = Math.max(right, 304);
+  if (state.downloadPopoutOpen && window.innerWidth > 720 && els.downloadPopout) {
+    right = Math.max(right, Math.ceil(els.downloadPopout.getBoundingClientRect().width + 12));
+  }
+  if (state.passwordSaveRequest && window.innerWidth > 720 && els.passwordSavePopout) {
+    right = Math.max(right, Math.ceil(els.passwordSavePopout.getBoundingClientRect().width + 12));
+  }
   let bottom = 0;
   if (state.updateBannerVisible && els.updateBanner) {
     bottom = Math.ceil(els.updateBanner.getBoundingClientRect().height + 30);
   }
   const layout = {
     top: Math.max(0, Math.ceil(chromeRect.bottom)),
+    left: Math.max(0, left),
     right: Math.max(0, right),
     bottom: Math.max(0, bottom)
   };
-  const layoutKey = layout.top + ':' + layout.right + ':' + layout.bottom;
+  const layoutKey = layout.top + ':' + layout.left + ':' + layout.right + ':' + layout.bottom;
   if (layoutKey !== state.lastLayoutKey) {
     state.lastLayoutKey = layoutKey;
     invokeOptional('setViewLayout', layout).catch(function () {});
@@ -1029,7 +1058,7 @@ async function renderPasswordsList() {
       fillBtn.addEventListener('click', async function () {
         try {
           if (typeof api.autofillCredentials === 'function') {
-            await api.autofillCredentials({ username: item.username, password: item.password });
+            await api.autofillCredentials({ id: item.id });
             notify('Autofilled credentials for ' + item.domain, 'success', 2500);
             closePasswordsModal();
           }
@@ -1079,6 +1108,86 @@ function openPasswordsModal() {
 function closePasswordsModal() {
   if (!els.passwordsModalBackdrop) return;
   closeModalSurface(els.passwordsModalBackdrop);
+}
+
+function setPasswordSavePromptVisible(visible) {
+  if (!els.passwordSavePopout) return;
+  setHidden(els.passwordSavePopout, !visible);
+  els.passwordSavePopout.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  scheduleLayout();
+  if (visible && els.passwordSaveConfirm) {
+    window.setTimeout(function () { els.passwordSaveConfirm.focus(); }, 0);
+  }
+}
+
+function showPasswordSaveRequest(payload) {
+  if (!payload || typeof payload !== 'object' || !payload.requestId || !payload.domain) return;
+  const previous = state.passwordSaveRequest;
+  if (previous && previous.requestId !== payload.requestId) {
+    invokeOptional('resolvePasswordSaveRequest', previous.requestId, 'dismiss').catch(function () {});
+  }
+  const mode = payload.mode === 'update' ? 'update' : 'save';
+  state.passwordSaveRequest = {
+    requestId: String(payload.requestId),
+    domain: String(payload.domain),
+    username: typeof payload.username === 'string' ? payload.username : '',
+    mode,
+  };
+  if (els.passwordSaveTitle) {
+    els.passwordSaveTitle.textContent = mode === 'update' ? 'Update password?' : 'Save password?';
+  }
+  if (els.passwordSaveDescription) {
+    els.passwordSaveDescription.textContent = mode === 'update'
+      ? 'Use this new password the next time you sign in.'
+      : 'Keep this login for the next time you visit.';
+  }
+  if (els.passwordSaveDomain) els.passwordSaveDomain.textContent = state.passwordSaveRequest.domain;
+  if (els.passwordSaveUsername) {
+    els.passwordSaveUsername.textContent = state.passwordSaveRequest.username || 'No username detected';
+  }
+  if (els.passwordSaveConfirm) {
+    els.passwordSaveConfirm.disabled = false;
+    els.passwordSaveConfirm.textContent = mode === 'update' ? 'Update password' : 'Save password';
+  }
+  setPasswordSavePromptVisible(true);
+}
+
+async function dismissPasswordSaveRequest() {
+  const request = state.passwordSaveRequest;
+  if (!request) return;
+  state.passwordSaveRequest = null;
+  setPasswordSavePromptVisible(false);
+  try {
+    await invokeOptional('resolvePasswordSaveRequest', request.requestId, 'dismiss');
+  } catch (error) {
+    // A dismissal is best effort; the main process expires the secret shortly.
+  }
+}
+
+async function confirmPasswordSaveRequest() {
+  const request = state.passwordSaveRequest;
+  if (!request || !els.passwordSaveConfirm) return;
+  els.passwordSaveConfirm.disabled = true;
+  try {
+    const result = await invoke('resolvePasswordSaveRequest', request.requestId, 'save');
+    if (state.passwordSaveRequest === request) {
+      state.passwordSaveRequest = null;
+      setPasswordSavePromptVisible(false);
+    }
+    if (result && result.saved) {
+      notify(
+        (result.mode === 'updated' ? 'Updated' : 'Saved') +
+          ' password for ' + request.domain + ' in every normal workspace',
+        'success',
+        3800
+      );
+    } else {
+      notify('This password request expired. Sign in again to save it.', 'info', 4200);
+    }
+  } catch (error) {
+    notify('Could not save password: ' + errorMessage(error), 'error', 5200);
+    if (state.passwordSaveRequest === request) els.passwordSaveConfirm.disabled = false;
+  }
 }
 
 function renderScreenPickerList() {
@@ -1911,11 +2020,15 @@ async function loadDownloads() {
   renderDownloads();
 }
 
-function upsertDownload(raw) {
+function upsertDownload(raw, openPopout) {
   const next = normalizeDownload(raw);
   const index = state.downloads.findIndex(function (item) { return sameId(downloadId(item), next.id); });
   if (index >= 0) state.downloads[index] = Object.assign({}, state.downloads[index], next);
   else state.downloads.unshift(next);
+  if (openPopout) {
+    state.dismissedDownloads.delete(String(next.id));
+    setDownloadPopoutOpen(true);
+  }
   renderDownloads();
 }
 
@@ -1925,6 +2038,128 @@ function isDownloadActive(item) {
 
 function isDownloadDone(item) {
   return ['completed', 'complete', 'done'].includes(String(item.state).toLowerCase());
+}
+
+function formatByteSize(value) {
+  const bytes = Math.max(0, Number(value) || 0);
+  if (!bytes) return '';
+  if (bytes < 1024) return Math.round(bytes) + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = bytes / 1024;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit += 1;
+  }
+  return (size >= 10 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[unit];
+}
+
+function downloadMetaText(item) {
+  if (isDownloadDone(item)) {
+    return 'Downloaded' + (item.totalBytes ? ' • ' + formatByteSize(item.totalBytes) : '');
+  }
+  if (isDownloadActive(item)) {
+    const prefix = item.paused ? 'Paused' : 'Downloading ' + Math.round(item.percent) + '%';
+    const received = formatByteSize(item.receivedBytes);
+    const total = formatByteSize(item.totalBytes);
+    return prefix + (received ? ' • ' + received + (total ? ' of ' + total : '') : '');
+  }
+  return item.error ? String(item.error) : String(item.state || 'Download stopped');
+}
+
+function setDownloadPopoutOpen(open) {
+  state.downloadPopoutOpen = Boolean(open);
+  setHidden(els.downloadPopout, !state.downloadPopoutOpen);
+  els.downloadPopout.setAttribute('aria-hidden', state.downloadPopoutOpen ? 'false' : 'true');
+  els.downloadPopoutButton.setAttribute('aria-expanded', state.downloadPopoutOpen ? 'true' : 'false');
+  scheduleLayout();
+}
+
+function renderDownloadPopout() {
+  clearNode(els.downloadPopoutList);
+  const activeCount = state.downloads.filter(isDownloadActive).length;
+  els.downloadPopoutBadge.textContent = String(activeCount);
+  setHidden(els.downloadPopoutBadge, activeCount === 0);
+
+  const visible = state.downloads.filter(function (item) {
+    return !state.dismissedDownloads.has(String(downloadId(item)));
+  }).slice(0, 4);
+  if (activeCount) {
+    els.downloadPopoutSummary.textContent = activeCount + ' file' + (activeCount === 1 ? '' : 's') + ' downloading in the background.';
+  } else if (state.downloads.length) {
+    els.downloadPopoutSummary.textContent = 'Recent downloads — closing this box never removes a file.';
+  } else {
+    els.downloadPopoutSummary.textContent = 'Your files will appear here.';
+  }
+
+  if (!visible.length) {
+    const empty = createElement('p', 'download-mini-empty', state.downloads.length
+      ? 'Recent items are hidden. View all downloads to see them.'
+      : 'No downloads yet.');
+    els.downloadPopoutList.appendChild(empty);
+    return;
+  }
+
+  visible.forEach(function (item) {
+    const row = createElement('article', 'download-mini-item');
+    row.dataset.state = isDownloadDone(item) ? 'completed' : (isDownloadActive(item) ? 'active' : 'stopped');
+    const heading = createElement('div', 'download-mini-heading');
+    const icon = createElement('span', 'download-mini-icon', isDownloadDone(item) ? '✓' : (isDownloadActive(item) ? '↓' : '!'));
+    icon.setAttribute('aria-hidden', 'true');
+    const copy = createElement('div', 'download-mini-copy');
+    copy.append(
+      createElement('p', 'download-mini-title', item.filename),
+      createElement('p', 'download-mini-meta', downloadMetaText(item))
+    );
+    const dismiss = createElement('button', 'download-mini-dismiss', '×');
+    dismiss.type = 'button';
+    dismiss.setAttribute('aria-label', 'Hide ' + item.filename + ' from this box; download continues');
+    dismiss.title = 'Hide — download continues';
+    dismiss.addEventListener('click', function () {
+      state.dismissedDownloads.add(String(downloadId(item)));
+      renderDownloadPopout();
+    });
+    heading.append(icon, copy, dismiss);
+    row.appendChild(heading);
+
+    if (isDownloadActive(item)) {
+      const progress = createElement('progress', 'download-mini-progress');
+      progress.max = 100;
+      progress.value = item.percent;
+      progress.textContent = Math.round(item.percent) + '%';
+      row.appendChild(progress);
+    }
+
+    const actions = createElement('div', 'download-mini-actions');
+    if (isDownloadDone(item)) {
+      const open = createElement('button', 'download-mini-primary', 'Open');
+      open.type = 'button';
+      open.addEventListener('click', function () { runDownloadAction(['openDownload', 'showDownload'], item); });
+      const folder = createElement('button', '', 'Show in folder');
+      folder.type = 'button';
+      folder.addEventListener('click', function () { runDownloadAction(['showDownloadInFolder', 'showItemInFolder'], item); });
+      actions.append(open, folder);
+    } else if (isDownloadActive(item)) {
+      const pauseResume = createElement('button', '', item.paused ? 'Resume' : 'Pause');
+      pauseResume.type = 'button';
+      pauseResume.addEventListener('click', function () {
+        performDownloadAction(item, item.paused ? 'resume' : 'pause', item.paused ? ['resumeDownload'] : ['pauseDownload']);
+      });
+      const cancel = createElement('button', 'download-mini-cancel', 'Cancel download');
+      cancel.type = 'button';
+      cancel.addEventListener('click', function () {
+        performDownloadAction(item, 'cancel', ['cancelDownload']);
+      });
+      actions.append(pauseResume, cancel);
+    } else {
+      const retry = createElement('button', '', 'Retry');
+      retry.type = 'button';
+      retry.addEventListener('click', function () { performDownloadAction(item, 'retry', ['retryDownload']); });
+      actions.appendChild(retry);
+    }
+    row.appendChild(actions);
+    els.downloadPopoutList.appendChild(row);
+  });
 }
 
 async function runDownloadAction(names, item) {
@@ -2002,6 +2237,7 @@ function renderDownloads() {
     els.downloadsList.appendChild(row);
   });
   setHidden(els.downloadsEmpty, state.downloads.length > 0);
+  renderDownloadPopout();
 }
 
 async function clearFinishedDownloads() {
@@ -2374,7 +2610,7 @@ function setAiBusy(busy) {
   els.aiSend.disabled = busy;
   els.aiInput.disabled = busy;
   setHidden(els.aiStop, !busy);
-  els.aiStatus.textContent = busy ? 'Invicta AI is responding…' : '';
+  els.aiStatus.textContent = busy ? 'InvictaTill AI is responding…' : '';
 }
 
 function timeoutPromise(milliseconds) {
@@ -2423,7 +2659,7 @@ async function sendAiMessage(promptValue, includePageContext, echoUser) {
     thinking.remove();
     if (result && result.success === false) throw new Error(result.error || (result.cancelled ? 'Request cancelled' : 'AI request failed'));
     const response = typeof result === 'string' ? result : result && (result.response || result.text || result.message);
-    if (!response) throw new Error('Invicta AI returned an empty response.');
+    if (!response) throw new Error('InvictaTill AI returned an empty response.');
     createMessage(String(response), 'assistant', {
       copy: true,
       retry: { prompt: prompt, includePageContext: includeContext }
@@ -2460,17 +2696,13 @@ function stopAiRequest() {
 function updateAiContextNote() {
   els.aiContextNote.textContent = els.aiContext.checked
     ? 'This message may include text from the active page. Turn this off before sending if the page is sensitive.'
-    : 'Page context is off. Invicta AI receives only what you type.';
+    : 'Page context is off. InvictaTill AI receives only what you type.';
 }
 
 function updateAiProviderBadge() {
-  const provider = state.aiConfig.provider;
-  const cloud = provider === 'cloud';
-  const invicta = provider === 'invicta';
-  els.aiProviderBadge.textContent = cloud ? 'OpenAI' : (invicta ? 'Invicta' : 'Local');
-  els.aiProviderBadge.classList.toggle('cloud', cloud);
-  els.aiProviderBadge.classList.toggle('invicta', invicta);
-  els.aiProviderBadge.classList.toggle('local', !cloud && !invicta);
+  els.aiProviderBadge.textContent = 'InvictaTill AI';
+  els.aiProviderBadge.classList.remove('cloud', 'local');
+  els.aiProviderBadge.classList.add('invicta');
 }
 
 async function loadAiConfig() {
@@ -2478,56 +2710,37 @@ async function loadAiConfig() {
     const config = await invokeOptional('getAiConfig');
     if (config && typeof config === 'object') {
       state.aiConfig = {
-        provider: config.provider === 'cloud'
-          ? 'cloud'
-          : (config.provider === 'invicta' ? 'invicta' : 'local'),
+        provider: 'invicta',
         endpoint: String(config.endpoint || ''),
-        model: String(config.model || '')
       };
     }
   } catch (error) {}
   $('setting-ai-provider').value = state.aiConfig.provider;
   $('setting-ai-endpoint').value = state.aiConfig.endpoint;
-  $('setting-ai-model').value = state.aiConfig.model;
   $('setting-ai-key').value = '';
+  $('setting-ai-clear-key').checked = false;
   syncAiConfigFormAvailability();
   updateAiProviderBadge();
 }
 
 function syncAiConfigFormAvailability(applyProviderDefault) {
-  const provider = $('setting-ai-provider').value;
-  const local = provider === 'local';
   const endpoint = $('setting-ai-endpoint');
-  if (applyProviderDefault && provider === 'invicta' &&
-      (!endpoint.value || endpoint.value.includes('api.openai.com'))) {
+  if (applyProviderDefault && !endpoint.value) {
     endpoint.value = 'http://127.0.0.1:7860/api/v1';
   }
-  if (applyProviderDefault && provider === 'cloud' &&
-      (!endpoint.value || /127\.0\.0\.1|localhost/i.test(endpoint.value))) {
-    endpoint.value = 'https://api.openai.com/v1';
-  }
-  endpoint.placeholder = provider === 'invicta'
-    ? 'https://ai.invictatill.shop/api/v1 (or http://127.0.0.1:7860/api/v1)'
-    : 'https://api.openai.com/v1';
-  $('setting-ai-endpoint').disabled = local;
-  $('setting-ai-model').disabled = provider !== 'cloud';
-  $('setting-ai-key').disabled = local;
+  endpoint.placeholder = 'http://127.0.0.1:7860/api/v1 or your secure InvictaTill AI URL';
+  endpoint.disabled = false;
+  $('setting-ai-key').disabled = false;
 }
 
 function aiConfigFromForm() {
-  const selected = $('setting-ai-provider').value;
-  const provider = selected === 'cloud'
-    ? 'cloud'
-    : (selected === 'invicta' ? 'invicta' : 'local');
-  const config = { provider: provider };
-  if (provider !== 'local') {
-    config.endpoint = $('setting-ai-endpoint').value.trim();
-  }
-  if (provider === 'cloud') {
-    config.model = $('setting-ai-model').value.trim();
-  }
+  const config = {
+    provider: 'invicta',
+    endpoint: $('setting-ai-endpoint').value.trim()
+  };
   const key = $('setting-ai-key').value.trim();
   if (key) config.apiKey = key;
+  if ($('setting-ai-clear-key').checked) config.clearApiKey = true;
   return config;
 }
 
@@ -2540,15 +2753,13 @@ async function saveAiSettings(event) {
     const result = await invoke('saveAiConfig', config);
     if (result && result.success === false) throw new Error(result.error || 'Could not save AI settings');
     state.aiConfig = {
-      provider: result && result.provider ? result.provider : config.provider,
+      provider: 'invicta',
       endpoint: result && result.endpoint
         ? String(result.endpoint)
         : (config.endpoint || state.aiConfig.endpoint || ''),
-      model: result && result.model
-        ? String(result.model)
-        : (config.model || state.aiConfig.model || '')
     };
     $('setting-ai-key').value = '';
+    $('setting-ai-clear-key').checked = false;
     updateAiProviderBadge();
     status.textContent = 'AI settings saved.';
   } catch (error) {
@@ -3040,8 +3251,22 @@ function registerBrowserEvents() {
   registerEvent('open-command-palette', openCommandPalette);
   registerEvent('show-find-bar', openFindBar);
   registerEvent('found-in-page-result', handleFindResult);
-  registerEvent('download-created', upsertDownload);
-  registerEvent('download-updated', upsertDownload);
+  registerEvent('download-created', function (payload) { upsertDownload(payload, true); });
+  registerEvent('download-updated', function (payload) { upsertDownload(payload, false); });
+  registerEvent('password-save-request', showPasswordSaveRequest);
+  registerEvent('ai-writing-status', function (payload) {
+    const status = payload && payload.status ? String(payload.status) : 'error';
+    const message = payload && payload.message
+      ? String(payload.message)
+      : 'InvictaTill AI writing action updated.';
+    if (status === 'working') {
+      setTitleStatus(message);
+      notify(message, 'info', 5000);
+      return;
+    }
+    setTitleStatus('');
+    notify(message, status === 'completed' ? 'success' : 'error', status === 'completed' ? 3500 : 6500);
+  });
   registerEvent('fullscreen-change', function (isFullscreen) {
     state.isFullscreen = Boolean(isFullscreen);
     document.body.classList.toggle('fullscreen', state.isFullscreen);
@@ -3081,6 +3306,20 @@ function wireUi() {
   });
   bindClick('btn-split-screen', toggleSplitScreen);
   bindClick('btn-screenshot', takeScreenshot);
+  bindClick('btn-whatsapp', function () { newTab('https://web.whatsapp.com/'); });
+  bindClick('btn-download-popout', function () {
+    setDownloadPopoutOpen(!state.downloadPopoutOpen);
+  });
+  bindClick('btn-close-download-popout', function () {
+    setDownloadPopoutOpen(false);
+  });
+  bindClick('btn-close-password-save', dismissPasswordSaveRequest);
+  bindClick('btn-dismiss-password-save', dismissPasswordSaveRequest);
+  bindClick('btn-confirm-password-save', confirmPasswordSaveRequest);
+  bindClick('btn-open-all-downloads', function () {
+    setDownloadPopoutOpen(false);
+    openDrawer('downloads');
+  });
   bindClick('btn-ai-drawer', toggleDrawer);
   bindClick('btn-close-drawer', function () { closeDrawer(true); });
   bindClick('btn-menu', toggleMenu);
@@ -3614,6 +3853,12 @@ function handleGlobalShortcuts(event) {
     } else if (state.menuOpen) {
       event.preventDefault();
       closeMenu(true);
+    } else if (state.passwordSaveRequest) {
+      event.preventDefault();
+      dismissPasswordSaveRequest();
+    } else if (state.downloadPopoutOpen) {
+      event.preventDefault();
+      setDownloadPopoutOpen(false);
     } else if (state.findOpen) {
       event.preventDefault();
       closeFindBar();
@@ -3718,6 +3963,8 @@ async function initialize() {
   setDrawerPanel('chat', false);
   closeDrawer(false);
   closeMenu(false);
+  setDownloadPopoutOpen(false);
+  setPasswordSavePromptVisible(false);
   setHidden(els.findBar, true);
   setHidden(els.updateModalBackdrop, true);
   setHidden(els.commandBackdrop, true);

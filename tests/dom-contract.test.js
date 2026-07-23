@@ -41,6 +41,23 @@ test('find-in-page controls and accessible landmarks exist', () => {
   for (const id of ['command-backdrop', 'command-input', 'command-results', 'drawer-panel-focus', 'focus-clock', 'focus-status-pill']) {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }
+  for (const id of [
+    'app-rail', 'btn-whatsapp', 'btn-download-popout', 'download-popout',
+    'download-popout-list', 'btn-close-download-popout', 'btn-open-all-downloads',
+    'password-save-popout', 'password-save-domain', 'password-save-username',
+    'btn-close-password-save', 'btn-dismiss-password-save', 'btn-confirm-password-save',
+  ]) {
+    assert.ok(idSet.has(id), `Missing #${id}`);
+  }
+  assert.match(html, /Close download box; downloads will continue/);
+  assert.match(html, /Available for autofill in every normal workspace/);
+  assert.match(html, /Ctrl\+Shift\+G/);
+});
+
+test('InvictaTill AI is the only user-selectable AI agent', () => {
+  assert.equal((html.match(/<option\s+value=["']invicta["']/g) || []).length, 1);
+  assert.doesNotMatch(html, /<option\s+value=["'](?:openai|local)["']/i);
+  assert.match(html, /InvictaTill AI is the browser’s only AI agent/);
 });
 
 test('renderer avoids executable HTML and dynamic code sinks', () => {

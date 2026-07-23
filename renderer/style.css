@@ -32,6 +32,7 @@
   --find-height: 44px;
   --chrome-height: calc(var(--titlebar-height) + var(--tabs-height) + var(--nav-height));
   --drawer-width: 410px;
+  --app-rail-width: 48px;
   --font-ui: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
@@ -722,6 +723,33 @@ textarea::placeholder {
   background: rgba(56, 217, 245, 0.12);
 }
 
+.download-nav-button {
+  position: relative;
+}
+
+.download-nav-button[aria-expanded="true"] {
+  color: var(--green);
+  background: rgba(54, 211, 153, 0.11);
+}
+
+.download-nav-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  display: grid;
+  place-items: center;
+  padding: 0 3px;
+  color: #04120c;
+  background: var(--green);
+  border: 2px solid var(--bg-raised);
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 850;
+  line-height: 1;
+}
+
 .find-bar {
   height: var(--find-height);
   display: flex;
@@ -771,11 +799,70 @@ body.fullscreen .workspace-drawer {
   top: 0;
 }
 
+body.fullscreen .app-rail {
+  display: none;
+}
+
+.app-rail {
+  position: fixed;
+  z-index: 880;
+  top: var(--chrome-height);
+  bottom: 0;
+  left: 0;
+  width: var(--app-rail-width);
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px 6px;
+  background: linear-gradient(180deg, #0d1420, #080d15);
+  border-right: 1px solid var(--border);
+}
+
+.app-rail-line {
+  width: 22px;
+  height: 2px;
+  flex: 0 0 2px;
+  margin: 2px 0 1px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  border-radius: 99px;
+}
+
+.app-rail-button {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  display: grid;
+  place-items: center;
+  color: #86efac;
+  background: rgba(37, 211, 102, 0.08);
+  border: 1px solid rgba(37, 211, 102, 0.28);
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.app-rail-button:hover {
+  color: #f0fff5;
+  background: rgba(37, 211, 102, 0.2);
+  border-color: rgba(74, 222, 128, 0.65);
+  transform: translateY(-1px);
+}
+
+.app-rail-label {
+  display: none;
+}
+
 .browser-stage {
   position: fixed;
-  inset: var(--chrome-height) 0 0;
+  inset: var(--chrome-height) 0 0 var(--app-rail-width);
   overflow: hidden;
   background: var(--bg-canvas);
+}
+
+body.fullscreen .browser-stage {
+  left: 0;
 }
 
 .new-tab-page {
@@ -1466,6 +1553,17 @@ body.fullscreen .workspace-drawer {
   font-size: 10px;
 }
 
+.ai-capability-note {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  background: linear-gradient(90deg, rgba(54, 211, 153, 0.08), rgba(56, 217, 245, 0.05));
+  border: 1px solid rgba(54, 211, 153, 0.18);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 .quick-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1773,6 +1871,319 @@ body.fullscreen .workspace-drawer {
   height: 5px;
   margin-top: 7px;
   accent-color: var(--green);
+}
+
+.download-popout {
+  position: fixed;
+  z-index: 890;
+  right: 12px;
+  bottom: 14px;
+  width: min(356px, calc(100vw - var(--app-rail-width) - 24px));
+  max-height: min(560px, calc(100vh - var(--chrome-height) - 28px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: rgba(11, 16, 26, 0.99);
+  border: 1px solid rgba(112, 215, 255, 0.24);
+  border-radius: 14px;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.download-popout-header {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px 9px 14px;
+  background: linear-gradient(110deg, rgba(54, 211, 153, 0.1), rgba(93, 169, 255, 0.06));
+  border-bottom: 1px solid var(--border);
+}
+
+.download-popout-header h2 {
+  margin: 1px 0 0;
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.download-popout-header .icon-button {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  font-size: 18px;
+}
+
+.download-popout-summary {
+  margin: 0;
+  padding: 8px 14px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.018);
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+}
+
+.download-popout-list {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.download-mini-item {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.download-mini-item[data-state="active"] {
+  background: linear-gradient(90deg, rgba(93, 169, 255, 0.055), transparent);
+}
+
+.download-mini-item[data-state="completed"] {
+  background: linear-gradient(90deg, rgba(54, 211, 153, 0.045), transparent);
+}
+
+.download-mini-heading {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.download-mini-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  color: var(--blue);
+  background: rgba(93, 169, 255, 0.1);
+  border: 1px solid rgba(93, 169, 255, 0.2);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.download-mini-item[data-state="completed"] .download-mini-icon {
+  color: var(--green);
+  background: rgba(54, 211, 153, 0.1);
+  border-color: rgba(54, 211, 153, 0.22);
+}
+
+.download-mini-item[data-state="stopped"] .download-mini-icon {
+  color: var(--red);
+  background: rgba(251, 113, 133, 0.09);
+  border-color: rgba(251, 113, 133, 0.2);
+}
+
+.download-mini-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.download-mini-title,
+.download-mini-meta {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.download-mini-title {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 680;
+}
+
+.download-mini-meta {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+.download-mini-dismiss {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: 7px;
+  font-size: 16px;
+}
+
+.download-mini-dismiss:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.download-mini-progress {
+  width: 100%;
+  height: 5px;
+  display: block;
+  margin: 9px 0 0;
+  accent-color: var(--blue);
+}
+
+.download-mini-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.download-mini-actions button {
+  min-height: 27px;
+  padding: 3px 9px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 680;
+}
+
+.download-mini-actions button:hover {
+  color: #fff;
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.download-mini-actions .download-mini-primary {
+  color: #06120d;
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.download-mini-actions .download-mini-cancel {
+  color: var(--red);
+}
+
+.download-mini-empty {
+  margin: 0;
+  padding: 24px 18px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: 10px;
+}
+
+.download-popout-footer {
+  min-height: 38px;
+  flex: 0 0 38px;
+  color: var(--cyan);
+  background: rgba(56, 217, 245, 0.04);
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.download-popout-footer:hover {
+  color: #fff;
+  background: rgba(56, 217, 245, 0.09);
+}
+
+.password-save-popout {
+  position: fixed;
+  z-index: 920;
+  top: calc(var(--chrome-height) + 12px);
+  right: 12px;
+  width: min(360px, calc(100vw - var(--app-rail-width) - 24px));
+  overflow: hidden;
+  color: var(--text-primary);
+  background: rgba(11, 16, 26, 0.99);
+  border: 1px solid rgba(54, 211, 153, 0.3);
+  border-radius: 14px;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.58), 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.password-save-header {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 12px 10px;
+  background: linear-gradient(110deg, rgba(54, 211, 153, 0.12), rgba(56, 217, 245, 0.055));
+  border-bottom: 1px solid var(--border);
+}
+
+.password-save-header h2 {
+  margin: 1px 0 0;
+  overflow: hidden;
+  font-size: 16px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.password-save-header .icon-button {
+  width: 30px;
+  height: 30px;
+  font-size: 18px;
+}
+
+.password-save-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--green);
+  background: rgba(54, 211, 153, 0.1);
+  border: 1px solid rgba(54, 211, 153, 0.22);
+  border-radius: 10px;
+}
+
+.password-save-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px;
+}
+
+.password-save-body > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.password-save-body strong,
+.password-save-body > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.password-save-body strong {
+  margin-top: 4px;
+  color: #fff;
+  font-size: 13px;
+}
+
+.password-save-body > span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.password-save-body .password-save-scope {
+  margin-top: 8px;
+  padding-top: 9px;
+  color: var(--green);
+  border-top: 1px solid var(--border);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.password-save-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.password-save-actions .compact {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 10px;
 }
 
 .settings-panel {
@@ -2405,6 +2816,10 @@ kbd {
 }
 
   @media (max-width: 720px) {
+  :root {
+    --app-rail-width: 43px;
+  }
+
   .logo-text,
   .mode-badge,
   .titlebar-status {
@@ -2427,6 +2842,31 @@ kbd {
 
   .workspace-drawer {
     width: 100vw;
+  }
+
+  .app-rail {
+    padding-inline: 4px;
+  }
+
+  .app-rail-button {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+
+  .download-popout {
+    right: 8px;
+    left: calc(var(--app-rail-width) + 8px);
+    bottom: 8px;
+    width: auto;
+    max-height: calc(100vh - var(--chrome-height) - 16px);
+  }
+
+  .password-save-popout {
+    top: calc(var(--chrome-height) + 8px);
+    right: 8px;
+    left: calc(var(--app-rail-width) + 8px);
+    width: auto;
   }
 
   .notification-stack {

@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, '..');
 const files = [
   'main.js',
   'preload.js',
+  'remote-preload.js',
   'updater-controller.js',
   'focus-controller.js',
   'workspace-state.js',

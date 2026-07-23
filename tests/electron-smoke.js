@@ -43,9 +43,44 @@ async function main() {
       });
       return;
     }
+    if (request.url === '/download-test') {
+      const chunk = Buffer.alloc(32 * 1024, 'i');
+      const totalChunks = 16;
+      let sent = 0;
+      response.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': 'attachment; filename="invicta-download-test.txt"',
+        'Content-Length': String(chunk.length * totalChunks),
+      });
+      const timer = setInterval(() => {
+        if (sent >= totalChunks || response.destroyed) {
+          clearInterval(timer);
+          if (!response.destroyed) response.end();
+          return;
+        }
+        response.write(chunk);
+        sent += 1;
+      }, 60);
+      return;
+    }
     if (request.url === '/second') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end('<!doctype html><title>Second test page</title><h1>Second page</h1>');
+      return;
+    }
+    if (request.url === '/login-test') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html>
+        <title>Credential test page</title>
+        <main>
+          <h1>Sign in</h1>
+          <form id="login-test-form">
+            <label>Email <input id="login-user" name="username" type="email" autocomplete="username"></label>
+            <label>Password <input id="login-password" name="password" type="password" autocomplete="current-password"></label>
+            <button type="submit">Sign in</button>
+          </form>
+        </main>
+        <script>document.getElementById('login-test-form').addEventListener('submit', function (event) { event.preventDefault(); });</script>`);
       return;
     }
     if (request.url.startsWith('/visual-validation')) {
@@ -55,7 +90,7 @@ async function main() {
     }
 
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    response.end('<!doctype html><title>Invicta smoke page</title><main><h1>Verified browser content</h1><p>Orchid nebula is the unique summary phrase.</p><a href="/second">Next</a></main>');
+    response.end('<!doctype html><title>Invicta smoke page</title><main><h1>Verified browser content</h1><p>Orchid nebula is the unique summary phrase.</p><a href="/second">Next</a><a id="download-test" href="/download-test" download>Download</a></main>');
   });
 
   await new Promise((resolve, reject) => {
@@ -65,7 +100,11 @@ async function main() {
 
   const address = server.address();
   const pageUrl = `http://127.0.0.1:${address.port}/`;
-  const electronEnvironment = { ...process.env, INVICTA_TEST_MODE: '1' };
+  const electronEnvironment = {
+    ...process.env,
+    INVICTA_TEST_MODE: '1',
+    INVICTA_TEST_DOWNLOAD_DIR: path.join(profileDir, 'downloads'),
+  };
   delete electronEnvironment.ELECTRON_RUN_AS_NODE;
   let electronApp;
   const cspStyleViolations = [];
@@ -144,7 +183,7 @@ async function main() {
     assert.ok(modalParents.every((item) => item.parent === 'BODY'),
       `Expected top-level modal backdrops, received ${JSON.stringify(modalParents)}`);
     const initialLayout = await assertViewportContained([
-      '#titlebar', '#tabs-bar', '#nav-bar', '#new-tab-page', '.ntp-content', '#ntp-search-form', '#quick-links',
+      '#titlebar', '#tabs-bar', '#nav-bar', '#app-rail', '#btn-whatsapp', '#new-tab-page', '.ntp-content', '#ntp-search-form', '#quick-links',
     ], 'Initial new-tab layout');
     assert.ok(initialLayout.elements.find((item) => item.selector === '.ntp-content').width >= 800,
       'Expected a usable desktop new-tab content width');
@@ -248,6 +287,110 @@ async function main() {
     });
     log('Per-workspace last-active tab restoration and pinned tabs verified');
 
+    const loginUrl = `${pageUrl}login-test`;
+    const loginUsername = 'workspace.user@example.test';
+    const firstPassword = 'Invicta-workspace-secret-1!';
+    const updatedPassword = 'Invicta-workspace-secret-2!';
+    await window.evaluate((url) => window.electronAPI.navigate(url), loginUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.tabs.some((tab) => tab.id === browserState.activeTabId
+        && tab.url === loginUrl && tab.title === 'Credential test page' && !tab.isLoading),
+    );
+    await electronApp.evaluate(async ({ webContents }, details) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === details.url);
+      if (!target) throw new Error('Credential test page was not found');
+      return target.executeJavaScript(`(() => {
+        document.getElementById('login-user').value = ${JSON.stringify(details.username)};
+        document.getElementById('login-password').value = ${JSON.stringify(details.password)};
+        document.getElementById('login-test-form').requestSubmit();
+        return true;
+      })()`, true);
+    }, { url: loginUrl, username: loginUsername, password: firstPassword });
+    const passwordPrompt = window.locator('#password-save-popout');
+    await passwordPrompt.waitFor({ state: 'visible', timeout: 5000 });
+    assert.equal((await window.locator('#password-save-title').textContent()).trim(), 'Save password?');
+    assert.match(await passwordPrompt.textContent(), /Available for autofill in every normal workspace/);
+    assert.match(await window.locator('#password-save-domain').textContent(), /127\.0\.0\.1/);
+    assert.equal((await window.locator('#password-save-username').textContent()).trim(), loginUsername);
+    assert.doesNotMatch(await passwordPrompt.textContent(), /Invicta-workspace-secret/,
+      'Password secret leaked into the shell prompt');
+    await assertViewportContained(['#password-save-popout'], 'Password save prompt');
+    await capture('01c-password-save-prompt.png');
+    await window.locator('#btn-confirm-password-save').click();
+    await passwordPrompt.waitFor({ state: 'hidden' });
+    const credentialDomain = `127.0.0.1:${address.port}`;
+    const savedCredentials = await poll(
+      () => window.evaluate(() => window.electronAPI.getSavedPasswords()),
+      (items) => items.some((item) => item.domain === credentialDomain && item.username === loginUsername),
+    );
+    assert.ok(savedCredentials.every((item) => !Object.hasOwn(item, 'password')),
+      'Vault metadata exposed a plaintext password to the browser shell');
+
+    await window.evaluate(() => window.electronAPI.setActiveWorkspace('work'));
+    const workLoginTab = await window.evaluate((url) => window.electronAPI.newTab(url), loginUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.activeTabId === workLoginTab.id
+        && browserState.tabs.some((tab) => tab.id === workLoginTab.id && !tab.isLoading),
+    );
+    const autofilled = await poll(
+      () => electronApp.evaluate(async ({ webContents }, targetUrl) => {
+        const target = webContents.getAllWebContents()
+          .filter((contents) => contents.getURL() === targetUrl)
+          .sort((left, right) => right.id - left.id)[0];
+        if (!target) return null;
+        return target.executeJavaScript(`({
+          username: document.getElementById('login-user').value,
+          password: document.getElementById('login-password').value
+        })`, true);
+      }, loginUrl),
+      (values) => values && values.username === loginUsername && values.password === firstPassword,
+    );
+    assert.deepEqual(autofilled, { username: loginUsername, password: firstPassword });
+
+    await electronApp.evaluate(async ({ webContents }, details) => {
+      const target = webContents.getAllWebContents()
+        .filter((contents) => contents.getURL() === details.url)
+        .sort((left, right) => right.id - left.id)[0];
+      if (!target) throw new Error('Work credential page was not found');
+      return target.executeJavaScript(`(() => {
+        document.getElementById('login-password').value = ${JSON.stringify(details.password)};
+        document.getElementById('login-test-form').requestSubmit();
+        return true;
+      })()`, true);
+    }, { url: loginUrl, password: updatedPassword });
+    await passwordPrompt.waitFor({ state: 'visible', timeout: 5000 });
+    assert.equal((await window.locator('#password-save-title').textContent()).trim(), 'Update password?');
+    await window.locator('#btn-confirm-password-save').click();
+    await passwordPrompt.waitFor({ state: 'hidden' });
+    await window.evaluate(() => window.electronAPI.reload(true));
+    const updatedAutofill = await poll(
+      () => electronApp.evaluate(async ({ webContents }, targetUrl) => {
+        const target = webContents.getAllWebContents()
+          .filter((contents) => contents.getURL() === targetUrl)
+          .sort((left, right) => right.id - left.id)[0];
+        if (!target) return null;
+        return target.executeJavaScript(`({
+          username: document.getElementById('login-user') && document.getElementById('login-user').value,
+          password: document.getElementById('login-password') && document.getElementById('login-password').value
+        })`, true).catch(() => null);
+      }, loginUrl),
+      (values) => values && values.username === loginUsername && values.password === updatedPassword,
+    );
+    assert.deepEqual(updatedAutofill, { username: loginUsername, password: updatedPassword });
+    log('Encrypted save, update, and cross-workspace password autofill verified');
+
+    await window.evaluate(() => window.electronAPI.setActiveWorkspace('default'));
+    await window.evaluate((id) => window.electronAPI.switchTab(id), defaultLastTabId);
+    await window.evaluate((url) => window.electronAPI.navigate(url), pageUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.activeWorkspaceId === 'default'
+        && browserState.activeTabId === defaultLastTabId
+        && browserState.tabs.some((tab) => tab.id === defaultLastTabId && tab.url === pageUrl && !tab.isLoading),
+    );
+
     const longHistoryUrl = `${pageUrl}visual-validation?flow=signin&continue=${'workspace-browser-'.repeat(35)}`;
     await window.evaluate((url) => window.electronAPI.navigate(url), longHistoryUrl);
     await poll(
@@ -301,6 +444,34 @@ async function main() {
       (browserState) => browserState.activeTabId === active.id && !browserState.tabs.find((tab) => tab.id === active.id).isLoading,
     );
     log('Long suggestion containment verified');
+
+    await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) throw new Error('Download test page was not found');
+      return target.executeJavaScript("document.getElementById('download-test').click(); true", true);
+    }, pageUrl);
+    await window.locator('#download-popout').waitFor({ state: 'visible', timeout: 5000 });
+    assert.match(await window.locator('#download-popout').textContent(), /invicta-download-test\.txt/);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getDownloads()),
+      (items) => items.some((item) => item.filename === 'invicta-download-test.txt'
+        && ['progressing', 'paused'].includes(item.state)),
+      5000,
+    );
+    await capture('02a-download-popout.png');
+    await window.locator('#btn-close-download-popout').click();
+    await window.locator('#download-popout').waitFor({ state: 'hidden' });
+    const completedDownload = await poll(
+      () => window.evaluate(() => window.electronAPI.getDownloads()),
+      (items) => items.find((item) => item.filename === 'invicta-download-test.txt'
+        && item.state === 'completed'),
+      10000,
+    );
+    assert.ok(completedDownload.some((item) => item.filename === 'invicta-download-test.txt'
+      && item.state === 'completed'));
+    assert.equal(await window.locator('#download-popout').isHidden(), true,
+      'Download box reopened after it was dismissed');
+    log('Dismissible background download box verified');
 
     log('Requesting a real display-media stream from the active page');
     const displayMediaResult = electronApp.evaluate(async ({ webContents }, targetUrl) => {
@@ -452,9 +623,10 @@ async function main() {
     const drawer = window.locator('#workspace-drawer');
     await drawer.waitFor({ state: 'visible' });
     assert.equal(await drawer.getAttribute('aria-hidden'), 'false');
-    assert.equal((await window.locator('#ai-provider-badge').textContent()).trim(), 'Local');
+    assert.equal((await window.locator('#ai-provider-badge').textContent()).trim(), 'InvictaTill AI');
     assert.match(await drawer.textContent(), /Page context off by default/);
     assert.equal(await window.locator('#setting-ai-provider option[value="invicta"]').count(), 1);
+    await capture('05a-invicta-ai-chat.png');
 
     await window.locator('#drawer-tab-settings').click();
     await window.locator('#drawer-panel-settings').waitFor({ state: 'visible' });
