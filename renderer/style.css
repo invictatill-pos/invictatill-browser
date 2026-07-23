@@ -694,31 +694,6 @@ textarea::placeholder {
   color: var(--orange);
 }
 
-.ai-button {
-  width: auto !important;
-  padding: 0 11px;
-  display: inline-flex !important;
-  gap: 6px;
-  color: var(--green);
-  background: rgba(54, 211, 153, 0.08);
-  border: 1px solid rgba(54, 211, 153, 0.2);
-}
-
-.ai-button[aria-expanded="true"] {
-  color: #07140e;
-  background: var(--green);
-}
-
-.ai-spark {
-  font-size: 17px;
-}
-
-.ai-button-label {
-  font-size: 11px;
-  font-weight: 720;
-  white-space: nowrap;
-}
-
 .action-button[aria-pressed="true"] {
   color: var(--cyan);
   background: rgba(56, 217, 245, 0.12);
@@ -3182,16 +3157,6 @@ kbd {
 @media (max-width: 860px) {
   :root {
     --drawer-width: 380px;
-  }
-
-  .ai-button-label {
-    display: none;
-  }
-
-  .ai-button {
-    width: 36px !important;
-    padding: 0;
-    justify-content: center;
   }
 
   .nav-bar {

@@ -30,7 +30,6 @@ const els = {
   whatsappPanelHost: $('whatsapp-panel-view-host'),
   whatsappPanelStatus: $('whatsapp-panel-status'),
   whatsappUnreadBadge: $('whatsapp-unread-badge'),
-  aiButton: $('btn-ai-drawer'),
   drawer: $('workspace-drawer'),
   drawerClose: $('btn-close-drawer'),
   menuButton: $('btn-menu'),
@@ -206,7 +205,8 @@ const state = {
     searchEngine: 'google',
     homepage: '',
     restoreSession: true,
-    activityTracking: false
+    activityTracking: false,
+    liveWritingSuggestions: true
   },
   aiConfig: {
     provider: 'invicta',
@@ -2487,7 +2487,6 @@ function openDrawer(panelName) {
   document.body.classList.add('ai-panel-open');
   setHidden(els.drawer, false);
   els.drawer.setAttribute('aria-hidden', 'false');
-  els.aiButton.setAttribute('aria-expanded', 'true');
   if (els.aiRailButton) {
     els.aiRailButton.classList.add('active');
     els.aiRailButton.setAttribute('aria-expanded', 'true');
@@ -2511,7 +2510,6 @@ function closeDrawer(restoreFocus) {
   document.body.classList.remove('ai-panel-open');
   setHidden(els.drawer, true);
   els.drawer.setAttribute('aria-hidden', 'true');
-  els.aiButton.setAttribute('aria-expanded', 'false');
   if (els.aiRailButton) {
     els.aiRailButton.classList.remove('active');
     els.aiRailButton.setAttribute('aria-expanded', 'false');
@@ -2519,7 +2517,7 @@ function closeDrawer(restoreFocus) {
   }
   state.lastLayoutKey = '';
   scheduleLayout();
-  if (restoreFocus) (els.aiRailButton || els.aiButton).focus();
+  if (restoreFocus && els.aiRailButton) els.aiRailButton.focus();
 }
 
 function toggleDrawer() {
@@ -2932,7 +2930,8 @@ async function loadSettings() {
         searchEngine: settings.searchEngine || state.settings.searchEngine,
         homepage: String(settings.homepage || ''),
         restoreSession: settings.restoreSession !== false,
-        activityTracking: settings.activityTracking === true
+        activityTracking: settings.activityTracking === true,
+        liveWritingSuggestions: settings.liveWritingSuggestions !== false
       });
     }
   } catch (error) {}
@@ -2945,6 +2944,7 @@ function populateBrowserSettings() {
   $('setting-homepage').value = state.settings.homepage;
   $('setting-restore-session').checked = Boolean(state.settings.restoreSession);
   $('setting-activity-tracking').checked = Boolean(state.settings.activityTracking);
+  $('setting-live-writing').checked = state.settings.liveWritingSuggestions !== false;
 }
 
 async function saveBrowserSettings(event) {
@@ -2953,7 +2953,8 @@ async function saveBrowserSettings(event) {
     searchEngine: $('setting-search-engine').value,
     homepage: $('setting-homepage').value.trim(),
     restoreSession: $('setting-restore-session').checked,
-    activityTracking: $('setting-activity-tracking').checked
+    activityTracking: $('setting-activity-tracking').checked,
+    liveWritingSuggestions: $('setting-live-writing').checked
   });
   try {
     const result = await invoke('saveSettings', next);
@@ -3481,7 +3482,6 @@ function wireUi() {
     setDownloadPopoutOpen(false);
     openDrawer('downloads');
   });
-  bindClick('btn-ai-drawer', toggleDrawer);
   bindClick('btn-close-drawer', function () { closeDrawer(true); });
   bindClick('btn-menu', toggleMenu);
   els.focusForm.addEventListener('submit', function (event) {

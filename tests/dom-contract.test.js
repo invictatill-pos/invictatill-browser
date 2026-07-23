@@ -48,7 +48,7 @@ test('find-in-page controls and accessible landmarks exist', () => {
     'btn-close-password-save', 'btn-dismiss-password-save', 'btn-confirm-password-save',
     'whatsapp-panel', 'whatsapp-panel-view-host', 'whatsapp-panel-status',
     'whatsapp-unread-badge', 'btn-whatsapp-open-tab', 'btn-whatsapp-reload',
-    'btn-close-whatsapp',
+    'btn-close-whatsapp', 'setting-live-writing',
   ]) {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }
@@ -57,6 +57,9 @@ test('find-in-page controls and accessible landmarks exist', () => {
   assert.match(html, /Your sign-in stays available across every workspace/);
   assert.match(html, /aria-controls=["']whatsapp-panel["']/);
   assert.match(html, /id=["']btn-invicta-ai["'][^>]+aria-controls=["']workspace-drawer["']/);
+  assert.ok(!idSet.has('btn-ai-drawer'), 'The duplicate toolbar AI button should stay removed');
+  assert.match(html, /Show spelling and grammar suggestions while typing/);
+  assert.match(html, /Password, login, payment, search, and private-window fields are excluded/);
   assert.match(html, /Ctrl\+Shift\+G/);
 });
 

@@ -114,6 +114,7 @@ const closedTabs = [];
 const liveDownloads = new Map();
 const aiRequests = new Map();
 const pendingCredentialPrompts = new Map();
+const liveWritingRequestTimes = new Map();
 let invictaSessionToken = '';
 let localAiProcess = null;
 let localAiStartAttempted = false;
@@ -479,6 +480,48 @@ function trustedCredentialSender(event, claimedOrigin) {
     return { tab, origin: parsed.origin };
   } catch (error) {
     return null;
+  }
+}
+
+function trustedWritingSender(event, claimedOrigin) {
+  if (privateInstance || !event || !event.sender) return null;
+  const tab = tabForRemoteContents(event.sender);
+  const whatsapp = whatsappSurface && whatsappSurface.view &&
+    whatsappSurface.view.webContents === event.sender
+    ? whatsappSurface
+    : null;
+  if (!tab && !whatsapp) return null;
+  const senderUrl = event.senderFrame && event.senderFrame.url
+    ? event.senderFrame.url
+    : event.sender.getURL();
+  try {
+    const parsed = new URL(senderUrl);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    if (typeof claimedOrigin !== 'string' || new URL(claimedOrigin).origin !== parsed.origin) {
+      return null;
+    }
+    return { tab, whatsapp, origin: parsed.origin, contents: event.sender };
+  } catch (error) {
+    return null;
+  }
+}
+
+function liveWritingSuggestionsEnabled() {
+  if (privateInstance || !store) return false;
+  const settings = store.get('settings', {});
+  return !isPlainObject(settings) || settings.liveWritingSuggestions !== false;
+}
+
+function notifyLiveWritingPreference(enabled) {
+  const value = Boolean(enabled) && !privateInstance;
+  for (const tab of tabs.values()) {
+    if (tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.send('live-writing-preference-changed', value);
+    }
+  }
+  if (whatsappSurface && whatsappSurface.view &&
+      !whatsappSurface.view.webContents.isDestroyed()) {
+    whatsappSurface.view.webContents.send('live-writing-preference-changed', value);
   }
 }
 
@@ -3342,14 +3385,18 @@ function cleanWritingResponse(value) {
   return boundedString(text, 'AI writing response', MAX_WRITING_TEXT * 2, false);
 }
 
-async function rewriteWithInvicta(text, action) {
+async function rewriteWithInvicta(text, action, options) {
   const operation = WRITING_ACTIONS[action] || WRITING_ACTIONS.correct;
   const source = boundedString(text, 'writing text', MAX_WRITING_TEXT, false);
+  const requestOptions = isPlainObject(options) ? options : {};
+  const deadlineMs = Number.isFinite(requestOptions.deadlineMs)
+    ? Math.min(60000, Math.max(5000, requestOptions.deadlineMs))
+    : 60000;
   const rawConfig = getRawAiConfig();
   const config = internalAiConfig(rawConfig);
   const preferredBaseUrl = validateAiBaseUrl(config.baseUrl);
   const apiKey = decryptAiKey(rawConfig);
-  const deadline = Date.now() + 60000;
+  const deadline = Date.now() + deadlineMs;
   const errors = [];
 
   for (const baseUrl of invictaEndpointCandidates(preferredBaseUrl)) {
@@ -3367,7 +3414,16 @@ async function rewriteWithInvicta(text, action) {
     const remaining = deadline - Date.now();
     if (remaining < 500) break;
     const attemptController = new AbortController();
-    const attemptTimeout = Math.max(500, Math.min(remaining, mode === 'cloud' ? 35000 : 9000));
+    const requestedTimeout = mode === 'cloud'
+      ? requestOptions.cloudTimeoutMs
+      : requestOptions.localTimeoutMs;
+    const defaultTimeout = mode === 'cloud' ? 35000 : 9000;
+    const attemptTimeout = Math.max(500, Math.min(
+      remaining,
+      Number.isFinite(requestedTimeout)
+        ? Math.min(defaultTimeout, Math.max(500, requestedTimeout))
+        : defaultTimeout
+    ));
     const timer = setTimeout(
       () => attemptController.abort(new Error('Writing request timed out')),
       attemptTimeout
@@ -3452,6 +3508,71 @@ function builtInWritingCorrection(source, action) {
     revised += '.';
   }
   return cleanWritingResponse(revised);
+}
+
+function comparableWritingText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase();
+}
+
+function protectedWritingTokens(value) {
+  const matches = String(value || '').match(
+    /(?:https?:\/\/|www\.)[^\s<>()]+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi
+  ) || [];
+  return matches.map((token) => token.replace(/[.,!?;:]+$/, '').toLocaleLowerCase()).sort();
+}
+
+function preservesProtectedWritingTokens(source, candidate) {
+  const before = protectedWritingTokens(source);
+  const after = protectedWritingTokens(candidate);
+  return before.length === after.length && before.every((token, index) => token === after[index]);
+}
+
+function retainsLongWritingMeaning(source, candidate) {
+  const sourceWords = String(source || '').toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu) || [];
+  if (sourceWords.length < 10) return true;
+  const candidateWords = new Set(
+    String(candidate || '').toLocaleLowerCase().match(/[\p{L}\p{N}']+/gu) || []
+  );
+  const retained = sourceWords.filter((word) => candidateWords.has(word)).length;
+  return retained / sourceWords.length >= 0.2;
+}
+
+async function requestLiveWritingSuggestion(payload, senderDetails) {
+  assertPlainObject(payload, 'live writing payload');
+  const requestId = payload.requestId === undefined
+    ? ''
+    : boundedString(payload.requestId, 'live writing request id', 160, true);
+  const source = boundedString(payload.text, 'live writing text', 1200, false);
+  const words = source.match(/[\p{L}\p{N}']+/gu) || [];
+  if (source.trim().length < 12 || words.length < 3) {
+    return { success: true, requestId, suggestion: '', unchanged: true };
+  }
+
+  const contentsId = senderDetails.contents.id;
+  const now = Date.now();
+  const lastRequestAt = liveWritingRequestTimes.get(contentsId) || 0;
+  if (now - lastRequestAt < 700) {
+    return { success: false, requestId, rateLimited: true };
+  }
+  if (liveWritingRequestTimes.size > 500) liveWritingRequestTimes.clear();
+  liveWritingRequestTimes.set(contentsId, now);
+
+  const suggestion = await rewriteWithInvicta(source, 'correct', {
+    deadlineMs: 16000,
+    localTimeoutMs: 7000,
+    cloudTimeoutMs: 10000,
+  });
+  if (!suggestion || comparableWritingText(suggestion) === comparableWritingText(source)) {
+    return { success: true, requestId, suggestion: '', unchanged: true };
+  }
+  if (suggestion.length > 2400 || suggestion.length > Math.max(240, source.length * 2.5)) {
+    return { success: false, requestId, rejected: true };
+  }
+  if (!preservesProtectedWritingTokens(source, suggestion) ||
+      !retainsLongWritingMeaning(source, suggestion)) {
+    return { success: false, requestId, rejected: true };
+  }
+  return { success: true, requestId, suggestion };
 }
 
 const SUMMARY_STOP_WORDS = new Set([
@@ -4012,6 +4133,31 @@ function registerIpcHandlers() {
       return null;
     }
   });
+  ipcMain.handle('get-live-writing-preference', async (event, payload) => {
+    try {
+      if (!isPlainObject(payload) || !trustedWritingSender(event, payload.origin)) {
+        return { enabled: false };
+      }
+      return { enabled: liveWritingSuggestionsEnabled() };
+    } catch (error) {
+      return { enabled: false };
+    }
+  });
+  ipcMain.handle('request-live-writing-suggestion', async (event, payload) => {
+    try {
+      if (!isPlainObject(payload)) return { success: false, disabled: true };
+      const senderDetails = trustedWritingSender(event, payload.origin);
+      if (!senderDetails || !liveWritingSuggestionsEnabled()) {
+        return { success: false, disabled: true };
+      }
+      return await requestLiveWritingSuggestion(payload, senderDetails);
+    } catch (error) {
+      return {
+        success: false,
+        error: 'InvictaTill AI could not check this sentence.',
+      };
+    }
+  });
 
   registerHandler('get-browser-state', () => getBrowserState());
   registerHandler('get-all-tabs', () => getAllTabs());
@@ -4147,7 +4293,9 @@ function registerIpcHandlers() {
       'settings',
       100000
     );
+    settings.liveWritingSuggestions = settings.liveWritingSuggestions !== false;
     if (store) store.set('settings', settings);
+    notifyLiveWritingPreference(settings.liveWritingSuggestions);
     return true;
   });
 
@@ -4635,6 +4783,7 @@ app.on('before-quit', () => {
   localAiProcess = null;
   for (const pending of pendingCredentialPrompts.values()) clearTimeout(pending.timeout);
   pendingCredentialPrompts.clear();
+  liveWritingRequestTimes.clear();
   flushSessionState();
   for (const sess of workspaceSessionsMap.values()) {
     try {

@@ -52,9 +52,14 @@ async function main() {
       });
       return;
     }
-    if (request.url === '/fallback/api/v1/writing' && request.method === 'POST') {
-      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      response.end(JSON.stringify({ text: 'This sentence is corrected.' }));
+    if ((request.url === '/api/v1/writing' || request.url === '/fallback/api/v1/writing') &&
+        request.method === 'POST') {
+      const authorized = request.url.startsWith('/fallback/') ||
+        request.headers.authorization === 'Bearer invicta-test-key';
+      response.writeHead(authorized ? 200 : 401, { 'Content-Type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify(authorized
+        ? { text: 'I definitely receive the report.' }
+        : { error: 'Unauthorized' }));
       return;
     }
     if (request.url === '/api/v1/chat' && request.method === 'POST') {
@@ -109,6 +114,24 @@ async function main() {
           </form>
         </main>
         <script>document.getElementById('login-test-form').addEventListener('submit', function (event) { event.preventDefault(); });</script>`);
+      return;
+    }
+    if (request.url === '/writing-test') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html>
+        <title>Live writing test page</title>
+        <style>
+          body{margin:40px;background:#eef4f7;color:#142231;font:16px system-ui}
+          main{max-width:760px;margin:auto;padding:30px;border-radius:18px;background:white;box-shadow:0 14px 40px #24394d22}
+          [contenteditable],input{box-sizing:border-box;width:100%;margin-top:8px;padding:14px;border:1px solid #8ba0ad;border-radius:10px;font:16px system-ui}
+          [contenteditable]{min-height:180px;background:white;font-weight:400}
+          label{display:block;margin-top:18px;font-weight:700}
+        </style>
+        <main>
+          <h1>Draft a message</h1>
+          <label>Message<div id="writing-draft" contenteditable="true" role="textbox" aria-label="Message draft"></div></label>
+          <label>Private value<input id="writing-password" type="password" autocomplete="current-password"></label>
+        </main>`);
       return;
     }
     if (request.url === '/whatsapp-test') {
@@ -181,6 +204,18 @@ async function main() {
       await window.screenshot({ path: screenshotPath, animations: 'disabled' });
       log(`Saved UI QA screenshot to ${screenshotPath}`);
     };
+    const captureRemotePage = async (targetUrl, fileName) => {
+      if (!screenshotDir) return;
+      const dataUrl = await electronApp.evaluate(async ({ webContents }, url) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === url);
+        if (!target) return '';
+        return (await target.capturePage()).toDataURL();
+      }, targetUrl);
+      if (!dataUrl.startsWith('data:image/png;base64,')) return;
+      const screenshotPath = path.join(screenshotDir, fileName);
+      fs.writeFileSync(screenshotPath, Buffer.from(dataUrl.split(',')[1], 'base64'));
+      log(`Saved page-surface QA screenshot to ${screenshotPath}`);
+    };
     const assertViewportContained = async (selectors, label) => {
       const geometry = await window.evaluate((requestedSelectors) => {
         const viewport = { width: window.innerWidth, height: window.innerHeight };
@@ -216,6 +251,8 @@ async function main() {
     };
     log('Browser shell loaded');
     assert.equal(await window.title(), 'InvictaTill Browser');
+    assert.equal(await window.locator('#btn-ai-drawer').count(), 0,
+      'The duplicate toolbar InvictaTill AI button is still present');
     await window.locator('#tabs-container').waitFor({ state: 'visible' });
     const modalParents = await window.evaluate(() => [
       'update-modal-backdrop',
@@ -763,7 +800,6 @@ async function main() {
     assert.equal(await drawer.getAttribute('aria-hidden'), 'false');
     assert.equal(await window.locator('#btn-invicta-ai').getAttribute('aria-expanded'), 'true');
     assert.equal(await window.locator('#btn-invicta-ai').evaluate((button) => button.classList.contains('active')), true);
-    assert.equal(await window.locator('#btn-ai-drawer').getAttribute('aria-expanded'), 'true');
     assert.equal(await whatsappPanel.isHidden(), true);
     assert.equal((await window.evaluate(() => window.electronAPI.getWhatsappPanelState())).visible, false);
     const aiPanelGeometry = await window.evaluate(() => {
@@ -849,6 +885,88 @@ async function main() {
 
     await window.locator('#btn-close-drawer').click();
     await drawer.waitFor({ state: 'hidden' });
+
+    const writingUrl = `${pageUrl}writing-test`;
+    await window.evaluate((url) => window.electronAPI.navigate(url), writingUrl);
+    await poll(
+      () => electronApp.evaluate(({ webContents }, targetUrl) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+        return Boolean(target && !target.isLoading());
+      }, writingUrl),
+      Boolean,
+      15_000,
+    );
+    await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) throw new Error('Live writing test page was not found');
+      await target.executeJavaScript('document.getElementById("writing-draft").focus()');
+      await target.insertText('i definately recieve teh report');
+    }, writingUrl);
+    const liveSuggestion = await poll(
+      () => electronApp.evaluate(async ({ webContents }, targetUrl) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+        if (!target) return null;
+        return target.executeJavaScript(`(() => {
+          const host = document.querySelector('[data-invicta-writing-assistant]');
+          return host ? {
+            state: host.dataset.state,
+            suggestionLength: Number(host.dataset.suggestionLength || 0)
+          } : null;
+        })()`);
+      }, writingUrl),
+      (value) => Boolean(value && value.state === 'suggestion' && value.suggestionLength > 0),
+      25_000,
+    );
+    assert.ok(liveSuggestion.suggestionLength > 10);
+    await capture('05b-live-writing-suggestion.png');
+    await captureRemotePage(writingUrl, '05c-live-writing-page.png');
+    const applyPoint = await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) throw new Error('Live writing test page was not found');
+      return target.executeJavaScript(`(() => {
+        const host = document.querySelector('[data-invicta-writing-assistant]');
+        const button = host && host.shadowRoot && host.shadowRoot.querySelector('[data-action="apply"]');
+        if (!button) return null;
+        const bounds = button.getBoundingClientRect();
+        return { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
+      })()`);
+    }, writingUrl);
+    assert.ok(applyPoint && Number.isFinite(applyPoint.x) && Number.isFinite(applyPoint.y));
+    await electronApp.evaluate(({ webContents }, details) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === details.url);
+      if (!target) throw new Error('Live writing test page was not found');
+      const point = { x: Math.round(details.x), y: Math.round(details.y), button: 'left', clickCount: 1 };
+      target.sendInputEvent({ type: 'mouseDown', ...point });
+      target.sendInputEvent({ type: 'mouseUp', ...point });
+    }, { url: writingUrl, ...applyPoint });
+    await poll(
+      () => electronApp.evaluate(async ({ webContents }, targetUrl) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+        return target
+          ? target.executeJavaScript('document.getElementById("writing-draft").textContent')
+          : '';
+      }, writingUrl),
+      (value) => value === 'I definitely receive the report.',
+    );
+    await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) throw new Error('Live writing test page was not found');
+      await target.executeJavaScript('document.getElementById("writing-password").focus()');
+      await target.insertText(' this must remain private');
+    }, writingUrl);
+    await new Promise((resolve) => setTimeout(resolve, 1700));
+    const sensitiveFieldState = await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) return 'missing';
+      return target.executeJavaScript(`(() => {
+        const host = document.querySelector('[data-invicta-writing-assistant]');
+        return host ? host.dataset.state : 'absent';
+      })()`);
+    }, writingUrl);
+    assert.ok(sensitiveFieldState === 'hidden' || sensitiveFieldState === 'absent',
+      `A suggestion was shown for a password field: ${sensitiveFieldState}`);
+    log('Live InvictaTill AI spelling and grammar suggestion verified');
+
     const requestedCompactBounds = await electronApp.evaluate(async ({ BrowserWindow }) => {
       const shell = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
       shell.restore();

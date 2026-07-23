@@ -113,10 +113,6 @@
           <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="M9 2.5v8m0 0 3-3m-3 3-3-3M3 13.5v1.2c0 .45.35.8.8.8h10.4c.45 0 .8-.35.8-.8v-1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
           <span class="download-nav-badge hidden" id="download-popout-badge">0</span>
         </button>
-        <button class="chrome-button ai-button" id="btn-ai-drawer" type="button" aria-label="Open InvictaTill AI workspace" aria-expanded="false" aria-controls="workspace-drawer" title="InvictaTill AI workspace">
-          <span class="ai-spark" aria-hidden="true">✦</span>
-          <span class="ai-button-label">InvictaTill AI</span>
-        </button>
         <button class="chrome-button action-button" id="btn-menu" type="button" aria-label="Browser menu" aria-expanded="false" aria-controls="browser-menu" title="Menu">
           <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="3.5" r="1.2" fill="currentColor"></circle><circle cx="9" cy="9" r="1.2" fill="currentColor"></circle><circle cx="9" cy="14.5" r="1.2" fill="currentColor"></circle></svg>
         </button>
@@ -494,6 +490,12 @@
               <span class="toggle-control" aria-hidden="true"></span>
               <span>Enable 24H WFH Activity tracking</span>
             </label>
+            <label class="toggle-row" for="setting-live-writing">
+              <input id="setting-live-writing" type="checkbox">
+              <span class="toggle-control" aria-hidden="true"></span>
+              <span>Show spelling and grammar suggestions while typing</span>
+            </label>
+            <p class="privacy-note live-writing-privacy">After you pause, only the current sentence from supported editors is checked by InvictaTill AI. Password, login, payment, search, and private-window fields are excluded.</p>
             <div class="form-actions">
               <button class="primary-button compact" type="submit">Save preferences</button>
               <span class="settings-status" id="browser-settings-status" role="status" aria-live="polite"></span>

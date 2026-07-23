@@ -90,6 +90,25 @@ test('automatic password capture uses an isolated origin-checked page bridge', (
   assert.match(main, /autofill payload[\s\S]+credentialId[\s\S]+credential\.domain !== activeDomain/);
 });
 
+test('live writing suggestions stay origin-checked, reviewed, and away from sensitive fields', () => {
+  const main = read('main.js');
+  const remotePreload = read('remote-preload.js');
+
+  assert.match(main, /trustedWritingSender/);
+  assert.match(main, /request-live-writing-suggestion/);
+  assert.match(main, /new URL\(claimedOrigin\)\.origin !== parsed\.origin/);
+  assert.match(main, /if \(privateInstance \|\| !event/);
+  assert.match(remotePreload, /get-live-writing-preference/);
+  assert.match(remotePreload, /request-live-writing-suggestion/);
+  assert.match(remotePreload, /event\.isTrusted/);
+  assert.match(remotePreload, /setRangeText/);
+  assert.match(remotePreload, /password\|passcode\|login/);
+  assert.match(remotePreload, /payment\|card\|cvv\|cvc/);
+  assert.match(remotePreload, /search\|query\|find/);
+  assert.match(remotePreload, /currentSentence|CurrentSentence|Current Sentence|Current sentence/);
+  assert.doesNotMatch(remotePreload, /contextBridge|exposeInMainWorld|Authorization\s*:/i);
+});
+
 test('WhatsApp compatibility is isolated to its sandboxed persistent surface', () => {
   const main = read('main.js');
   const preload = read('preload.js');
