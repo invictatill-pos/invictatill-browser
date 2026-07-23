@@ -531,6 +531,39 @@ async function main() {
     assert.equal(compactQuickLinks, 2, 'Expected the six compact quick links to form two rows');
     assert.ok(compactLayout.elements.find((item) => item.selector === '.omnibox-shell').width >= 300,
       'Compact omnibox became too narrow');
+    const tabCountBeforeDensityCheck = await window.locator('#tabs-container .tab-item').count();
+    for (let index = 0; index < 10; index += 1) {
+      await window.evaluate(() => window.electronAPI.newTab());
+    }
+    await window.waitForFunction((expectedCount) => (
+      document.querySelectorAll('#tabs-container .tab-item').length >= expectedCount
+    ), tabCountBeforeDensityCheck + 10);
+    const denseTabLayout = await window.evaluate(() => {
+      const strip = document.querySelector('.tabs-scroll');
+      const container = document.getElementById('tabs-container');
+      const stripBounds = strip.getBoundingClientRect();
+      const tabBounds = Array.from(container.querySelectorAll('.tab-item')).map((item) => {
+        const bounds = item.getBoundingClientRect();
+        return { left: bounds.left, right: bounds.right, width: bounds.width };
+      });
+      return {
+        strip: { left: stripBounds.left, right: stripBounds.right },
+        clientWidth: container.clientWidth,
+        scrollWidth: container.scrollWidth,
+        tabs: tabBounds,
+      };
+    });
+    assert.ok(denseTabLayout.tabs.length >= tabCountBeforeDensityCheck + 10,
+      `Expected a dense tab strip: ${JSON.stringify(denseTabLayout)}`);
+    assert.ok(denseTabLayout.tabs[0].left >= denseTabLayout.strip.left - 1,
+      `First tab escaped the strip: ${JSON.stringify(denseTabLayout)}`);
+    assert.ok(denseTabLayout.tabs[denseTabLayout.tabs.length - 1].right <= denseTabLayout.strip.right + 1,
+      `Last tab escaped the strip: ${JSON.stringify(denseTabLayout)}`);
+    assert.ok(denseTabLayout.scrollWidth <= denseTabLayout.clientWidth + 1,
+      `Dense tabs caused horizontal overflow: ${JSON.stringify(denseTabLayout)}`);
+    assert.ok(denseTabLayout.tabs.every((tab) => tab.width > 0),
+      `Dense tabs did not retain a visible click target: ${JSON.stringify(denseTabLayout)}`);
+    log('Dense tab strip auto-sizing and containment verified');
     await capture('04-compact-900.png');
     assert.deepEqual(cspStyleViolations, [], `CSP blocked UI styling: ${cspStyleViolations.join('\n')}`);
     log('Responsive UI containment and CSP styling verified');

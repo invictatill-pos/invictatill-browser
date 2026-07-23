@@ -321,7 +321,7 @@ body.mode-gaming .mode-badge {
 .tabs-scroll {
   min-width: 0;
   flex: 1;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   scrollbar-width: none;
 }
@@ -331,7 +331,8 @@ body.mode-gaming .mode-badge {
 }
 
 .tabs-container {
-  min-width: min-content;
+  width: 100%;
+  min-width: 0;
   height: 36px;
   display: flex;
   align-items: end;
@@ -340,18 +341,23 @@ body.mode-gaming .mode-badge {
 
 .tab-item {
   position: relative;
-  width: clamp(150px, 18vw, 238px);
-  min-width: 126px;
+  width: auto;
+  min-width: 0;
+  max-width: 238px;
   height: 34px;
+  flex: 1 1 0;
   display: flex;
   align-items: center;
   gap: 3px;
   padding: 0 5px;
+  overflow: hidden;
   color: var(--text-muted);
   background: rgba(255, 255, 255, 0.025);
   border: 1px solid transparent;
   border-bottom: 0;
   border-radius: 10px 10px 0 0;
+  container-name: browser-tab;
+  container-type: inline-size;
   user-select: none;
 }
 
@@ -376,8 +382,10 @@ body.mode-gaming .mode-badge {
 }
 
 .tab-item.pinned {
-  width: 86px;
-  min-width: 86px;
+  width: auto;
+  min-width: 0;
+  max-width: 86px;
+  flex: 1 1 0;
   background: rgba(56, 217, 245, 0.045);
 }
 
@@ -469,6 +477,10 @@ body.mode-gaming .mode-badge {
   opacity: 0;
 }
 
+.tab-state-button:not(.audible):not(.muted) {
+  display: none;
+}
+
 .tab-item:hover .tab-close-button,
 .tab-item:focus-within .tab-close-button,
 .tab-item.active .tab-close-button,
@@ -493,6 +505,38 @@ body.mode-gaming .mode-badge {
 
 .tab-item.crashed {
   color: var(--red);
+}
+
+@container browser-tab (max-width: 92px) {
+  .tab-title,
+  .tab-state-button,
+  .tab-ws-dot,
+  .tab-pin-indicator {
+    display: none;
+  }
+
+  .tab-select {
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+  }
+}
+
+@container browser-tab (max-width: 52px) {
+  .tab-close-button {
+    position: absolute;
+    inset: 5px 50% auto auto;
+    width: 22px;
+    height: 22px;
+    translate: 50% 0;
+    background: var(--bg-hover);
+  }
+
+  .tab-item:hover .tab-favicon-wrap,
+  .tab-item:focus-within .tab-favicon-wrap,
+  .tab-item.active .tab-favicon-wrap {
+    opacity: 0;
+  }
 }
 
 .chrome-button,

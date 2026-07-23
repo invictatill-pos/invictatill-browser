@@ -8,6 +8,7 @@ const test = require('node:test');
 const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'renderer', 'style.css'), 'utf8');
 
 const htmlIds = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]);
 const idSet = new Set(htmlIds);
@@ -53,4 +54,10 @@ test('UI styling stays compatible with the strict content security policy', () =
   assert.ok(!/\sstyle\s*=/.test(html), 'Inline HTML styles are blocked by style-src self');
   assert.ok(!/\.style\.|\.style\s*=|cssText/.test(renderer), 'Runtime inline styles bypass the shared component system');
   assert.match(html, /<link\s+rel=["']stylesheet["']\s+href=["']style\.css["']>/);
+});
+
+test('open tabs share the available strip width instead of overflowing', () => {
+  assert.match(css, /\.tabs-container\s*{[^}]*\bwidth:\s*100%;[^}]*\bmin-width:\s*0;/s);
+  assert.match(css, /\.tab-item\s*{[^}]*\bmin-width:\s*0;[^}]*\bmax-width:\s*238px;[^}]*\bflex:\s*1\s+1\s+0;/s);
+  assert.match(css, /@container\s+browser-tab\s*\(max-width:\s*92px\)/);
 });
