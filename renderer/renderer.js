@@ -2315,6 +2315,7 @@ function downloadMetaText(item) {
 
 function setDownloadPopoutOpen(open) {
   state.downloadPopoutOpen = Boolean(open);
+  document.body.classList.toggle('download-popout-open', state.downloadPopoutOpen);
   setHidden(els.downloadPopout, !state.downloadPopoutOpen);
   els.downloadPopout.setAttribute('aria-hidden', state.downloadPopoutOpen ? 'false' : 'true');
   els.downloadPopoutButton.setAttribute('aria-expanded', state.downloadPopoutOpen ? 'true' : 'false');
@@ -2333,7 +2334,7 @@ function renderDownloadPopout() {
   if (activeCount) {
     els.downloadPopoutSummary.textContent = activeCount + ' file' + (activeCount === 1 ? '' : 's') + ' downloading in the background.';
   } else if (state.downloads.length) {
-    els.downloadPopoutSummary.textContent = 'Recent downloads — closing this box never removes a file.';
+    els.downloadPopoutSummary.textContent = state.downloads.length + ' recent download' + (state.downloads.length === 1 ? '' : 's') + ' — closing this panel will not delete files.';
   } else {
     els.downloadPopoutSummary.textContent = 'Your files will appear here.';
   }

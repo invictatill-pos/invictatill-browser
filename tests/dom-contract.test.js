@@ -99,3 +99,13 @@ test('open tabs share the available strip width instead of overflowing', () => {
   assert.match(css, /\.tab-item\s*{[^}]*\bmin-width:\s*0;[^}]*\bmax-width:\s*238px;[^}]*\bflex:\s*1\s+1\s+0;/s);
   assert.match(css, /@container\s+browser-tab\s*\(max-width:\s*92px\)/);
 });
+
+test('downloads use a roomy top-right flyout with usable controls', () => {
+  assert.match(css, /\.download-popout\s*{[^}]*\btop:\s*calc\(var\(--chrome-height\)\s*\+\s*10px\);/s);
+  assert.match(css, /\.download-popout\s*{[^}]*\bwidth:\s*min\(404px,/s);
+  assert.match(css, /\.download-mini-actions button\s*{[^}]*\bheight:\s*29px;/s);
+  assert.match(css, /body\.download-popout-open \.notification-stack\s*{[^}]*\bright:\s*426px;/s);
+  assert.match(html, /class=["']download-popout-header-icon["']/);
+  assert.match(renderer, /recent download.*closing this panel will not delete files/);
+  assert.match(renderer, /classList\.toggle\('download-popout-open', state\.downloadPopoutOpen\)/);
+});

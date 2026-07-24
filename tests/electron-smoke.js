@@ -625,6 +625,27 @@ async function main() {
     }, pageUrl);
     await window.locator('#download-popout').waitFor({ state: 'visible', timeout: 5000 });
     assert.match(await window.locator('#download-popout').textContent(), /invicta-download-test\.txt/);
+    await assertViewportContained(['#download-popout'], 'Download flyout');
+    const downloadFlyoutGeometry = await window.evaluate(() => {
+      const popout = document.getElementById('download-popout').getBoundingClientRect();
+      const chrome = document.querySelector('.browser-chrome').getBoundingClientRect();
+      const notification = document.querySelector('.notification');
+      const toast = notification ? notification.getBoundingClientRect() : null;
+      return {
+        viewportWidth: window.innerWidth,
+        popout: { left: popout.left, top: popout.top, right: popout.right, width: popout.width },
+        chromeBottom: chrome.bottom,
+        toast: toast && toast.height ? { left: toast.left, right: toast.right } : null,
+      };
+    });
+    assert.ok(downloadFlyoutGeometry.popout.top >= downloadFlyoutGeometry.chromeBottom,
+      `Download flyout overlaps browser chrome: ${JSON.stringify(downloadFlyoutGeometry)}`);
+    assert.ok(downloadFlyoutGeometry.popout.width >= 390,
+      `Download flyout is too narrow for file actions: ${JSON.stringify(downloadFlyoutGeometry)}`);
+    if (downloadFlyoutGeometry.viewportWidth >= 900 && downloadFlyoutGeometry.toast) {
+      assert.ok(downloadFlyoutGeometry.toast.right <= downloadFlyoutGeometry.popout.left - 8,
+        `Notification obscures download flyout: ${JSON.stringify(downloadFlyoutGeometry)}`);
+    }
     await poll(
       () => window.evaluate(() => window.electronAPI.getDownloads()),
       (items) => items.some((item) => item.filename === 'invicta-download-test.txt'
