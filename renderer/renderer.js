@@ -165,6 +165,18 @@ const els = {
   btnCancelScreenPickerX: $('btn-cancel-screen-picker-x'),
   btnSubmitScreenPicker: $('btn-submit-screen-picker'),
   chkShareAudio: $('chk-share-audio'),
+  // Extension Store elements.
+  extensionToolbar: $('extension-toolbar'),
+  btnExtensions: $('btn-extensions'),
+  extensionStoreModal: $('extension-store-modal'),
+  extStoreBackdrop: $('ext-store-backdrop'),
+  btnCloseExtStore: $('btn-close-ext-store'),
+  extStoreSearch: $('ext-store-search'),
+  btnInstallExtFile: $('btn-install-ext-file'),
+  extStoreTabs: $('ext-store-tabs'),
+  extStoreFeatured: $('ext-store-featured'),
+  extStoreInstalled: $('ext-store-installed'),
+  extStoreStatus: $('ext-store-status'),
 };
 
 const state = {
@@ -183,6 +195,9 @@ const state = {
   workspaces: [],
   activeWorkspaceId: 'default',
   selectedWsIcon: '🏢',
+  extensionStoreOpen: false,
+  extensionStoreTab: 'featured',
+  installingExtensions: new Set(),
   selectedWsColor: '#3b82f6',
   engineMode: 'workspace',
   drawerOpen: false,
@@ -2330,7 +2345,7 @@ function renderDownloadPopout() {
 
   const visible = state.downloads.filter(function (item) {
     return !state.dismissedDownloads.has(String(downloadId(item)));
-  }).slice(0, 4);
+  });
   if (activeCount) {
     els.downloadPopoutSummary.textContent = activeCount + ' file' + (activeCount === 1 ? '' : 's') + ' downloading in the background.';
   } else if (state.downloads.length) {
@@ -2351,7 +2366,20 @@ function renderDownloadPopout() {
     const row = createElement('article', 'download-mini-item');
     row.dataset.state = isDownloadDone(item) ? 'completed' : (isDownloadActive(item) ? 'active' : 'stopped');
     const heading = createElement('div', 'download-mini-heading');
-    const icon = createElement('span', 'download-mini-icon', isDownloadDone(item) ? '✓' : (isDownloadActive(item) ? '↓' : '!'));
+    // File type icon based on extension.
+    var ext = (item.filename || '').split('.').pop().toLowerCase();
+    var iconChar = isDownloadDone(item) ? '✓' : (isDownloadActive(item) ? '↓' : '!');
+    if (ext === 'pdf') iconChar = '📄';
+    else if (ext === 'xlsx' || ext === 'xls') iconChar = '📊';
+    else if (ext === 'csv') iconChar = '📋';
+    else if (ext === 'zip' || ext === 'rar' || ext === '7z') iconChar = '📦';
+    else if (ext === 'exe' || ext === 'msi') iconChar = '⚙️';
+    else if (ext === 'doc' || ext === 'docx') iconChar = '📝';
+    else if (ext === 'mp4' || ext === 'mkv' || ext === 'avi') iconChar = '🎬';
+    else if (ext === 'mp3' || ext === 'wav' || ext === 'flac') iconChar = '🎵';
+    else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp' || ext === 'svg') iconChar = '🖼️';
+    else if (ext === 'ppt' || ext === 'pptx') iconChar = '📽️';
+    const icon = createElement('span', 'download-mini-icon', iconChar);
     icon.setAttribute('aria-hidden', 'true');
     const copy = createElement('div', 'download-mini-copy');
     copy.append(
@@ -4387,6 +4415,333 @@ async function initialize() {
   if (!state.focusTicker) state.focusTicker = window.setInterval(renderFocusCountdown, 1000);
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Floating download popout — drag-to-move
+// ═══════════════════════════════════════════════════════════════════
+(function initDownloadDrag() {
+  var dragState = null;
+  var popout = els.downloadPopout;
+  var header = popout && popout.querySelector('.download-popout-header');
+  if (!header) return;
+
+  // Restore saved position.
+  try {
+    var saved = localStorage.getItem('invicta-dl-popout-pos');
+    if (saved) {
+      var pos = JSON.parse(saved);
+      if (typeof pos.bottom === 'number') popout.style.bottom = pos.bottom + 'px';
+      if (typeof pos.right === 'number') popout.style.right = pos.right + 'px';
+    }
+  } catch (error) { /* ignore */ }
+
+  header.addEventListener('mousedown', function (e) {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    e.preventDefault();
+    var rect = popout.getBoundingClientRect();
+    dragState = { startX: e.clientX, startY: e.clientY, startBottom: window.innerHeight - rect.bottom, startRight: window.innerWidth - rect.right };
+    popout.classList.add('dragging');
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+  });
+
+  function onDragMove(e) {
+    if (!dragState) return;
+    var dx = e.clientX - dragState.startX;
+    var dy = e.clientY - dragState.startY;
+    var newBottom = Math.max(4, dragState.startBottom - dy);
+    var newRight = Math.max(4, dragState.startRight - dx);
+    popout.style.bottom = newBottom + 'px';
+    popout.style.right = newRight + 'px';
+    popout.style.top = 'auto';
+  }
+
+  function onDragEnd() {
+    if (!dragState) return;
+    popout.classList.remove('dragging');
+    dragState = null;
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+    try {
+      localStorage.setItem('invicta-dl-popout-pos', JSON.stringify({
+        bottom: parseInt(popout.style.bottom) || 16,
+        right: parseInt(popout.style.right) || 16,
+      }));
+    } catch (error) { /* ignore */ }
+  }
+})();
+
+// Auto-show download popout when a new download starts.
+api.on('download-created', function () {
+  if (!state.downloadPopoutOpen) {
+    setDownloadPopoutOpen(true);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Extension Store — UI logic
+// ═══════════════════════════════════════════════════════════════════
+function openExtensionStore() {
+  state.extensionStoreOpen = true;
+  setHidden(els.extensionStoreModal, false);
+  els.extensionStoreModal.setAttribute('aria-hidden', 'false');
+  renderExtensionStore();
+}
+
+function closeExtensionStore() {
+  state.extensionStoreOpen = false;
+  setHidden(els.extensionStoreModal, true);
+  els.extensionStoreModal.setAttribute('aria-hidden', 'true');
+}
+
+function renderExtensionCard(ext, isInstalled) {
+  var card = createElement('div', 'ext-card');
+
+  // Icon.
+  if (ext.icon) {
+    var icon = document.createElement('img');
+    icon.className = 'ext-card-icon';
+    icon.src = ext.icon;
+    icon.alt = ext.name;
+    icon.loading = 'lazy';
+    icon.onerror = function () { this.style.display = 'none'; };
+    card.appendChild(icon);
+  } else {
+    var fallback = createElement('div', 'ext-card-icon-fallback', '🧩');
+    card.appendChild(fallback);
+  }
+
+  // Body.
+  var body = createElement('div', 'ext-card-body');
+  body.appendChild(createElement('p', 'ext-card-name', ext.name || 'Unknown'));
+  body.appendChild(createElement('p', 'ext-card-desc', ext.description || ''));
+  if (ext.category) {
+    body.appendChild(createElement('span', 'ext-card-category', ext.category));
+  }
+  card.appendChild(body);
+
+  // Actions.
+  var actions = createElement('div', 'ext-card-actions');
+
+  if (isInstalled) {
+    // Toggle enable/disable.
+    var toggleBtn = createElement('button', 'ext-card-toggle', ext.enabled ? 'Disable' : 'Enable');
+    toggleBtn.type = 'button';
+    toggleBtn.addEventListener('click', function () {
+      api.toggleExtension(ext.id, !ext.enabled).then(function () {
+        renderExtensionStore();
+        renderExtensionToolbar();
+      }).catch(function (err) { notify('Extension toggle failed: ' + errorMessage(err), 'error'); });
+    });
+    actions.appendChild(toggleBtn);
+
+    // Remove.
+    var removeBtn = createElement('button', 'ext-card-remove', 'Remove');
+    removeBtn.type = 'button';
+    removeBtn.addEventListener('click', function () {
+      api.uninstallExtension(ext.id).then(function () {
+        renderExtensionStore();
+        renderExtensionToolbar();
+      }).catch(function (err) { notify('Uninstall failed: ' + errorMessage(err), 'error'); });
+    });
+    actions.appendChild(removeBtn);
+  } else {
+    var installBtn = createElement('button', 'ext-card-install', ext.installed ? 'Installed' : 'Install');
+    installBtn.type = 'button';
+    if (ext.installed) {
+      installBtn.classList.add('installed');
+    } else if (state.installingExtensions.has(ext.id)) {
+      installBtn.classList.add('installing');
+      installBtn.textContent = 'Installing…';
+    } else {
+      installBtn.addEventListener('click', function () {
+        state.installingExtensions.add(ext.id);
+        renderExtensionStore();
+        showExtStoreStatus('Installing ' + ext.name + '…');
+        api.installExtensionFromStore(ext.id).then(function () {
+          state.installingExtensions.delete(ext.id);
+          showExtStoreStatus(ext.name + ' installed successfully!');
+          renderExtensionStore();
+          renderExtensionToolbar();
+          setTimeout(hideExtStoreStatus, 3000);
+        }).catch(function (err) {
+          state.installingExtensions.delete(ext.id);
+          showExtStoreStatus('Install failed: ' + errorMessage(err));
+          renderExtensionStore();
+          setTimeout(hideExtStoreStatus, 5000);
+        });
+      });
+    }
+    actions.appendChild(installBtn);
+  }
+  card.appendChild(actions);
+  return card;
+}
+
+function showExtStoreStatus(msg) {
+  els.extStoreStatus.textContent = msg;
+  setHidden(els.extStoreStatus, false);
+}
+
+function hideExtStoreStatus() {
+  setHidden(els.extStoreStatus, true);
+}
+
+async function renderExtensionStore() {
+  var searchQuery = (els.extStoreSearch.value || '').trim().toLowerCase();
+
+  // Render Featured tab.
+  clearNode(els.extStoreFeatured);
+  try {
+    var featured = searchQuery
+      ? await api.searchExtensions(searchQuery)
+      : await api.getFeaturedExtensions();
+    if (!featured || !featured.length) {
+      els.extStoreFeatured.appendChild(createElement('p', 'ext-store-empty', searchQuery ? 'No extensions found for "' + searchQuery + '".' : 'No featured extensions available.'));
+    } else {
+      featured.forEach(function (ext) {
+        els.extStoreFeatured.appendChild(renderExtensionCard(ext, false));
+      });
+    }
+  } catch (error) {
+    els.extStoreFeatured.appendChild(createElement('p', 'ext-store-empty', 'Could not load extensions.'));
+  }
+
+  // Render Installed tab.
+  clearNode(els.extStoreInstalled);
+  try {
+    var installed = await api.getInstalledExtensions();
+    if (!installed || !installed.length) {
+      els.extStoreInstalled.appendChild(createElement('p', 'ext-store-empty', 'No extensions installed. Browse the Featured tab to get started.'));
+    } else {
+      installed.forEach(function (ext) {
+        if (searchQuery && !(ext.name || '').toLowerCase().includes(searchQuery)) return;
+        els.extStoreInstalled.appendChild(renderExtensionCard(ext, true));
+      });
+    }
+  } catch (error) {
+    els.extStoreInstalled.appendChild(createElement('p', 'ext-store-empty', 'Could not load installed extensions.'));
+  }
+
+  // Show correct tab.
+  setHidden(els.extStoreFeatured, state.extensionStoreTab !== 'featured');
+  setHidden(els.extStoreInstalled, state.extensionStoreTab !== 'installed');
+}
+
+async function renderExtensionToolbar() {
+  if (!els.extensionToolbar) return;
+  clearNode(els.extensionToolbar);
+  try {
+    var installed = await api.getInstalledExtensions();
+    if (!installed) return;
+    installed.forEach(function (ext) {
+      if (!ext.enabled) return;
+      var btn = document.createElement('button');
+      btn.className = 'extension-toolbar-icon';
+      btn.title = ext.name;
+      btn.type = 'button';
+      if (ext.icon) {
+        var img = document.createElement('img');
+        img.src = ext.icon;
+        img.alt = ext.name;
+        img.onerror = function () {
+          this.parentElement.innerHTML = '<span class="ext-icon-fallback">' + (ext.name || '?').charAt(0).toUpperCase() + '</span>';
+        };
+        btn.appendChild(img);
+      } else {
+        btn.innerHTML = '<span class="ext-icon-fallback">' + (ext.name || '?').charAt(0).toUpperCase() + '</span>';
+      }
+      btn.addEventListener('click', async function () {
+        try {
+          var popup = await api.getExtensionPopup(ext.id);
+          if (popup && popup.url) {
+            invokeOptional('newTab', popup.url);
+          } else {
+            var optUrl = await api.getExtensionOptionsUrl(ext.id);
+            if (optUrl) invokeOptional('newTab', optUrl);
+            else notify(ext.name + ' has no popup or options page.', 'info');
+          }
+        } catch (err) {
+          notify('Extension error: ' + errorMessage(err), 'error');
+        }
+      });
+      els.extensionToolbar.appendChild(btn);
+    });
+  } catch (error) { /* extensions may not be available */ }
+}
+
+// Extension Store event handlers.
+if (els.btnExtensions) {
+  els.btnExtensions.addEventListener('click', function () {
+    if (state.extensionStoreOpen) closeExtensionStore();
+    else openExtensionStore();
+  });
+}
+
+if (els.btnCloseExtStore) {
+  els.btnCloseExtStore.addEventListener('click', closeExtensionStore);
+}
+
+if (els.extStoreBackdrop) {
+  els.extStoreBackdrop.addEventListener('click', closeExtensionStore);
+}
+
+if (els.extStoreTabs) {
+  els.extStoreTabs.addEventListener('click', function (e) {
+    var tab = e.target.closest('.ext-store-tab');
+    if (!tab || !tab.dataset.tab) return;
+    state.extensionStoreTab = tab.dataset.tab;
+    els.extStoreTabs.querySelectorAll('.ext-store-tab').forEach(function (t) {
+      t.classList.toggle('active', t.dataset.tab === state.extensionStoreTab);
+      t.setAttribute('aria-selected', t.dataset.tab === state.extensionStoreTab ? 'true' : 'false');
+    });
+    setHidden(els.extStoreFeatured, state.extensionStoreTab !== 'featured');
+    setHidden(els.extStoreInstalled, state.extensionStoreTab !== 'installed');
+  });
+}
+
+if (els.extStoreSearch) {
+  var extSearchTimer = null;
+  els.extStoreSearch.addEventListener('input', function () {
+    if (extSearchTimer) clearTimeout(extSearchTimer);
+    extSearchTimer = setTimeout(function () {
+      extSearchTimer = null;
+      renderExtensionStore();
+    }, 300);
+  });
+}
+
+if (els.btnInstallExtFile) {
+  els.btnInstallExtFile.addEventListener('click', function () {
+    showExtStoreStatus('Opening file picker…');
+    api.installExtensionFromFile().then(function (result) {
+      if (result && result.canceled) {
+        hideExtStoreStatus();
+        return;
+      }
+      showExtStoreStatus('Extension installed!');
+      renderExtensionStore();
+      renderExtensionToolbar();
+      setTimeout(hideExtStoreStatus, 3000);
+    }).catch(function (err) {
+      showExtStoreStatus('Install failed: ' + errorMessage(err));
+      setTimeout(hideExtStoreStatus, 5000);
+    });
+  });
+}
+
+// Listen for extension events.
+api.on('extension-installed', function () {
+  renderExtensionStore();
+  renderExtensionToolbar();
+});
+
+api.on('extension-status-changed', function () {
+  renderExtensionToolbar();
+});
+
 initialize().catch(function (error) {
   notify('Renderer initialization failed: ' + errorMessage(error), 'error', 8000);
 });
+
+// Load extension toolbar on startup.
+renderExtensionToolbar();

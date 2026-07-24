@@ -2243,10 +2243,10 @@ body.fullscreen .browser-stage {
 .download-popout {
   position: fixed;
   z-index: 1450;
-  top: calc(var(--chrome-height) + 10px);
-  right: 10px;
+  bottom: 16px;
+  right: 16px;
   width: min(404px, calc(100vw - var(--app-rail-width) - 20px));
-  max-height: min(620px, calc(100vh - var(--chrome-height) - 20px));
+  max-height: min(620px, calc(100vh - var(--chrome-height) - 32px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2259,6 +2259,17 @@ body.fullscreen .browser-stage {
     0 8px 24px rgba(0, 0, 0, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   animation: dl-popout-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  resize: both;
+  min-width: 300px;
+  min-height: 200px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.download-popout.dragging {
+  opacity: 0.92;
+  transition: none;
+  cursor: grabbing;
 }
 
 @keyframes dl-popout-in {
@@ -2277,6 +2288,13 @@ body.fullscreen .browser-stage {
   background: linear-gradient(135deg, rgba(54, 211, 153, 0.11), rgba(56, 217, 245, 0.035) 70%);
   border-bottom: 1px solid rgba(190, 205, 235, 0.11);
   flex-shrink: 0;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.download-popout-header:active {
+  cursor: grabbing;
 }
 
 .download-popout-title {
@@ -4633,4 +4651,436 @@ kbd {
     justify-content: center;
     padding: 0;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Extension Toolbar — loaded extension icons in the browser chrome
+   ═══════════════════════════════════════════════════════════════════ */
+.extension-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 2px;
+}
+
+.extension-toolbar-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.14s;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.extension-toolbar-icon:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.extension-toolbar-icon img {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  object-fit: contain;
+}
+
+.extension-toolbar-icon .ext-icon-fallback {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #8dd0f0;
+  background: rgba(141, 208, 240, 0.15);
+  border-radius: 4px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Extension Store Modal — full-featured extension browsing & install
+   ═══════════════════════════════════════════════════════════════════ */
+.extension-store-modal {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ext-store-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 14, 0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: ext-backdrop-in 0.2s ease both;
+}
+
+@keyframes ext-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.ext-store-panel {
+  position: relative;
+  z-index: 1;
+  width: min(820px, calc(100vw - 60px));
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: rgba(10, 15, 28, 0.98);
+  border: 1px solid rgba(150, 169, 203, 0.18);
+  border-radius: 20px;
+  box-shadow:
+    0 40px 100px rgba(0, 0, 0, 0.65),
+    0 12px 36px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  animation: ext-panel-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes ext-panel-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Store Header ── */
+.ext-store-header {
+  flex-shrink: 0;
+  padding: 20px 24px 0;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(56, 217, 245, 0.04) 70%);
+  border-bottom: 1px solid rgba(190, 205, 235, 0.1);
+}
+
+.ext-store-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ext-store-title-row svg {
+  flex: 0 0 22px;
+  color: var(--cyan);
+}
+
+.ext-store-title-row > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.ext-store-title-row h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 760;
+  color: #fff;
+}
+
+.ext-store-title-row .eyebrow {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ext-store-title-row .icon-button {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: color 0.14s, background 0.14s;
+}
+
+.ext-store-title-row .icon-button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Search Row ── */
+.ext-store-search-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ext-store-search {
+  flex: 1;
+  height: 38px;
+  padding: 0 14px;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.14s, background 0.14s;
+}
+
+.ext-store-search:focus {
+  border-color: var(--cyan);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ext-store-search::placeholder {
+  color: var(--text-subtle);
+}
+
+.ext-store-install-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+}
+
+.ext-store-install-file:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* ── Tabs ── */
+.ext-store-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.ext-store-tab {
+  padding: 8px 16px;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: color 0.14s, border-color 0.14s;
+}
+
+.ext-store-tab:hover {
+  color: var(--text-primary);
+}
+
+.ext-store-tab.active {
+  color: var(--cyan);
+  border-bottom-color: var(--cyan);
+}
+
+/* ── Body ── */
+.ext-store-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+
+/* ── Extension Cards Grid ── */
+.ext-store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+
+.ext-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  transition: background 0.14s, border-color 0.14s, box-shadow 0.14s;
+}
+
+.ext-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.ext-card-icon {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ext-card-icon-fallback {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--cyan);
+  background: rgba(56, 217, 245, 0.1);
+  border: 1px solid rgba(56, 217, 245, 0.15);
+}
+
+.ext-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.ext-card-name {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.3;
+}
+
+.ext-card-desc {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ext-card-category {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--text-subtle);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+}
+
+.ext-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.ext-card-install {
+  min-width: 80px;
+  height: 32px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid var(--green);
+  color: #06251d;
+  background: var(--green);
+  transition: background 0.14s, box-shadow 0.14s;
+}
+
+.ext-card-install:hover {
+  background: #00d977;
+  box-shadow: 0 4px 14px rgba(54, 211, 153, 0.25);
+}
+
+.ext-card-install.installed {
+  color: var(--text-muted);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.12);
+  cursor: default;
+}
+
+.ext-card-install.installing {
+  color: var(--cyan);
+  background: rgba(56, 217, 245, 0.08);
+  border-color: rgba(56, 217, 245, 0.3);
+  cursor: wait;
+}
+
+.ext-card-toggle {
+  min-width: 80px;
+  height: 32px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 650;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background 0.14s, color 0.14s;
+}
+
+.ext-card-toggle:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ext-card-remove {
+  min-width: 80px;
+  height: 28px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  border-radius: 7px;
+  cursor: pointer;
+  color: #fb7185;
+  background: transparent;
+  border: 1px solid rgba(251, 113, 133, 0.15);
+  transition: background 0.14s, color 0.14s;
+}
+
+.ext-card-remove:hover {
+  color: #fff;
+  background: rgba(251, 113, 133, 0.12);
+}
+
+.ext-store-empty {
+  grid-column: 1 / -1;
+  padding: 50px 20px;
+  text-align: center;
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+
+/* ── Status Bar ── */
+.ext-store-status {
+  flex-shrink: 0;
+  padding: 10px 24px;
+  font-size: 12px;
+  color: var(--cyan);
+  background: rgba(56, 217, 245, 0.04);
+  border-top: 1px solid rgba(190, 205, 235, 0.08);
+  text-align: center;
 }

@@ -29,6 +29,7 @@ const {
   restoreWorkspaceMemory,
   serializeWorkspaceMemory,
 } = require('./workspace-state');
+const { createExtensionManager } = require('./extension-manager');
 
 // Enforce Chromium's renderer sandbox before app.ready.
 app.enableSandbox();
@@ -124,6 +125,7 @@ let invictaConnectionMode = 'offline';
 let historyRecords = [];
 let downloadRecords = [];
 let permissionGrants = {};
+let extensionManager = null;
 
 const DEFAULT_WORKSPACES = [
   { id: 'default', name: 'Default', icon: '🌐', color: '#6366f1' },
@@ -416,6 +418,11 @@ function normalizeNavigationUrl(input) {
   const raw = boundedString(input, 'url', MAX_URL_LENGTH, true);
   if (!raw || isNewTabUrl(raw)) return 'about:blank';
 
+  // Allow view-source: protocol for the Developer Options → View Page Source feature.
+  if (/^view-source:https?:\/\//i.test(raw)) return raw;
+  // Allow blob: URLs from valid origins (report generators use these for downloads/previews).
+  if (/^blob:https?:\/\//i.test(raw)) return raw;
+
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) {
     if (isAllowedRemoteUrl(raw, true)) {
       return new URL(raw).toString();
@@ -446,6 +453,26 @@ function safeRemoteUrl(candidate) {
   } catch (error) {
     return null;
   }
+}
+
+function isAllowedDownloadUrl(candidate) {
+  if (typeof candidate !== 'string' || candidate.length > MAX_URL_LENGTH + 10) return false;
+  // Allow standard http/https URLs.
+  if (isAllowedRemoteUrl(candidate, false)) return candidate;
+  // Allow blob: URLs whose embedded origin is http/https (used by report
+  // generators like Skolaro to create Excel, CSV, and PDF downloads).
+  if (/^blob:https?:\/\//i.test(candidate)) {
+    try {
+      const inner = candidate.slice(5);
+      const parsed = new URL(inner);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return candidate;
+    } catch (error) {
+      // Malformed blob: URL, fall through.
+    }
+  }
+  // Allow data: URIs for dynamically generated file downloads.
+  if (/^data:[a-z0-9/+.-]+;/i.test(candidate)) return candidate;
+  return null;
 }
 
 function trustedIpcSender(event) {
@@ -865,15 +892,24 @@ function setSplitScreen(options) {
   return getBrowserState();
 }
 
+function isAllowedNavigationUrl(candidate) {
+  if (isAllowedRemoteUrl(candidate, true)) return true;
+  // Allow blob: and data: navigations that originate from valid pages
+  // (used by report generators for file downloads and previews).
+  if (/^blob:https?:\/\//i.test(candidate)) return true;
+  if (/^data:application\/(pdf|octet-stream|vnd\.[a-z])/i.test(candidate)) return true;
+  return false;
+}
+
 function attachNavigationGuards(contents) {
   contents.on('will-navigate', (event, url) => {
-    if (!isAllowedRemoteUrl(url, true)) {
+    if (!isAllowedNavigationUrl(url)) {
       event.preventDefault();
     }
   });
 
   contents.on('will-redirect', (event, url) => {
-    if (!isAllowedRemoteUrl(url, true)) {
+    if (!isAllowedNavigationUrl(url)) {
       event.preventDefault();
     }
   });
@@ -950,6 +986,34 @@ function handleShortcut(event, input, tabId) {
     handled = true;
   } else if (key === 'f11') {
     toggleFullscreen();
+    handled = true;
+  } else if (key === 'f12') {
+    // DevTools — F12 (like Chrome/Opera)
+    const tab = tabs.get(tabId || activeTabId);
+    if (tab && tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.openDevTools({ mode: 'detach' });
+    }
+    handled = true;
+  } else if (command && shift && key === 'i') {
+    // DevTools — Ctrl+Shift+I
+    const tab = tabs.get(tabId || activeTabId);
+    if (tab && tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.openDevTools({ mode: 'detach' });
+    }
+    handled = true;
+  } else if (command && shift && key === 'j') {
+    // DevTools Console — Ctrl+Shift+J
+    const tab = tabs.get(tabId || activeTabId);
+    if (tab && tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.openDevTools({ mode: 'detach', activate: true });
+    }
+    handled = true;
+  } else if (command && key === 'u') {
+    // View Page Source — Ctrl+U
+    const tab = tabs.get(tabId || activeTabId);
+    if (tab && tab.url && isAllowedRemoteUrl(tab.url, false)) {
+      createTab('view-source:' + tab.url, { activate: true });
+    }
     handled = true;
   }
 
@@ -1259,13 +1323,38 @@ async function showContextMenu(tab, params) {
     click: () => setTabMuted(tab.id, !tab.isMuted),
   });
 
-  if (isDev) {
-    template.push({ type: 'separator' });
-    template.push({
-      label: 'Inspect Element',
-      click: () => contents.inspectElement(params.x, params.y),
-    });
-  }
+  template.push({ type: 'separator' });
+  template.push({
+    label: 'Developer Options',
+    submenu: [
+      {
+        label: 'Inspect Element',
+        accelerator: 'Ctrl+Shift+I',
+        click: () => contents.inspectElement(params.x, params.y),
+      },
+      {
+        label: 'Open Developer Tools',
+        accelerator: 'F12',
+        click: () => contents.openDevTools({ mode: 'detach' }),
+      },
+      {
+        label: 'Open Console',
+        accelerator: 'Ctrl+Shift+J',
+        click: () => contents.openDevTools({ mode: 'detach', activate: true }),
+      },
+      { type: 'separator' },
+      {
+        label: 'View Page Source',
+        accelerator: 'Ctrl+U',
+        click: () => {
+          const pageUrl = contents.getURL();
+          if (isAllowedRemoteUrl(pageUrl, false)) {
+            createTab('view-source:' + pageUrl, { activate: true });
+          }
+        },
+      },
+    ],
+  });
 
   const menu = Menu.buildFromTemplate(template);
   menu.popup({
@@ -1360,10 +1449,29 @@ async function showWhatsappContextMenu(params) {
   });
   template.push({ label: 'Reload WhatsApp', click: () => contents.reload() });
 
-  if (isDev) {
-    template.push({ type: 'separator' });
-    template.push({ label: 'Inspect Element', click: () => contents.inspectElement(params.x, params.y) });
-  }
+  template.push({ type: 'separator' });
+  template.push({
+    label: 'Developer Options',
+    submenu: [
+      {
+        label: 'Inspect Element',
+        click: () => contents.inspectElement(params.x, params.y),
+      },
+      {
+        label: 'Open Developer Tools',
+        click: () => contents.openDevTools({ mode: 'detach' }),
+      },
+      {
+        label: 'View Page Source',
+        click: () => {
+          const pageUrl = contents.getURL();
+          if (isAllowedRemoteUrl(pageUrl, false)) {
+            createTab('view-source:' + pageUrl, { activate: true });
+          }
+        },
+      },
+    ],
+  });
 
   Menu.buildFromTemplate(template).popup({
     window: mainWindow,
@@ -2195,7 +2303,8 @@ function updateDownloadRecord(record) {
 
 function configureDownloads(targetSession) {
   targetSession.on('will-download', (event, item) => {
-    const url = safeRemoteUrl(item.getURL());
+    const rawUrl = item.getURL() || '';
+    const url = isAllowedDownloadUrl(rawUrl) || safeRemoteUrl(rawUrl);
     if (!url) {
       event.preventDefault();
       return;
@@ -4346,6 +4455,18 @@ function registerIpcHandlers() {
     tab.view.webContents.openDevTools({ mode: 'detach' });
     return true;
   });
+  registerHandler('open-devtools-console', () => {
+    const tab = getActiveTab();
+    if (!tab) return false;
+    tab.view.webContents.openDevTools({ mode: 'detach', activate: true });
+    return true;
+  });
+  registerHandler('view-page-source', () => {
+    const tab = getActiveTab();
+    if (!tab || !isAllowedRemoteUrl(tab.url, false)) return false;
+    createTab('view-source:' + tab.url, { activate: true });
+    return true;
+  });
   registerHandler('get-page-context', (event, options) => extractPageContext(options));
   registerHandler('launch-private-window', () => launchPrivateWindow());
   registerHandler('is-private-instance', () => privateInstance);
@@ -4794,6 +4915,67 @@ function registerIpcHandlers() {
     applied: false,
     reason: 'Unsafe operating-system priority mutation is disabled.',
   }));
+
+  // ── Extension Management ──
+  registerHandler('get-installed-extensions', () => {
+    if (!extensionManager) return [];
+    return extensionManager.getInstalledExtensions();
+  });
+  registerHandler('get-featured-extensions', () => {
+    if (!extensionManager) return [];
+    return extensionManager.getFeaturedExtensions();
+  });
+  registerHandler('get-extension-categories', () => {
+    if (!extensionManager) return [];
+    return extensionManager.getCategories();
+  });
+  registerHandler('search-extensions', (event, query) => {
+    if (!extensionManager) return [];
+    return extensionManager.searchExtensions(query);
+  });
+  registerHandler('install-extension-from-store', async (event, extensionId) => {
+    if (!extensionManager) throw new Error('Extensions not available');
+    const id = boundedString(extensionId, 'extension id', 64, false);
+    const result = await extensionManager.installFromWebStore(id, process.versions.chrome);
+    sendToShell('extension-installed', result);
+    return result;
+  });
+  registerHandler('install-extension-from-file', async () => {
+    if (!extensionManager) throw new Error('Extensions not available');
+    const selection = await dialog.showOpenDialog(mainWindow, {
+      title: 'Install Extension',
+      filters: [
+        { name: 'Chrome Extensions', extensions: ['crx', 'zip'] },
+      ],
+      properties: ['openFile'],
+    });
+    if (selection.canceled || !selection.filePaths.length) {
+      return { success: false, canceled: true };
+    }
+    const result = await extensionManager.installFromPath(selection.filePaths[0]);
+    sendToShell('extension-installed', result);
+    return result;
+  });
+  registerHandler('toggle-extension', (event, payload) => {
+    if (!extensionManager) throw new Error('Extensions not available');
+    assertPlainObject(payload, 'toggle extension');
+    return extensionManager.toggleExtension(
+      boundedString(payload.id, 'extension id', 64, false),
+      Boolean(payload.enabled)
+    );
+  });
+  registerHandler('uninstall-extension', (event, id) => {
+    if (!extensionManager) throw new Error('Extensions not available');
+    return extensionManager.uninstallExtension(boundedString(id, 'extension id', 64, false));
+  });
+  registerHandler('get-extension-popup', (event, id) => {
+    if (!extensionManager) return null;
+    return extensionManager.getExtensionPopup(boundedString(id, 'extension id', 64, false));
+  });
+  registerHandler('get-extension-options-url', (event, id) => {
+    if (!extensionManager) return null;
+    return extensionManager.getExtensionOptionsUrl(boundedString(id, 'extension id', 64, false));
+  });
 }
 
 function createMainWindow() {
@@ -4890,6 +5072,21 @@ app.whenReady().then(() => {
   restoreTabs();
   setImmediate(warmLocalInvictaService);
   setupAutoUpdater();
+
+  // Initialize Chrome extension support.
+  if (!privateInstance) {
+    extensionManager = createExtensionManager({
+      store,
+      chromeVersion: process.versions.chrome,
+      isDev,
+      onStatusChange: (status, extId) => {
+        sendToShell('extension-status-changed', { status, extensionId: extId });
+      },
+    });
+    extensionManager.loadAllExtensions().catch((error) => {
+      if (isDev) console.error('Extension loading error:', error);
+    });
+  }
 });
 
 app.on('activate', () => {

@@ -33,6 +33,8 @@ const allowedEvents = new Set([
   'show-screen-picker',
   'update-screen-picker-sources',
   'close-screen-picker',
+  'extension-installed',
+  'extension-status-changed',
 ]);
 
 const eventWrappers = new Map();
@@ -117,6 +119,8 @@ const api = {
   printPage: () => ipcRenderer.invoke('print-page'),
   savePagePdf: () => ipcRenderer.invoke('save-page-pdf'),
   openDevTools: () => ipcRenderer.invoke('open-devtools'),
+  openDevToolsConsole: () => ipcRenderer.invoke('open-devtools-console'),
+  viewPageSource: () => ipcRenderer.invoke('view-page-source'),
   getPageContext: (options) => ipcRenderer.invoke('get-page-context', options),
 
   // Profiles, privacy, history, and downloads.
@@ -220,6 +224,20 @@ const api = {
   // Generic event API with allowlisting and a real disposer.
   on: subscribe,
   off: unsubscribe,
+
+  // Chrome Extension management.
+  getInstalledExtensions: () => ipcRenderer.invoke('get-installed-extensions'),
+  getFeaturedExtensions: () => ipcRenderer.invoke('get-featured-extensions'),
+  getExtensionCategories: () => ipcRenderer.invoke('get-extension-categories'),
+  searchExtensions: (query) => ipcRenderer.invoke('search-extensions', query),
+  installExtensionFromStore: (extensionId) =>
+    ipcRenderer.invoke('install-extension-from-store', extensionId),
+  installExtensionFromFile: () => ipcRenderer.invoke('install-extension-from-file'),
+  toggleExtension: (id, enabled) =>
+    ipcRenderer.invoke('toggle-extension', { id, enabled }),
+  uninstallExtension: (id) => ipcRenderer.invoke('uninstall-extension', id),
+  getExtensionPopup: (id) => ipcRenderer.invoke('get-extension-popup', id),
+  getExtensionOptionsUrl: (id) => ipcRenderer.invoke('get-extension-options-url', id),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

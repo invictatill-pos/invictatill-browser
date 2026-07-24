@@ -6,8 +6,8 @@ const MAX_USERNAME_LENGTH = 250;
 const MAX_PASSWORD_LENGTH = 500;
 let autofillLookupStarted = false;
 let autofillCheckTimer = null;
-const LIVE_WRITING_DEBOUNCE_MS = 1350;
-const LIVE_WRITING_MAX_LENGTH = 1200;
+const LIVE_WRITING_DEBOUNCE_MS = 800;
+const LIVE_WRITING_MAX_LENGTH = 5000;
 let liveWritingEnabled = false;
 let liveWritingTimer = null;
 let liveWritingGeneration = 0;
@@ -16,6 +16,8 @@ let liveWritingCapture = null;
 let liveWritingHost = null;
 let liveWritingUi = null;
 let applyingLiveWritingSuggestion = false;
+let liveWritingCorrections = [];
+let liveWritingBadgeHost = null;
 
 function isWebPage() {
   return location.protocol === 'https:' || location.protocol === 'http:';
@@ -240,7 +242,7 @@ function captureCurrentSentence(editor) {
     const bounds = sentenceBounds(value, caret);
     const source = value.slice(bounds.start, bounds.end);
     const words = source.match(/[\p{L}\p{N}']+/gu) || [];
-    if (source.length < 12 || source.length > LIVE_WRITING_MAX_LENGTH || words.length < 3) return null;
+    if (source.length < 4 || source.length > LIVE_WRITING_MAX_LENGTH || words.length < 1) return null;
     return { kind: 'input', editor, source, start: bounds.start, end: bounds.end };
   }
 
@@ -257,7 +259,7 @@ function captureCurrentSentence(editor) {
   const bounds = sentenceBounds(fullText, prefixRange.toString().length);
   const source = fullText.slice(bounds.start, bounds.end);
   const words = source.match(/[\p{L}\p{N}']+/gu) || [];
-  if (source.length < 12 || source.length > LIVE_WRITING_MAX_LENGTH || words.length < 3) return null;
+  if (source.length < 4 || source.length > LIVE_WRITING_MAX_LENGTH || words.length < 1) return null;
   return { kind: 'contenteditable', editor, source, start: bounds.start, end: bounds.end };
 }
 
@@ -394,6 +396,82 @@ function ensureLiveWritingUi() {
   return liveWritingUi;
 }
 
+// ── Grammarly-style floating badge for active text fields ──
+function ensureLiveWritingBadge(editor) {
+  if (liveWritingBadgeHost && liveWritingBadgeHost.isConnected) {
+    updateBadgePosition(editor);
+    return;
+  }
+  var host = document.createElement('div');
+  host.setAttribute('data-invicta-writing-badge', '');
+  host.style.position = 'fixed';
+  host.style.zIndex = '2147483646';
+  host.style.pointerEvents = 'auto';
+
+  var shadow = host.attachShadow({ mode: 'open' });
+  var styles = `
+    :host { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    .badge-btn { display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 14px;
+      border: 1px solid #35e0b1; color: #06251d; background: linear-gradient(135deg, #46e1b6, #36d399);
+      box-shadow: 0 4px 14px rgba(54,211,153,0.3); font-size: 11px; font-weight: 800;
+      cursor: pointer; transition: transform 0.12s, box-shadow 0.12s; }
+    .badge-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(54,211,153,0.4); }
+    .badge-btn .logo { font-size: 12px; }
+    .badge-btn .count { font-variant-numeric: tabular-nums; }
+    .badge-btn.has-errors { border-color: #f87171; background: linear-gradient(135deg, #fb7185, #ef4444);
+      color: #fff; box-shadow: 0 4px 14px rgba(251,113,133,0.3); }
+  `;
+  try {
+    var sheet = new CSSStyleSheet();
+    sheet.replaceSync(styles);
+    shadow.adoptedStyleSheets = [sheet];
+  } catch (e) {
+    var styleEl = document.createElement('style');
+    styleEl.textContent = styles;
+    shadow.appendChild(styleEl);
+  }
+
+  var btn = document.createElement('button');
+  btn.className = 'badge-btn';
+  btn.type = 'button';
+  btn.innerHTML = '<span class="logo">✦</span><span class="count">0</span>';
+  btn.addEventListener('click', function (ev) {
+    if (ev.isTrusted && liveWritingCapture) {
+      showLiveWritingSuggestion(liveWritingCapture, liveWritingCapture.suggestion);
+    }
+  });
+  shadow.appendChild(btn);
+  document.documentElement.appendChild(host);
+  liveWritingBadgeHost = host;
+  liveWritingBadgeHost._btn = btn;
+  updateBadgePosition(editor);
+}
+
+function updateBadgePosition(editor) {
+  if (!liveWritingBadgeHost || !editor || !editor.isConnected) return;
+  var rect = editor.getBoundingClientRect();
+  var left = Math.min(window.innerWidth - 90, rect.right - 80);
+  var top = rect.bottom - 28;
+  if (top < rect.top + 4) top = rect.top + 4;
+  if (top + 28 > window.innerHeight) top = window.innerHeight - 32;
+  liveWritingBadgeHost.style.left = Math.max(4, Math.round(left)) + 'px';
+  liveWritingBadgeHost.style.top = Math.round(top) + 'px';
+}
+
+function updateBadgeCount(count) {
+  if (!liveWritingBadgeHost || !liveWritingBadgeHost._btn) return;
+  var countEl = liveWritingBadgeHost._btn.querySelector('.count');
+  if (countEl) countEl.textContent = String(count);
+  liveWritingBadgeHost._btn.classList.toggle('has-errors', count > 0);
+}
+
+function hideLiveWritingBadge() {
+  if (liveWritingBadgeHost && liveWritingBadgeHost.isConnected) {
+    liveWritingBadgeHost.remove();
+  }
+  liveWritingBadgeHost = null;
+}
+
 function positionLiveWritingUi(editor) {
   if (!liveWritingHost || !editor || !editor.isConnected) return;
   const rect = editor.getBoundingClientRect();
@@ -413,6 +491,7 @@ function hideLiveWritingUi() {
   if (liveWritingTimer) clearTimeout(liveWritingTimer);
   liveWritingTimer = null;
   liveWritingCapture = null;
+  liveWritingCorrections = [];
   if (!liveWritingHost || !liveWritingUi) return;
   liveWritingHost.dataset.state = 'hidden';
   liveWritingHost.removeAttribute('data-suggestion-length');
@@ -432,6 +511,7 @@ function showLiveWritingChecking(editor) {
 function showLiveWritingSuggestion(capture, suggestion) {
   const ui = ensureLiveWritingUi();
   liveWritingCapture = { ...capture, suggestion };
+  liveWritingCorrections = [{ source: capture.source, suggestion }];
   liveWritingHost.dataset.state = 'suggestion';
   liveWritingHost.dataset.suggestionLength = String(suggestion.length);
   liveWritingHost.classList.remove('checking');
@@ -440,6 +520,9 @@ function showLiveWritingSuggestion(capture, suggestion) {
   ui.from.textContent = capture.source;
   ui.to.textContent = suggestion;
   positionLiveWritingUi(capture.editor);
+  // Update the floating badge count.
+  ensureLiveWritingBadge(capture.editor);
+  updateBadgeCount(1);
 }
 
 function applyLiveWritingSuggestion() {
@@ -503,6 +586,9 @@ async function requestLiveWritingCheck(capture, generation) {
       showLiveWritingSuggestion(capture, result.suggestion.trim());
     } else {
       hideLiveWritingUi();
+      // Show badge with zero corrections when no issues found.
+      ensureLiveWritingBadge(capture.editor);
+      updateBadgeCount(0);
     }
   } catch (error) {
     if (generation === liveWritingGeneration) hideLiveWritingUi();
@@ -542,9 +628,11 @@ function startLiveWritingAssistant() {
   document.addEventListener('focusout', (event) => {
     const next = event.relatedTarget;
     if (liveWritingHost && next && liveWritingHost.contains(next)) return;
+    if (liveWritingBadgeHost && next && liveWritingBadgeHost.contains(next)) return;
     if (liveWritingTarget && event.target === liveWritingTarget &&
         liveWritingHost && liveWritingHost.dataset.state !== 'suggestion') {
       hideLiveWritingUi();
+      hideLiveWritingBadge();
     }
   }, true);
   window.addEventListener('resize', () => {
