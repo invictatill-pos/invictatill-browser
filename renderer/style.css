@@ -981,6 +981,43 @@ body.fullscreen .whatsapp-panel {
   background: #0b141a;
 }
 
+/* ── WhatsApp panel resize handle ── */
+.whatsapp-panel-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 20;
+  transition: background 0.15s;
+}
+.whatsapp-panel-resize-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 40px;
+  border-radius: 2px;
+  background: rgba(37, 211, 102, 0);
+  transition: background 0.15s, height 0.15s;
+}
+.whatsapp-panel-resize-handle:hover::before,
+.whatsapp-panel-resize-handle:active::before,
+.whatsapp-panel-resize-handle.dragging::before {
+  background: rgba(37, 211, 102, 0.6);
+  height: 60px;
+  box-shadow: 0 0 8px rgba(37, 211, 102, 0.4);
+}
+.whatsapp-panel-resize-handle:focus-visible {
+  outline: none;
+}
+.whatsapp-panel-resize-handle:focus-visible::before {
+  background: rgba(37, 211, 102, 0.5);
+}
+
 .whatsapp-panel-placeholder {
   position: absolute;
   inset: 0;
@@ -2152,30 +2189,64 @@ body.fullscreen .browser-stage {
   gap: 7px;
 }
 
+/* ── Download drawer items (Opera-style) ── */
 .data-item {
-  display: flex;
-  align-items: start;
-  gap: 9px;
-  padding: 10px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 0 10px;
+  padding: 11px 12px;
   color: var(--text-secondary);
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  transition: border-color 0.15s, background 0.15s;
 }
-
-.history-button {
-  width: 100%;
-  text-align: left;
-}
-
-.history-button:hover {
+.data-item:hover {
   background: var(--bg-hover);
   border-color: var(--border-strong);
 }
+.data-item[data-dl-state="completed"] {
+  border-left: 3px solid var(--green);
+}
+.data-item[data-dl-state="progressing"] {
+  border-left: 3px solid var(--cyan);
+}
+.data-item[data-dl-state="failed"],
+.data-item[data-dl-state="interrupted"] {
+  border-left: 3px solid var(--red);
+}
 
+/* File type badge — left column */
+.data-item-icon {
+  grid-row: 1 / 4;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  font-size: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+  align-self: start;
+}
+.data-item-icon[data-ext="pdf"]  { background: rgba(239, 68, 68, 0.12); }
+.data-item-icon[data-ext="xlsx"],
+.data-item-icon[data-ext="xls"]  { background: rgba(34, 197, 94, 0.12); }
+.data-item-icon[data-ext="csv"]  { background: rgba(59, 130, 246, 0.12); }
+.data-item-icon[data-ext="zip"],
+.data-item-icon[data-ext="rar"],
+.data-item-icon[data-ext="7z"]   { background: rgba(245, 158, 11, 0.12); }
+.data-item-icon[data-ext="docx"],
+.data-item-icon[data-ext="doc"]  { background: rgba(59, 130, 246, 0.12); }
+.data-item-icon[data-ext="exe"],
+.data-item-icon[data-ext="msi"]  { background: rgba(139, 92, 246, 0.12); }
+.data-item-icon[data-ext="pptx"],
+.data-item-icon[data-ext="ppt"]  { background: rgba(249, 115, 22, 0.12); }
+
+/* Right column */
 .data-item-main {
   min-width: 0;
-  flex: 1;
+  grid-column: 2;
 }
 
 .data-item-title {
@@ -2183,18 +2254,90 @@ body.fullscreen .browser-stage {
   overflow: hidden;
   color: var(--text-primary);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 680;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.data-item[data-dl-state="completed"] .data-item-title {
+  color: var(--text-primary);
+}
+.data-item[data-dl-state="failed"] .data-item-title,
+.data-item[data-dl-state="interrupted"] .data-item-title {
+  color: var(--red);
+}
 
 .data-item-meta {
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   overflow: hidden;
   color: var(--text-muted);
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.data-item-source {
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.data-item-actions {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.data-item-actions button {
+  font: inherit;
+  font-size: 10px;
+  font-weight: 650;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.data-item-actions button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.data-item-actions .dl-btn-open {
+  color: #05120d;
+  background: var(--green);
+  border-color: transparent;
+}
+.data-item-actions .dl-btn-open:hover {
+  background: #2dec89;
+}
+.data-item-actions .dl-btn-cancel,
+.data-item-actions .dl-btn-cancel:hover {
+  color: var(--red);
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.06);
+}
+.data-item-actions .dl-btn-cancel:hover {
+  background: rgba(239, 68, 68, 0.12);
+}
+
+/* History drawer items still use simple layout */
+.history-button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: start;
+  gap: 9px;
+}
+.history-button .data-item-icon { display: none; }
+
+.history-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .task-check {

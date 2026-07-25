@@ -26,6 +26,7 @@ const els = {
   appRail: $('app-rail'),
   whatsappButton: $('btn-whatsapp'),
   aiRailButton: $('btn-invicta-ai'),
+  whatsappResizeHandle: $('whatsapp-resize-handle'),
   whatsappPanel: $('whatsapp-panel'),
   whatsappPanelHost: $('whatsapp-panel-view-host'),
   whatsappPanelStatus: $('whatsapp-panel-status'),
@@ -529,6 +530,65 @@ function handleWhatsappPanelStatus(payload) {
     setHidden(els.whatsappUnreadBadge, unreadCount === 0);
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// WhatsApp panel — drag-to-resize (right edge handle)
+// ═══════════════════════════════════════════════════════════════════
+(function initWhatsappResize() {
+  var handle = els.whatsappResizeHandle;
+  if (!handle) return;
+
+  var MIN_WIDTH = 320;
+  var dragging = false;
+  var startX = 0;
+  var startWidth = 0;
+
+  function clampWidth(w) {
+    var max = Math.round(window.innerWidth * 0.75);
+    return Math.max(MIN_WIDTH, Math.min(max, w));
+  }
+
+  function applyWidth(w) {
+    document.documentElement.style.setProperty('--whatsapp-panel-width', w + 'px');
+    state.lastLayoutKey = '';
+    state.lastWhatsappLayoutKey = '';
+    scheduleLayout();
+  }
+
+  handle.addEventListener('mousedown', function (ev) {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    dragging = true;
+    startX = ev.clientX;
+    var panel = els.whatsappPanel;
+    startWidth = panel ? panel.getBoundingClientRect().width : 520;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', function (ev) {
+    if (!dragging) return;
+    applyWidth(clampWidth(startWidth + (ev.clientX - startX)));
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+
+  // Keyboard arrow keys to nudge panel width
+  handle.addEventListener('keydown', function (ev) {
+    var step = ev.shiftKey ? 50 : 10;
+    var panel = els.whatsappPanel;
+    var current = panel ? panel.getBoundingClientRect().width : 520;
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); applyWidth(clampWidth(current + step)); }
+    if (ev.key === 'ArrowLeft')  { ev.preventDefault(); applyWidth(clampWidth(current - step)); }
+  });
+})();
 
 function setMode(mode) {
   const validMode = mode === 'private' || mode === 'gaming' ? mode : 'workspace';
@@ -2464,45 +2524,100 @@ async function performDownloadAction(item, action, aliases) {
 
 function renderDownloads() {
   clearNode(els.downloadsList);
-  const activeCount = state.downloads.filter(isDownloadActive).length;
-  els.downloadsSummary.textContent = activeCount ? activeCount + ' active download' + (activeCount === 1 ? '' : 's') : 'No active downloads';
+  var activeCount = state.downloads.filter(isDownloadActive).length;
+  els.downloadsSummary.textContent = activeCount
+    ? activeCount + ' active download' + (activeCount === 1 ? '' : 's')
+    : 'No active downloads';
   els.downloadBadge.textContent = String(activeCount);
   setHidden(els.downloadBadge, activeCount === 0);
+
   state.downloads.forEach(function (item) {
-    const row = createElement('div', 'data-item');
-    const main = createElement('div', 'data-item-main');
-    main.append(
-      createElement('p', 'data-item-title', item.filename),
-      createElement('p', 'data-item-meta', item.state + (item.filePath ? ' • ' + item.filePath : ''))
-    );
+    var ext = (item.filename || '').split('.').pop().toLowerCase();
+
+    // File type emoji + colour category
+    var iconChar = '📄';
+    if (ext === 'pdf') iconChar = '📄';
+    else if (ext === 'xlsx' || ext === 'xls') iconChar = '📊';
+    else if (ext === 'csv') iconChar = '📋';
+    else if (ext === 'zip' || ext === 'rar' || ext === '7z') iconChar = '📦';
+    else if (ext === 'exe' || ext === 'msi') iconChar = '⚙️';
+    else if (ext === 'doc' || ext === 'docx') iconChar = '📝';
+    else if (ext === 'ppt' || ext === 'pptx') iconChar = '📽️';
+    else if (ext === 'mp4' || ext === 'mkv' || ext === 'avi') iconChar = '🎬';
+    else if (ext === 'mp3' || ext === 'wav' || ext === 'flac') iconChar = '🎵';
+    else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp' || ext === 'svg') iconChar = '🖼️';
+
+    var dlState = String(item.state || '').toLowerCase();
+
+    var row = createElement('div', 'data-item');
+    row.dataset.dlState = dlState;
+
+    // Icon badge
+    var iconEl = createElement('div', 'data-item-icon', iconChar);
+    iconEl.dataset.ext = ext;
+    iconEl.setAttribute('aria-hidden', 'true');
+    row.appendChild(iconEl);
+
+    // Right content
+    var main = createElement('div', 'data-item-main');
+
+    // Filename
+    main.appendChild(createElement('p', 'data-item-title', item.filename || 'Unknown file'));
+
+    // State + size meta
+    var totalMB = item.totalBytes > 0 ? (item.totalBytes / (1024 * 1024)).toFixed(1) + ' MB' : '';
+    var receivedMB = item.receivedBytes > 0 ? (item.receivedBytes / (1024 * 1024)).toFixed(1) + ' MB' : '';
+    var metaText;
     if (isDownloadActive(item)) {
-      const progress = createElement('progress', 'download-progress');
+      metaText = receivedMB && totalMB ? receivedMB + ' / ' + totalMB : 'Downloading…';
+      if (Number.isFinite(item.percent) && item.percent > 0) metaText += '  —  ' + Math.round(item.percent) + '%';
+      if (item.paused) metaText += '  (Paused)';
+    } else if (isDownloadDone(item)) {
+      metaText = (totalMB || receivedMB || '') + (totalMB || receivedMB ? '  —  ' : '') + 'Complete';
+    } else {
+      metaText = dlState.charAt(0).toUpperCase() + dlState.slice(1) || 'Stopped';
+    }
+    main.appendChild(createElement('p', 'data-item-meta', metaText));
+
+    // Source URL host
+    if (item.url) {
+      try {
+        var sourceHost = new URL(item.url).hostname;
+        main.appendChild(createElement('p', 'data-item-source', sourceHost));
+      } catch (e) { /* malformed url — skip */ }
+    }
+
+    // Progress bar for active downloads
+    if (isDownloadActive(item)) {
+      var progress = createElement('progress', 'download-progress');
       progress.max = 100;
-      progress.value = item.percent;
-      progress.textContent = Math.round(item.percent) + '%';
+      progress.value = item.percent || 0;
+      progress.textContent = Math.round(item.percent || 0) + '%';
       main.appendChild(progress);
     }
-    const actions = createElement('div', 'message-actions');
+
+    // Action buttons
+    var actions = createElement('div', 'data-item-actions');
     if (isDownloadDone(item)) {
-      const open = createElement('button', '', 'Open');
+      var open = createElement('button', 'dl-btn-open', 'Open');
       open.type = 'button';
       open.addEventListener('click', function () { runDownloadAction(['openDownload', 'showDownload'], item); });
-      const folder = createElement('button', '', 'Folder');
+      var folder = createElement('button', '', 'Show in folder');
       folder.type = 'button';
       folder.addEventListener('click', function () { runDownloadAction(['showDownloadInFolder', 'showItemInFolder'], item); });
       actions.append(open, folder);
     } else if (isDownloadActive(item)) {
-      const pauseResume = createElement('button', '', item.paused ? 'Resume' : 'Pause');
+      var pauseResume = createElement('button', '', item.paused ? 'Resume' : 'Pause');
       pauseResume.type = 'button';
       pauseResume.addEventListener('click', function () {
         performDownloadAction(item, item.paused ? 'resume' : 'pause', item.paused ? ['resumeDownload'] : ['pauseDownload']);
       });
-      const cancel = createElement('button', '', 'Cancel');
+      var cancel = createElement('button', 'dl-btn-cancel', 'Cancel');
       cancel.type = 'button';
       cancel.addEventListener('click', function () { performDownloadAction(item, 'cancel', ['cancelDownload']); });
       actions.append(pauseResume, cancel);
-    } else if (String(item.state).toLowerCase() === 'failed' || item.error) {
-      const retry = createElement('button', '', 'Retry');
+    } else if (dlState === 'failed' || dlState === 'interrupted' || item.error) {
+      var retry = createElement('button', '', 'Retry');
       retry.type = 'button';
       retry.addEventListener('click', function () { performDownloadAction(item, 'retry', ['retryDownload']); });
       actions.appendChild(retry);
@@ -2511,6 +2626,7 @@ function renderDownloads() {
     row.appendChild(main);
     els.downloadsList.appendChild(row);
   });
+
   setHidden(els.downloadsEmpty, state.downloads.length > 0);
   renderDownloadPopout();
 }

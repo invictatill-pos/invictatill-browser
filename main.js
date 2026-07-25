@@ -300,9 +300,15 @@ function getWorkspaceSession(workspaceId) {
     sess = session.fromPartition('persist:workspace_' + cleanId);
   }
 
+  sess.setSpellCheckerEnabled(true);
+  sess.setSpellCheckerLanguages(['en-US', 'en-GB']);
   configurePermissions(sess);
   configureScreenSharePicker(sess);
   configureDownloads(sess);
+  // Register this session with the extension manager so extensions load into it.
+  if (extensionManager && !privateInstance) {
+    extensionManager.registerSession(sess);
+  }
   workspaceSessionsMap.set(cleanId, sess);
   return sess;
 }
@@ -1507,6 +1513,7 @@ function getWhatsappSession() {
   whatsappSession = session.fromPartition(WHATSAPP_PARTITION, { cache: true });
   whatsappSession.setUserAgent(chromeCompatibilityUserAgent());
   whatsappSession.setSpellCheckerEnabled(true);
+  whatsappSession.setSpellCheckerLanguages(['en-US', 'en-GB']);
   configurePermissions(whatsappSession);
   configureScreenSharePicker(whatsappSession);
   configureDownloads(whatsappSession);
@@ -1649,6 +1656,59 @@ function reloadWhatsappPanel() {
   return publicWhatsappPanelState();
 }
 
+// Open a login / OAuth popup as a real child BrowserWindow so that
+// window.opener and postMessage work correctly with the parent page.
+function openPopupWindow(url, features, parentTab) {
+  // Parse width/height from the window.open features string.
+  let popupWidth = 520;
+  let popupHeight = 640;
+  if (typeof features === 'string') {
+    const wMatch = features.match(/width=(\d+)/i);
+    const hMatch = features.match(/height=(\d+)/i);
+    if (wMatch) popupWidth = Math.min(Math.max(300, Number(wMatch[1])), 1400);
+    if (hMatch) popupHeight = Math.min(Math.max(200, Number(hMatch[1])), 1200);
+  }
+
+  const parentSession = parentTab && parentTab.view && !parentTab.view.webContents.isDestroyed()
+    ? parentTab.view.webContents.session
+    : browserSession;
+
+  const popup = new BrowserWindow({
+    width: popupWidth,
+    height: popupHeight,
+    parent: mainWindow || undefined,
+    modal: false,
+    show: true,
+    autoHideMenuBar: true,
+    title: 'InvictaTill Browser',
+    webPreferences: {
+      session: parentSession,
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      webviewTag: false,
+      allowRunningInsecureContent: false,
+      spellcheck: true,
+    },
+  });
+
+  attachNavigationGuards(popup.webContents);
+
+  // Nested popups open as new tabs in the main window.
+  popup.webContents.setWindowOpenHandler((details) => {
+    const nestedUrl = safeRemoteUrl(details.url);
+    if (nestedUrl) setImmediate(() => createTab(nestedUrl, { activate: true }));
+    return { action: 'deny' };
+  });
+
+  popup.webContents.on('will-navigate', (event, navUrl) => {
+    if (!isAllowedNavigationUrl(navUrl)) event.preventDefault();
+  });
+
+  popup.loadURL(url).catch(() => {});
+  popup.once('closed', () => {});
+}
+
 function attachTabEvents(tab) {
   const contents = tab.view.webContents;
 
@@ -1657,12 +1717,21 @@ function attachTabEvents(tab) {
   contents.on('will-redirect', (event, url) => applyTabUserAgent(tab, url));
   contents.setWindowOpenHandler((details) => {
     const url = safeRemoteUrl(details.url);
-    if (url) {
-      const activate = details.disposition !== 'background-tab';
-      setImmediate(() => {
-        createTab(url, { activate });
-      });
+    if (!url) return { action: 'deny' };
+    // Detect popup disposition: login dialogs and OAuth flows use 'new-window'
+    // or pass explicit width/height in the features string.
+    const features = typeof details.features === 'string' ? details.features : '';
+    const isLoginPopup = details.disposition === 'new-window' ||
+      (features && /width=|height=/i.test(features));
+    if (isLoginPopup) {
+      // Open as a real BrowserWindow so window.opener / postMessage work.
+      setImmediate(() => openPopupWindow(url, features, tab));
+      return { action: 'deny' };
     }
+    const activate = details.disposition !== 'background-tab';
+    setImmediate(() => {
+      createTab(url, { activate });
+    });
     return { action: 'deny' };
   });
 
@@ -5060,6 +5129,7 @@ app.whenReady().then(() => {
     cache: true,
   });
   browserSession.setSpellCheckerEnabled(true);
+  browserSession.setSpellCheckerLanguages(['en-US', 'en-GB']);
   configurePermissions(session.defaultSession);
   configureScreenSharePicker(session.defaultSession);
   configurePermissions(browserSession);
@@ -5083,6 +5153,8 @@ app.whenReady().then(() => {
         sendToShell('extension-status-changed', { status, extensionId: extId });
       },
     });
+    // Register the main browser session so extensions load into it immediately.
+    extensionManager.registerSession(browserSession);
     extensionManager.loadAllExtensions().catch((error) => {
       if (isDev) console.error('Extension loading error:', error);
     });

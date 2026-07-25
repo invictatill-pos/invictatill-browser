@@ -123,6 +123,9 @@ function createExtensionManager(options) {
   const registryPath = path.join(extensionsRoot, EXTENSION_REGISTRY_FILE);
   let registry = {};
   let loadedExtensions = new Map();
+  // Set of sessions into which extensions should be loaded.
+  // main.js registers workspace sessions here as they are created.
+  const registeredSessions = new Set();
 
   function ensureExtensionsDir() {
     fs.mkdirSync(extensionsRoot, { recursive: true });
@@ -450,39 +453,70 @@ function createExtensionManager(options) {
     return '';
   }
 
-  // Load extension into the browser session.
+  // Register a session so extensions are loaded into it.
+  function registerSession(targetSession) {
+    if (!targetSession || registeredSessions.has(targetSession)) return;
+    registeredSessions.add(targetSession);
+    // Load all currently-enabled extensions into the new session.
+    for (const extId of Object.keys(registry)) {
+      const entry = registry[extId];
+      if (!entry || entry.enabled === false) continue;
+      const extPath = entry.path || path.join(extensionsRoot, extId);
+      if (!fs.existsSync(path.join(extPath, 'manifest.json'))) continue;
+      targetSession.loadExtension(extPath, { allowFileAccess: true }).catch(() => {});
+    }
+  }
+
+  function unregisterSession(targetSession) {
+    registeredSessions.delete(targetSession);
+  }
+
+  // Collect all sessions to load into: the hardcoded default + all registered.
+  function allSessions() {
+    const sessions = new Set(registeredSessions);
+    // Always include the default partition as a fallback.
+    try {
+      sessions.add(session.fromPartition('persist:invictatill'));
+    } catch (error) { /* ignore */ }
+    return Array.from(sessions);
+  }
+
+  // Load extension into all registered sessions.
   async function loadExtension(extId) {
     const entry = registry[extId];
     if (!entry || entry.enabled === false) return null;
     if (loadedExtensions.has(extId)) return loadedExtensions.get(extId);
 
-    try {
-      const extPath = entry.path || path.join(extensionsRoot, extId);
-      if (!fs.existsSync(path.join(extPath, 'manifest.json'))) {
-        return null;
+    const extPath = entry.path || path.join(extensionsRoot, extId);
+    if (!fs.existsSync(path.join(extPath, 'manifest.json'))) return null;
+
+    let lastExt = null;
+    const targets = allSessions();
+    for (const targetSession of targets) {
+      try {
+        const ext = await targetSession.loadExtension(extPath, { allowFileAccess: true });
+        if (!lastExt) lastExt = ext;
+      } catch (error) {
+        if (isDev) console.error('Failed to load extension ' + extId + ' into session:', error.message);
       }
-      const browserSession = session.fromPartition('persist:invictatill');
-      const ext = await browserSession.loadExtension(extPath, {
-        allowFileAccess: true,
-      });
-      loadedExtensions.set(extId, ext);
-      if (onStatusChange) onStatusChange('loaded', extId);
-      return ext;
-    } catch (error) {
-      if (isDev) console.error('Failed to load extension ' + extId + ':', error.message);
-      return null;
     }
+    if (lastExt) {
+      loadedExtensions.set(extId, lastExt);
+      if (onStatusChange) onStatusChange('loaded', extId);
+    }
+    return lastExt;
   }
 
-  // Unload extension from the session.
+  // Unload extension from all registered sessions.
   function unloadExtension(extId) {
     const ext = loadedExtensions.get(extId);
     if (!ext) return;
-    try {
-      const browserSession = session.fromPartition('persist:invictatill');
-      browserSession.removeExtension(ext.id);
-    } catch (error) {
-      // Extension may already be unloaded.
+    for (const targetSession of allSessions()) {
+      try {
+        targetSession.removeExtension(ext.id);
+      } catch (error) {
+        // Extension may already be unloaded from this session.
+      }
     }
     loadedExtensions.delete(extId);
     if (onStatusChange) onStatusChange('unloaded', extId);
@@ -589,6 +623,8 @@ function createExtensionManager(options) {
     getExtensionPopup,
     getExtensionOptionsUrl,
     publicExtension,
+    registerSession,
+    unregisterSession,
   };
 }
 
