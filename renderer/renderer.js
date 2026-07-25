@@ -3784,7 +3784,7 @@ function wireUi() {
     var dragging = false;
     var startX = 0;
     var startWidth = 0;
-    var MIN_W = 380;
+    var MIN_W = 420;
     var MAX_W = 1600;
 
     function onMouseDown(e) {

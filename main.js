@@ -1577,6 +1577,7 @@ function ensureWhatsappSurface() {
     emitWhatsappPanelStatus('loading', 'Loading WhatsApp...');
   });
   view.webContents.on('did-finish-load', () => {
+    resizeWhatsappView();
     emitWhatsappPanelStatus('ready', 'WhatsApp is ready');
   });
   view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
@@ -1603,6 +1604,9 @@ function ensureWhatsappSurface() {
   return whatsappSurface;
 }
 
+const WHATSAPP_BASE_WIDTH = 700;
+const WHATSAPP_MIN_ZOOM = 0.6;
+
 function resizeWhatsappView() {
   const surface = whatsappSurface;
   if (!surface || !surface.view || surface.view.webContents.isDestroyed()) return;
@@ -1622,6 +1626,9 @@ function resizeWhatsappView() {
     Math.max(1, content.height - y)
   );
   whatsappPanelBounds = { x, y, width, height };
+
+  const zoomFactor = Math.max(WHATSAPP_MIN_ZOOM, Math.min(1, width / WHATSAPP_BASE_WIDTH));
+  surface.view.webContents.setZoomFactor(zoomFactor);
   surface.view.setBounds(whatsappPanelBounds);
   safeViewSetVisible(surface.view, true);
 }
@@ -1658,6 +1665,21 @@ function reloadWhatsappPanel() {
   return publicWhatsappPanelState();
 }
 
+function isDownloadExportUrl(candidate) {
+  if (typeof candidate !== 'string') return false;
+  try {
+    var parsed = new URL(candidate);
+    var pathname = parsed.pathname.toLowerCase();
+    var search = parsed.search.toLowerCase();
+    if (/\/export|export\b|download\b|\/report\b/i.test(pathname)) return true;
+    if (/\.(xlsx|xls|csv|pdf|zip|docx?|pptx?|txt)$/i.test(pathname)) return true;
+    if (/export|download|report|generate/i.test(search)) return true;
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 function attachTabEvents(tab) {
   const contents = tab.view.webContents;
 
@@ -1670,9 +1692,10 @@ function attachTabEvents(tab) {
     const features = typeof details.features === 'string' ? details.features : '';
     const isLoginPopup = details.disposition === 'new-window' ||
       (features && /width=|height=/i.test(features));
-    if (isLoginPopup) {
-      var popupWidth = 1024;
-      var popupHeight = 768;
+    const isExportDownload = isDownloadExportUrl(url);
+    if (isLoginPopup || isExportDownload) {
+      var popupWidth = isExportDownload ? 600 : 1024;
+      var popupHeight = isExportDownload ? 400 : 768;
       var wMatch = features.match(/width=(\d+)/i);
       var hMatch = features.match(/height=(\d+)/i);
       if (wMatch) popupWidth = Math.min(Math.max(300, Number(wMatch[1])), 1600);
