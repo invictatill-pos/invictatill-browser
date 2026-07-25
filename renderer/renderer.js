@@ -531,65 +531,6 @@ function handleWhatsappPanelStatus(payload) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// WhatsApp panel — drag-to-resize (right edge handle)
-// ═══════════════════════════════════════════════════════════════════
-(function initWhatsappResize() {
-  var handle = els.whatsappResizeHandle;
-  if (!handle) return;
-
-  var MIN_WIDTH = 320;
-  var dragging = false;
-  var startX = 0;
-  var startWidth = 0;
-
-  function clampWidth(w) {
-    var max = Math.round(window.innerWidth * 0.75);
-    return Math.max(MIN_WIDTH, Math.min(max, w));
-  }
-
-  function applyWidth(w) {
-    // Live drag update — uses .style.setProperty for real-time pixel accuracy.
-    document.documentElement.style.setProperty('--whatsapp-panel-width', Math.round(w) + 'px');
-    state.lastLayoutKey = '';
-    state.lastWhatsappLayoutKey = '';
-    scheduleLayout();
-  }
-
-  handle.addEventListener('mousedown', function (ev) {
-    if (ev.button !== 0) return;
-    ev.preventDefault();
-    dragging = true;
-    startX = ev.clientX;
-    var panel = els.whatsappPanel;
-    startWidth = panel ? panel.getBoundingClientRect().width : 520;
-    handle.classList.add('dragging');
-    // 'wa-resizing' class sets cursor + user-select via style.css (no inline styles).
-    document.documentElement.classList.add('wa-resizing');
-  });
-
-  document.addEventListener('mousemove', function (ev) {
-    if (!dragging) return;
-    applyWidth(clampWidth(startWidth + (ev.clientX - startX)));
-  });
-
-  document.addEventListener('mouseup', function () {
-    if (!dragging) return;
-    dragging = false;
-    handle.classList.remove('dragging');
-    document.documentElement.classList.remove('wa-resizing');
-  });
-
-  // Keyboard arrow keys to nudge panel width
-  handle.addEventListener('keydown', function (ev) {
-    var step = ev.shiftKey ? 50 : 10;
-    var panel = els.whatsappPanel;
-    var current = panel ? panel.getBoundingClientRect().width : 520;
-    if (ev.key === 'ArrowRight') { ev.preventDefault(); applyWidth(clampWidth(current + step)); }
-    if (ev.key === 'ArrowLeft')  { ev.preventDefault(); applyWidth(clampWidth(current - step)); }
-  });
-})();
-
 function setMode(mode) {
   const validMode = mode === 'private' || mode === 'gaming' ? mode : 'workspace';
   document.body.classList.remove('mode-workspace', 'mode-private', 'mode-gaming');
@@ -1789,13 +1730,11 @@ async function newTab(url) {
 async function closeTab(id) {
   try {
     await invoke('closeTab', id);
-    state.tabs = state.tabs.filter(function (tab) { return !sameId(tab.id, id); });
     state.closedTabCount += 1;
+    await refreshBrowserState();
     if (!state.tabs.length) {
       await newTab();
-      return;
     }
-    await refreshBrowserState();
   } catch (error) {
     notify('Could not close tab: ' + errorMessage(error), 'error');
   }
@@ -2075,7 +2014,7 @@ function renderBookmarks() {
     removeButton.type = 'button';
     removeButton.setAttribute('aria-label', 'Remove ' + (bookmark.title || 'bookmark'));
     removeButton.addEventListener('click', async function () {
-      state.bookmarks.splice(index, 1);
+      state.bookmarks = state.bookmarks.filter(function (b) { return b.url !== bookmark.url; });
       try { await saveBookmarks(); } catch (error) { notify(errorMessage(error), 'error'); }
       renderBookmarks();
       updateBookmarkButton();
@@ -2273,7 +2212,7 @@ function renderTasks() {
     remove.type = 'button';
     remove.setAttribute('aria-label', 'Delete task: ' + taskText(task));
     remove.addEventListener('click', async function () {
-      state.tasks.splice(index, 1);
+      state.tasks = state.tasks.filter(function (t) { return t.id !== task.id; });
       try { await saveTasks(); } catch (error) { notify(errorMessage(error), 'error'); }
       renderTasks();
     });
@@ -3779,7 +3718,7 @@ function wireUi() {
   });
 
   (function initWhatsappResize() {
-    var handle = $('whatsapp-resize-handle');
+    var handle = els.whatsappResizeHandle;
     if (!handle) return;
     var dragging = false;
     var startX = 0;
@@ -3818,12 +3757,27 @@ function wireUi() {
       } catch (error) { /* ignore */ }
     }
 
+    handle.addEventListener('mousedown', onMouseDown);
+
+    handle.addEventListener('keydown', function (e) {
+      var step = e.shiftKey ? 50 : 10;
+      var panel = els.whatsappPanel;
+      var current = panel ? panel.getBoundingClientRect().width : 520;
+      if (e.key === 'ArrowRight') { e.preventDefault(); onKeyboardNudge(current + step); }
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); onKeyboardNudge(current - step); }
+    });
+
+    function onKeyboardNudge(w) {
+      var newWidth = Math.min(MAX_W, Math.max(MIN_W, Math.round(w)));
+      document.documentElement.style.setProperty('--whatsapp-panel-width', newWidth + 'px');
+      scheduleLayout();
+      try { localStorage.setItem('invicta-whatsapp-width', newWidth + 'px'); } catch (error) { /* ignore */ }
+    }
+
     try {
       var saved = localStorage.getItem('invicta-whatsapp-width');
       if (saved) document.documentElement.style.setProperty('--whatsapp-panel-width', saved);
     } catch (error) { /* ignore */ }
-
-    handle.addEventListener('mousedown', onMouseDown);
   })();
 
   bindClick('btn-download-popout', function () {
@@ -4444,6 +4398,9 @@ function handleGlobalShortcuts(event) {
     } else if (state.downloadPopoutOpen) {
       event.preventDefault();
       setDownloadPopoutOpen(false);
+    } else if (state.extensionStoreOpen) {
+      event.preventDefault();
+      closeExtensionStore();
     } else if (state.findOpen) {
       event.preventDefault();
       closeFindBar();
@@ -4647,6 +4604,7 @@ api.on('download-created', function () {
 // ═══════════════════════════════════════════════════════════════════
 function openExtensionStore() {
   state.extensionStoreOpen = true;
+  state.extensionStoreTab = 'featured';
   setHidden(els.extensionStoreModal, false);
   els.extensionStoreModal.setAttribute('aria-hidden', 'false');
   renderExtensionStore();
@@ -4656,73 +4614,105 @@ function closeExtensionStore() {
   state.extensionStoreOpen = false;
   setHidden(els.extensionStoreModal, true);
   els.extensionStoreModal.setAttribute('aria-hidden', 'true');
+  setHidden(els.extStoreStatus, true);
+  if (els.extStoreSearch) els.extStoreSearch.value = '';
+}
+
+function renderFallbackIcon(ext) {
+  var letter = (ext.name || 'E').charAt(0).toUpperCase();
+  var colors = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#8b5cf6', '#06b6d4'];
+  var index = typeof ext.id === 'string' ? ext.id.charCodeAt(0) % colors.length : 0;
+  var el = document.createElement('div');
+  el.className = 'ext-card-icon-fallback';
+  el.style.background = colors[index];
+  el.textContent = letter;
+  return el;
 }
 
 function renderExtensionCard(ext, isInstalled) {
   var card = createElement('div', 'ext-card');
 
-  // Icon.
+  var iconWrap = createElement('div', 'ext-card-icon-wrap');
   if (ext.icon) {
-    var icon = document.createElement('img');
-    icon.className = 'ext-card-icon';
-    icon.src = ext.icon;
-    icon.alt = ext.name;
-    icon.loading = 'lazy';
-    icon.onerror = function () { this.style.display = 'none'; };
-    card.appendChild(icon);
+    var img = document.createElement('img');
+    img.className = 'ext-card-icon';
+    img.src = ext.icon;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.onerror = function () { this.replaceWith(renderFallbackIcon(ext)); };
+    iconWrap.appendChild(img);
   } else {
-    var fallback = createElement('div', 'ext-card-icon-fallback', '🧩');
-    card.appendChild(fallback);
+    iconWrap.appendChild(renderFallbackIcon(ext));
   }
+  card.appendChild(iconWrap);
 
-  // Body.
   var body = createElement('div', 'ext-card-body');
   body.appendChild(createElement('p', 'ext-card-name', ext.name || 'Unknown'));
   body.appendChild(createElement('p', 'ext-card-desc', ext.description || ''));
   if (ext.category) {
     body.appendChild(createElement('span', 'ext-card-category', ext.category));
   }
+  if (ext.version) {
+    body.appendChild(createElement('span', 'ext-card-version', 'v' + ext.version));
+  }
   card.appendChild(body);
 
-  // Actions.
   var actions = createElement('div', 'ext-card-actions');
 
   if (isInstalled) {
-    // Toggle enable/disable.
     var toggleBtn = createElement('button', 'ext-card-toggle', ext.enabled ? 'Disable' : 'Enable');
     toggleBtn.type = 'button';
+    if (!ext.enabled) toggleBtn.classList.add('disabled');
     toggleBtn.addEventListener('click', function () {
+      toggleBtn.disabled = true;
       api.toggleExtension(ext.id, !ext.enabled).then(function () {
         renderExtensionStore();
         renderExtensionToolbar();
-      }).catch(function (err) { notify('Extension toggle failed: ' + errorMessage(err), 'error'); });
+      }).catch(function (err) {
+        toggleBtn.disabled = false;
+        notify('Toggle failed: ' + errorMessage(err), 'error');
+      });
     });
     actions.appendChild(toggleBtn);
 
-    // Remove.
     var removeBtn = createElement('button', 'ext-card-remove', 'Remove');
     removeBtn.type = 'button';
     removeBtn.addEventListener('click', function () {
+      removeBtn.disabled = true;
+      removeBtn.textContent = 'Removing…';
       api.uninstallExtension(ext.id).then(function () {
         renderExtensionStore();
         renderExtensionToolbar();
-      }).catch(function (err) { notify('Uninstall failed: ' + errorMessage(err), 'error'); });
+      }).catch(function (err) {
+        removeBtn.disabled = false;
+        removeBtn.textContent = 'Remove';
+        notify('Uninstall failed: ' + errorMessage(err), 'error');
+      });
     });
     actions.appendChild(removeBtn);
   } else {
-    var installBtn = createElement('button', 'ext-card-install', ext.installed ? 'Installed' : 'Install');
+    var isInstalling = state.installingExtensions.has(ext.id);
+    var alreadyInstalled = ext.installed;
+    var installBtn = createElement('button', 'ext-card-install', '');
     installBtn.type = 'button';
-    if (ext.installed) {
+
+    if (alreadyInstalled) {
+      installBtn.textContent = 'Installed';
       installBtn.classList.add('installed');
-    } else if (state.installingExtensions.has(ext.id)) {
-      installBtn.classList.add('installing');
+      installBtn.disabled = true;
+    } else if (isInstalling) {
       installBtn.textContent = 'Installing…';
+      installBtn.classList.add('installing');
+      installBtn.disabled = true;
     } else {
+      installBtn.textContent = 'Install';
       installBtn.addEventListener('click', function () {
         state.installingExtensions.add(ext.id);
-        renderExtensionStore();
-        showExtStoreStatus('Installing ' + ext.name + '…');
-        api.installExtensionFromStore(ext.id).then(function () {
+        installBtn.textContent = 'Installing…';
+        installBtn.classList.add('installing');
+        installBtn.disabled = true;
+        showExtStoreStatus('Downloading ' + ext.name + '…');
+        api.installExtensionFromStore(ext.id).then(function (result) {
           state.installingExtensions.delete(ext.id);
           showExtStoreStatus(ext.name + ' installed successfully!');
           renderExtensionStore();
@@ -4730,9 +4720,10 @@ function renderExtensionCard(ext, isInstalled) {
           setTimeout(hideExtStoreStatus, 3000);
         }).catch(function (err) {
           state.installingExtensions.delete(ext.id);
+          installBtn.textContent = 'Retry';
+          installBtn.classList.remove('installing');
+          installBtn.disabled = false;
           showExtStoreStatus('Install failed: ' + errorMessage(err));
-          renderExtensionStore();
-          setTimeout(hideExtStoreStatus, 5000);
         });
       });
     }
@@ -4751,45 +4742,83 @@ function hideExtStoreStatus() {
   setHidden(els.extStoreStatus, true);
 }
 
+function renderStoreTabEmpty(container, message) {
+  clearNode(container);
+  var p = createElement('p', 'ext-store-empty', message);
+  var hint = createElement('span', 'ext-store-hint');
+  hint.textContent = 'Extensions require an active internet connection to install.';
+  p.appendChild(document.createElement('br'));
+  p.appendChild(hint);
+  container.appendChild(p);
+}
+
 async function renderExtensionStore() {
   var searchQuery = (els.extStoreSearch.value || '').trim().toLowerCase();
 
-  // Render Featured tab.
-  clearNode(els.extStoreFeatured);
-  try {
-    var featured = searchQuery
-      ? await api.searchExtensions(searchQuery)
-      : await api.getFeaturedExtensions();
-    if (!featured || !featured.length) {
-      els.extStoreFeatured.appendChild(createElement('p', 'ext-store-empty', searchQuery ? 'No extensions found for "' + searchQuery + '".' : 'No featured extensions available.'));
-    } else {
-      featured.forEach(function (ext) {
-        els.extStoreFeatured.appendChild(renderExtensionCard(ext, false));
-      });
-    }
-  } catch (error) {
-    els.extStoreFeatured.appendChild(createElement('p', 'ext-store-empty', 'Could not load extensions.'));
+  if (state.extensionStoreTab === 'featured') {
+    setHidden(els.extStoreFeatured, false);
+    setHidden(els.extStoreInstalled, true);
+  } else {
+    setHidden(els.extStoreFeatured, true);
+    setHidden(els.extStoreInstalled, false);
   }
 
-  // Render Installed tab.
-  clearNode(els.extStoreInstalled);
-  try {
-    var installed = await api.getInstalledExtensions();
-    if (!installed || !installed.length) {
-      els.extStoreInstalled.appendChild(createElement('p', 'ext-store-empty', 'No extensions installed. Browse the Featured tab to get started.'));
-    } else {
-      installed.forEach(function (ext) {
-        if (searchQuery && !(ext.name || '').toLowerCase().includes(searchQuery)) return;
-        els.extStoreInstalled.appendChild(renderExtensionCard(ext, true));
-      });
+  var tabs = els.extStoreTabs.querySelectorAll('.ext-store-tab');
+  tabs.forEach(function (t) {
+    t.classList.toggle('active', t.dataset.tab === state.extensionStoreTab);
+    t.setAttribute('aria-selected', t.dataset.tab === state.extensionStoreTab ? 'true' : 'false');
+  });
+
+  if (state.extensionStoreTab === 'featured' || searchQuery) {
+    clearNode(els.extStoreFeatured);
+    var loader = createElement('div', 'ext-store-loader');
+    var spinner = createElement('span', 'ext-spinner');
+    spinner.setAttribute('aria-hidden', 'true');
+    loader.appendChild(spinner);
+    loader.appendChild(createElement('span', '', 'Loading extensions…'));
+    els.extStoreFeatured.appendChild(loader);
+    setHidden(els.extStoreFeatured, false);
+    setHidden(els.extStoreInstalled, true);
+
+    try {
+      var featured = searchQuery
+        ? await api.searchExtensions(searchQuery)
+        : await api.getFeaturedExtensions();
+      clearNode(els.extStoreFeatured);
+      if (!featured || !featured.length) {
+        renderStoreTabEmpty(els.extStoreFeatured, searchQuery
+          ? 'No extensions found for "' + searchQuery + '".'
+          : 'No extensions available.');
+      } else {
+        featured.forEach(function (ext) {
+          els.extStoreFeatured.appendChild(renderExtensionCard(ext, false));
+        });
+      }
+    } catch (error) {
+      clearNode(els.extStoreFeatured);
+      renderStoreTabEmpty(els.extStoreFeatured, 'Could not load extensions. Check your connection.');
     }
-  } catch (error) {
-    els.extStoreInstalled.appendChild(createElement('p', 'ext-store-empty', 'Could not load installed extensions.'));
   }
 
-  // Show correct tab.
-  setHidden(els.extStoreFeatured, state.extensionStoreTab !== 'featured');
-  setHidden(els.extStoreInstalled, state.extensionStoreTab !== 'installed');
+  if (state.extensionStoreTab === 'installed') {
+    clearNode(els.extStoreInstalled);
+    setHidden(els.extStoreFeatured, true);
+    setHidden(els.extStoreInstalled, false);
+
+    try {
+      var installed = await api.getInstalledExtensions();
+      if (!installed || !installed.length) {
+        renderStoreTabEmpty(els.extStoreInstalled, 'No extensions installed. Browse the Featured tab to get started.');
+      } else {
+        installed.forEach(function (ext) {
+          if (searchQuery && !(ext.name || '').toLowerCase().includes(searchQuery)) return;
+          els.extStoreInstalled.appendChild(renderExtensionCard(ext, true));
+        });
+      }
+    } catch (error) {
+      renderStoreTabEmpty(els.extStoreInstalled, 'Could not load installed extensions.');
+    }
+  }
 }
 
 async function renderExtensionToolbar() {
@@ -4797,9 +4826,11 @@ async function renderExtensionToolbar() {
   clearNode(els.extensionToolbar);
   try {
     var installed = await api.getInstalledExtensions();
-    if (!installed) return;
+    if (!installed || !installed.length) return;
+    var hasEnabled = false;
     installed.forEach(function (ext) {
       if (!ext.enabled) return;
+      hasEnabled = true;
       var btn = document.createElement('button');
       btn.className = 'extension-toolbar-icon';
       btn.title = ext.name;
@@ -4809,17 +4840,20 @@ async function renderExtensionToolbar() {
         img.src = ext.icon;
         img.alt = ext.name;
         img.onerror = function () {
-          var fallback = document.createElement('span');
-          fallback.className = 'ext-icon-fallback';
-          fallback.textContent = (ext.name || '?').charAt(0).toUpperCase();
-          if (this.parentElement) this.parentElement.replaceChildren(fallback);
+          var fb = document.createElement('span');
+          fb.className = 'ext-icon-fallback';
+          fb.textContent = (ext.name || '?').charAt(0).toUpperCase();
+          if (this.parentElement) {
+            this.remove();
+            this.parentElement.appendChild(fb);
+          }
         };
         btn.appendChild(img);
       } else {
-        var fallbackSpan = document.createElement('span');
-        fallbackSpan.className = 'ext-icon-fallback';
-        fallbackSpan.textContent = (ext.name || '?').charAt(0).toUpperCase();
-        btn.appendChild(fallbackSpan);
+        var fbSpan = document.createElement('span');
+        fbSpan.className = 'ext-icon-fallback';
+        fbSpan.textContent = (ext.name || '?').charAt(0).toUpperCase();
+        btn.appendChild(fbSpan);
       }
       btn.addEventListener('click', async function () {
         try {
@@ -4837,10 +4871,16 @@ async function renderExtensionToolbar() {
       });
       els.extensionToolbar.appendChild(btn);
     });
+    if (!hasEnabled) {
+      var hint = document.createElement('span');
+      hint.className = 'extension-toolbar-hint';
+      hint.textContent = 'No extensions enabled';
+      els.extensionToolbar.appendChild(hint);
+    }
   } catch (error) { /* extensions may not be available */ }
 }
 
-// Extension Store event handlers.
+// Extension Store event handlers and tab switching.
 if (els.btnExtensions) {
   els.btnExtensions.addEventListener('click', function () {
     if (state.extensionStoreOpen) closeExtensionStore();
@@ -4861,12 +4901,7 @@ if (els.extStoreTabs) {
     var tab = e.target.closest('.ext-store-tab');
     if (!tab || !tab.dataset.tab) return;
     state.extensionStoreTab = tab.dataset.tab;
-    els.extStoreTabs.querySelectorAll('.ext-store-tab').forEach(function (t) {
-      t.classList.toggle('active', t.dataset.tab === state.extensionStoreTab);
-      t.setAttribute('aria-selected', t.dataset.tab === state.extensionStoreTab ? 'true' : 'false');
-    });
-    setHidden(els.extStoreFeatured, state.extensionStoreTab !== 'featured');
-    setHidden(els.extStoreInstalled, state.extensionStoreTab !== 'installed');
+    renderExtensionStore();
   });
 }
 
@@ -4889,7 +4924,8 @@ if (els.btnInstallExtFile) {
         hideExtStoreStatus();
         return;
       }
-      showExtStoreStatus('Extension installed!');
+      var name = result && result.name ? result.name : 'Extension';
+      showExtStoreStatus(name + ' installed!');
       renderExtensionStore();
       renderExtensionToolbar();
       setTimeout(hideExtStoreStatus, 3000);
@@ -4900,7 +4936,6 @@ if (els.btnInstallExtFile) {
   });
 }
 
-// Listen for extension events.
 api.on('extension-installed', function () {
   renderExtensionStore();
   renderExtensionToolbar();
