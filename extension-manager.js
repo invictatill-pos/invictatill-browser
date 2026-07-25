@@ -273,12 +273,15 @@ function createExtensionManager(options) {
     }
 
     for (const entry of entries) {
-      const fullPath = path.join(destDir, ...entry.name.split('/'));
-      if (entry.name.endsWith('/')) {
-        fs.mkdirSync(fullPath, { recursive: true });
+      const resolved = path.resolve(destDir, entry.name);
+      if (!resolved.startsWith(path.resolve(destDir) + path.sep) && resolved !== path.resolve(destDir)) {
         continue;
       }
-      fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+      if (entry.name.endsWith('/')) {
+        fs.mkdirSync(resolved, { recursive: true });
+        continue;
+      }
+      fs.mkdirSync(path.dirname(resolved), { recursive: true });
 
       // Read local file header to get data offset.
       const localPos = entry.localHeaderOffset;
@@ -289,18 +292,15 @@ function createExtensionManager(options) {
       const rawData = buffer.slice(dataStart, dataStart + entry.compressedSize);
 
       if (entry.compression === 0) {
-        // Stored (no compression).
-        fs.writeFileSync(fullPath, rawData);
+        fs.writeFileSync(resolved, rawData);
       } else if (entry.compression === 8) {
-        // Deflated.
         try {
           const inflated = zlib.inflateRawSync(rawData);
-          fs.writeFileSync(fullPath, inflated);
+          fs.writeFileSync(resolved, inflated);
         } catch (error) {
-          // Try with zlib.inflateSync as fallback.
           try {
             const inflated = zlib.inflateSync(rawData);
-            fs.writeFileSync(fullPath, inflated);
+            fs.writeFileSync(resolved, inflated);
           } catch (error2) {
             // Skip corrupt files.
           }
@@ -471,6 +471,10 @@ function createExtensionManager(options) {
     registeredSessions.delete(targetSession);
   }
 
+  function isSessionRegistered(targetSession) {
+    return registeredSessions.has(targetSession);
+  }
+
   // Collect all sessions to load into: the hardcoded default + all registered.
   function allSessions() {
     const sessions = new Set(registeredSessions);
@@ -625,6 +629,7 @@ function createExtensionManager(options) {
     publicExtension,
     registerSession,
     unregisterSession,
+    isSessionRegistered,
   };
 }
 

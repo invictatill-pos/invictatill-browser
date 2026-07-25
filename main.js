@@ -290,7 +290,11 @@ function getWorkspaceSession(workspaceId) {
   const targetId = workspaceId || activeWorkspaceId || 'default';
   const cleanId = String(targetId).replace(/[^a-zA-Z0-9_-]/g, '');
   if (workspaceSessionsMap.has(cleanId)) {
-    return workspaceSessionsMap.get(cleanId);
+    const cached = workspaceSessionsMap.get(cleanId);
+    if (extensionManager && !privateInstance && !extensionManager.isSessionRegistered(cached)) {
+      extensionManager.registerSession(cached);
+    }
+    return cached;
   }
 
   let sess;
@@ -305,7 +309,6 @@ function getWorkspaceSession(workspaceId) {
   configurePermissions(sess);
   configureScreenSharePicker(sess);
   configureDownloads(sess);
-  // Register this session with the extension manager so extensions load into it.
   if (extensionManager && !privateInstance) {
     extensionManager.registerSession(sess);
   }
@@ -5148,6 +5151,16 @@ app.whenReady().then(() => {
     extensionManager.loadAllExtensions().catch((error) => {
       if (isDev) console.error('Extension loading error:', error);
     });
+
+    // Register any workspace sessions that were created during tab restore
+    // before the extension manager existed. Without this, extensions won't
+    // work in restored tabs because the sessions are cached and never
+    // registered retroactively.
+    for (const sess of workspaceSessionsMap.values()) {
+      if (!extensionManager.isSessionRegistered(sess)) {
+        extensionManager.registerSession(sess);
+      }
+    }
   }
 });
 
