@@ -897,6 +897,33 @@ body.fullscreen .whatsapp-panel {
   box-shadow: 18px 0 50px rgba(0, 0, 0, 0.35);
 }
 
+.whatsapp-panel-resize-handle {
+  position: absolute;
+  z-index: 30;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.18s ease;
+  user-select: none;
+}
+
+.whatsapp-panel-resize-handle:hover,
+.whatsapp-panel-resize-handle:active {
+  background: rgba(37, 211, 102, 0.22);
+}
+
+body.whatsapp-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.whatsapp-resizing .whatsapp-panel {
+  transition: none;
+}
+
 .whatsapp-panel-header {
   height: 52px;
   display: flex;

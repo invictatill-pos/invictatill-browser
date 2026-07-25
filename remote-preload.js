@@ -6,6 +6,9 @@ const MAX_USERNAME_LENGTH = 250;
 const MAX_PASSWORD_LENGTH = 500;
 let autofillLookupStarted = false;
 let autofillCheckTimer = null;
+let autofillRetryCount = 0;
+let autofillRetryTimer = null;
+const MAX_AUTOFILL_RETRIES = 5;
 const LIVE_WRITING_DEBOUNCE_MS = 800;
 const LIVE_WRITING_MAX_LENGTH = 5000;
 let liveWritingEnabled = false;
@@ -38,9 +41,12 @@ function passwordInputs(root) {
 
 function loginPasswordInput(root) {
   const inputs = passwordInputs(root);
+  if (!inputs.length) return null;
   const current = inputs.find((input) => input.autocomplete === 'current-password');
   if (current) return current;
-  if (inputs.length === 1 && inputs[0].autocomplete !== 'new-password') return inputs[0];
+  const nonNew = inputs.filter((input) => input.autocomplete !== 'new-password');
+  if (nonNew.length === 1) return nonNew[0];
+  if (nonNew.length > 0) return nonNew[0];
   return null;
 }
 
@@ -87,10 +93,14 @@ function setInputValue(input, value) {
 
 async function tryAutofill() {
   autofillCheckTimer = null;
-  if (!isWebPage() || autofillLookupStarted) return;
+  if (!isWebPage()) return;
   const passwordInput = loginPasswordInput(document);
-  if (!passwordInput || passwordInput.value) return;
+  if (!passwordInput || passwordInput.value) {
+    autofillLookupStarted = false;
+    return;
+  }
   autofillLookupStarted = true;
+  autofillRetryCount = 0;
   try {
     const credential = await ipcRenderer.invoke('get-page-credential', {
       origin: location.origin,
@@ -112,8 +122,24 @@ async function tryAutofill() {
 }
 
 function scheduleAutofill() {
-  if (autofillLookupStarted || autofillCheckTimer) return;
-  autofillCheckTimer = setTimeout(tryAutofill, 180);
+  if (autofillCheckTimer) return;
+  if (autofillLookupStarted && autofillRetryCount >= MAX_AUTOFILL_RETRIES) return;
+  if (autofillLookupStarted) {
+    autofillRetryCount += 1;
+  }
+  autofillLookupStarted = true;
+  var delay = 180 + (autofillRetryCount * 400);
+  autofillCheckTimer = setTimeout(tryAutofill, delay);
+}
+
+function scheduleAutofillReset() {
+  if (autofillRetryTimer) clearTimeout(autofillRetryTimer);
+  autofillRetryTimer = setTimeout(function () {
+    autofillRetryTimer = null;
+    autofillLookupStarted = false;
+    autofillRetryCount = 0;
+    scheduleAutofill();
+  }, 800);
 }
 
 function reportCredential(root) {
@@ -166,7 +192,7 @@ function startCredentialObserver() {
     }
   }, true);
 
-  const observer = new MutationObserver(scheduleAutofill);
+  const observer = new MutationObserver(scheduleAutofillReset);
   observer.observe(document.documentElement, { childList: true, subtree: true });
   scheduleAutofill();
 }

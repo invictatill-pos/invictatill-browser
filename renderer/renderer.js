@@ -3777,6 +3777,55 @@ function wireUi() {
       notify('Could not open WhatsApp tab: ' + errorMessage(error), 'error');
     }
   });
+
+  (function initWhatsappResize() {
+    var handle = $('whatsapp-resize-handle');
+    if (!handle) return;
+    var dragging = false;
+    var startX = 0;
+    var startWidth = 0;
+    var MIN_W = 380;
+    var MAX_W = 1600;
+
+    function onMouseDown(e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragging = true;
+      startX = e.clientX;
+      startWidth = els.whatsappPanel.getBoundingClientRect().width;
+      document.body.classList.add('whatsapp-resizing');
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    }
+
+    function onMouseMove(e) {
+      if (!dragging) return;
+      var delta = e.clientX - startX;
+      var newWidth = Math.min(MAX_W, Math.max(MIN_W, startWidth + delta));
+      document.documentElement.style.setProperty('--whatsapp-panel-width', newWidth + 'px');
+      scheduleLayout();
+    }
+
+    function onMouseUp() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove('whatsapp-resizing');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      try {
+        var saved = document.documentElement.style.getPropertyValue('--whatsapp-panel-width');
+        if (saved) localStorage.setItem('invicta-whatsapp-width', saved);
+      } catch (error) { /* ignore */ }
+    }
+
+    try {
+      var saved = localStorage.getItem('invicta-whatsapp-width');
+      if (saved) document.documentElement.style.setProperty('--whatsapp-panel-width', saved);
+    } catch (error) { /* ignore */ }
+
+    handle.addEventListener('mousedown', onMouseDown);
+  })();
+
   bindClick('btn-download-popout', function () {
     setDownloadPopoutOpen(!state.downloadPopoutOpen);
   });
