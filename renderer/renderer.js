@@ -549,7 +549,8 @@ function handleWhatsappPanelStatus(payload) {
   }
 
   function applyWidth(w) {
-    document.documentElement.style.setProperty('--whatsapp-panel-width', w + 'px');
+    // Live drag update — uses .style.setProperty for real-time pixel accuracy.
+    document.documentElement.style.setProperty('--whatsapp-panel-width', Math.round(w) + 'px');
     state.lastLayoutKey = '';
     state.lastWhatsappLayoutKey = '';
     scheduleLayout();
@@ -563,8 +564,8 @@ function handleWhatsappPanelStatus(payload) {
     var panel = els.whatsappPanel;
     startWidth = panel ? panel.getBoundingClientRect().width : 520;
     handle.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    // 'wa-resizing' class sets cursor + user-select via style.css (no inline styles).
+    document.documentElement.classList.add('wa-resizing');
   });
 
   document.addEventListener('mousemove', function (ev) {
@@ -576,8 +577,7 @@ function handleWhatsappPanelStatus(payload) {
     if (!dragging) return;
     dragging = false;
     handle.classList.remove('dragging');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
+    document.documentElement.classList.remove('wa-resizing');
   });
 
   // Keyboard arrow keys to nudge panel width
@@ -4760,11 +4760,17 @@ async function renderExtensionToolbar() {
         img.src = ext.icon;
         img.alt = ext.name;
         img.onerror = function () {
-          this.parentElement.innerHTML = '<span class="ext-icon-fallback">' + (ext.name || '?').charAt(0).toUpperCase() + '</span>';
+          var fallback = document.createElement('span');
+          fallback.className = 'ext-icon-fallback';
+          fallback.textContent = (ext.name || '?').charAt(0).toUpperCase();
+          if (this.parentElement) this.parentElement.replaceChildren(fallback);
         };
         btn.appendChild(img);
       } else {
-        btn.innerHTML = '<span class="ext-icon-fallback">' + (ext.name || '?').charAt(0).toUpperCase() + '</span>';
+        var fallbackSpan = document.createElement('span');
+        fallbackSpan.className = 'ext-icon-fallback';
+        fallbackSpan.textContent = (ext.name || '?').charAt(0).toUpperCase();
+        btn.appendChild(fallbackSpan);
       }
       btn.addEventListener('click', async function () {
         try {
