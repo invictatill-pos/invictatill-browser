@@ -17,7 +17,9 @@ const { session, app, BrowserWindow } = require('electron');
 const EXTENSIONS_DIR_NAME = 'extensions';
 const EXTENSION_REGISTRY_FILE = 'extension-registry.json';
 const MAX_EXTENSIONS = 50;
-const MAX_CRX_SIZE = 200 * 1024 * 1024; // 200 MB max CRX size
+const MAX_CRX_SIZE = 200 * 1024 * 1024;
+const MAX_UNCOMPRESSED_SIZE = 500 * 1024 * 1024;
+const MAX_UNPACKED_SIZE = 200 * 1024 * 1024;
 const CRX_MAGIC = Buffer.from('Cr24');
 const CHROME_WEBSTORE_PATTERN = /^https?:\/\/chromewebstore\.google\.com\/detail\/([^/]+)\/([a-z]{32})/i;
 const CHROME_WEBSTORE_CRX_URL = 'https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx3&prodversion=%CHROME_VERSION%&x=id%3D%EXTENSION_ID%%26installsource%3Dondemand%26uc';
@@ -146,7 +148,9 @@ function createExtensionManager(options) {
 
   function saveRegistry() {
     ensureExtensionsDir();
-    fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2), 'utf8');
+    var tmp = registryPath + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(registry, null, 2), 'utf8');
+    fs.renameSync(tmp, registryPath);
   }
 
   function publicExtension(id) {
@@ -292,8 +296,10 @@ function createExtensionManager(options) {
       const rawData = buffer.slice(dataStart, dataStart + entry.compressedSize);
 
       if (entry.compression === 0) {
+        if (entry.compressedSize > MAX_UNCOMPRESSED_SIZE) continue;
         fs.writeFileSync(resolved, rawData);
       } else if (entry.compression === 8) {
+        if (entry.uncompressedSize > MAX_UNCOMPRESSED_SIZE) continue;
         try {
           const inflated = zlib.inflateRawSync(rawData);
           fs.writeFileSync(resolved, inflated);
@@ -339,21 +345,26 @@ function createExtensionManager(options) {
       extDir = path.join(extensionsRoot, '_installing_' + tempId);
       fs.mkdirSync(extDir, { recursive: true });
       extractCrx(extensionPath, extDir);
+    } else {
+      var unpackedSize = directorySize(extensionPath);
+      if (unpackedSize > MAX_UNPACKED_SIZE) throw new Error('Extension directory is too large');
     }
 
-    // Find manifest (may be in a subdirectory).
-    let manifestDir = extDir;
+    var manifestDir = extDir;
     if (!fs.existsSync(path.join(manifestDir, 'manifest.json'))) {
-      const sub = fs.readdirSync(manifestDir).find((d) =>
-        fs.existsSync(path.join(manifestDir, d, 'manifest.json'))
-      );
+      var sub = fs.readdirSync(manifestDir).find(function (d) {
+        return fs.existsSync(path.join(manifestDir, d, 'manifest.json'));
+      });
       if (sub) manifestDir = path.join(manifestDir, sub);
     }
 
-    const manifest = parseManifest(manifestDir);
-    const extId = opts.extensionId || manifest.key
-      ? crypto.createHash('sha256').update(manifest.key || manifest.name || '').digest('hex').slice(0, 32)
-      : crypto.randomBytes(16).toString('hex');
+    var manifest = parseManifest(manifestDir);
+    var hasWebstoreId = Boolean(opts.extensionId);
+    var extId = hasWebstoreId
+      ? String(opts.extensionId).slice(0, 64).replace(/[^a-z]/g, '')
+      : manifest.key
+        ? crypto.createHash('sha256').update(manifest.key).digest('hex').slice(0, 32)
+        : crypto.randomBytes(16).toString('hex');
 
     if (Object.keys(registry).length >= MAX_EXTENSIONS) {
       throw new Error('Maximum number of extensions reached (' + MAX_EXTENSIONS + ')');
@@ -388,10 +399,14 @@ function createExtensionManager(options) {
       size: directorySize(finalDir),
       path: finalDir,
     };
-    saveRegistry();
 
-    // Try loading the extension immediately.
-    await loadExtension(extId);
+    try {
+      await loadExtension(extId);
+    } catch (loadErr) {
+      delete registry[extId];
+      throw loadErr;
+    }
+    saveRegistry();
 
     return publicExtension(extId);
   }
@@ -406,24 +421,36 @@ function createExtensionManager(options) {
 
     const tempFile = path.join(extensionsRoot, extensionId + '.crx');
 
-    // Download the CRX file.
-    const response = await fetch(downloadUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/' + ver },
-      redirect: 'follow',
-    });
+    // Download the CRX file with a 30-second timeout.
+    const controller = new AbortController();
+    const timeout = setTimeout(function () { controller.abort(); }, 30000);
+    try {
+      const response = await fetch(downloadUrl, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/' + ver },
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
 
-    if (!response.ok) {
-      throw new Error('Failed to download extension from Chrome Web Store (HTTP ' + response.status + ')');
+      if (!response.ok) {
+        throw new Error('Failed to download extension from Chrome Web Store (HTTP ' + response.status + ')');
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      if (buffer.length > MAX_CRX_SIZE) {
+        throw new Error('Extension is too large');
+      }
+
+      fs.writeFileSync(tempFile, buffer);
+    } catch (error) {
+      clearTimeout(timeout);
+      if (error.name === 'AbortError') {
+        throw new Error('Download timed out. Check your internet connection.');
+      }
+      throw error;
     }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    if (buffer.length > MAX_CRX_SIZE) {
-      throw new Error('Extension is too large');
-    }
-
-    fs.writeFileSync(tempFile, buffer);
 
     try {
       const result = await installFromPath(tempFile, { extensionId });
