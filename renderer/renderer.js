@@ -3624,10 +3624,6 @@ function registerBrowserEvents() {
     state.closedTabCount += 1;
     refreshBrowserState();
   });
-  registerEvent('open-url-in-new-tab', function (payload) {
-    const url = payload && typeof payload === 'object' ? payload.url : payload;
-    if (url) newTab(url);
-  });
   registerEvent('focus-address-bar', function () {
     els.addressBar.focus();
     els.addressBar.select();
