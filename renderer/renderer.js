@@ -2327,7 +2327,10 @@ function setDownloadPopoutOpen(open) {
   document.body.classList.toggle('download-popout-open', state.downloadPopoutOpen);
   setHidden(els.downloadPopout, !state.downloadPopoutOpen);
   els.downloadPopout.setAttribute('aria-hidden', state.downloadPopoutOpen ? 'false' : 'true');
-  els.downloadPopoutButton.setAttribute('aria-expanded', state.downloadPopoutOpen ? 'true' : 'false');
+  if (els.downloadPopoutButton) {
+    els.downloadPopoutButton.setAttribute('aria-expanded', state.downloadPopoutOpen ? 'true' : 'false');
+  }
+  if (state.downloadPopoutOpen) renderDownloadPopout();
   scheduleLayout();
 }
 

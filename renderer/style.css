@@ -4691,11 +4691,21 @@ kbd {
   max-width: calc(100% - 92px);
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
 }
 
 .workspace-tabs-container::-webkit-scrollbar {
-  display: none;
+  height: 4px;
+}
+
+.workspace-tabs-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.workspace-tabs-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
 }
 
 .ws-tab-pill {
