@@ -176,6 +176,9 @@ const els = {
   extStoreFeatured: $('ext-store-featured'),
   extStoreInstalled: $('ext-store-installed'),
   extStoreStatus: $('ext-store-status'),
+  extCategoryFilter: $('ext-category-filter'),
+  extInstalledBadge: $('ext-installed-badge'),
+  extWebstoreLink: $('ext-webstore-link'),
 };
 
 const state = {
@@ -196,6 +199,7 @@ const state = {
   selectedWsIcon: '🏢',
   extensionStoreOpen: false,
   extensionStoreTab: 'featured',
+  extensionStoreCategory: 'All',
   installingExtensions: new Set(),
   selectedWsColor: '#3b82f6',
   engineMode: 'workspace',
@@ -4600,8 +4604,18 @@ api.on('download-created', function () {
 function openExtensionStore() {
   state.extensionStoreOpen = true;
   state.extensionStoreTab = 'featured';
+  state.extensionStoreCategory = 'All';
   setHidden(els.extensionStoreModal, false);
   els.extensionStoreModal.setAttribute('aria-hidden', 'false');
+  // Reset category pill selection to "All".
+  if (els.extCategoryFilter) {
+    var pills = els.extCategoryFilter.querySelectorAll('.ext-category-pill');
+    pills.forEach(function (p) { p.classList.toggle('active', p.dataset.category === 'All'); });
+  }
+  // Set the Chrome Web Store link.
+  if (els.extWebstoreLink) {
+    els.extWebstoreLink.href = 'https://chromewebstore.google.com/';
+  }
   renderExtensionStore();
 }
 
@@ -4611,6 +4625,7 @@ function closeExtensionStore() {
   els.extensionStoreModal.setAttribute('aria-hidden', 'true');
   setHidden(els.extStoreStatus, true);
   if (els.extStoreSearch) els.extStoreSearch.value = '';
+  state.extensionStoreCategory = 'All';
 }
 
 function renderFallbackIcon(ext) {
@@ -4644,12 +4659,30 @@ function renderExtensionCard(ext, isInstalled) {
   var body = createElement('div', 'ext-card-body');
   body.appendChild(createElement('p', 'ext-card-name', ext.name || 'Unknown'));
   body.appendChild(createElement('p', 'ext-card-desc', ext.description || ''));
+
+  var metaRow = document.createElement('div');
+  metaRow.className = 'ext-card-meta-row';
   if (ext.category) {
-    body.appendChild(createElement('span', 'ext-card-category', ext.category));
+    metaRow.appendChild(createElement('span', 'ext-card-category', ext.category));
   }
   if (ext.version) {
-    body.appendChild(createElement('span', 'ext-card-version', 'v' + ext.version));
+    metaRow.appendChild(createElement('span', 'ext-card-version', 'v' + ext.version));
   }
+  // Web Store link for each card.
+  if (ext.storeUrl || ext.id) {
+    var storeHref = ext.storeUrl || ('https://chromewebstore.google.com/detail/' + ext.id);
+    var storeLink = document.createElement('button');
+    storeLink.className = 'ext-card-store-link';
+    storeLink.type = 'button';
+    storeLink.textContent = 'View in Store ↗';
+    storeLink.addEventListener('click', function (e) {
+      e.stopPropagation();
+      invokeOptional('newTab', storeHref);
+      closeExtensionStore();
+    });
+    metaRow.appendChild(storeLink);
+  }
+  body.appendChild(metaRow);
   card.appendChild(body);
 
   var actions = createElement('div', 'ext-card-actions');
@@ -4692,7 +4725,7 @@ function renderExtensionCard(ext, isInstalled) {
     installBtn.type = 'button';
 
     if (alreadyInstalled) {
-      installBtn.textContent = 'Installed';
+      installBtn.textContent = '✓ Installed';
       installBtn.classList.add('installed');
       installBtn.disabled = true;
     } else if (isInstalling) {
@@ -4728,6 +4761,7 @@ function renderExtensionCard(ext, isInstalled) {
   return card;
 }
 
+
 function showExtStoreStatus(msg) {
   els.extStoreStatus.textContent = msg;
   setHidden(els.extStoreStatus, false);
@@ -4748,14 +4782,19 @@ function renderStoreTabEmpty(container, message) {
 }
 
 async function renderExtensionStore() {
-  var searchQuery = (els.extStoreSearch.value || '').trim().toLowerCase();
+  var searchQuery = (els.extStoreSearch ? els.extStoreSearch.value || '' : '').trim().toLowerCase();
+  var activeCategory = state.extensionStoreCategory || 'All';
 
   if (state.extensionStoreTab === 'featured') {
     setHidden(els.extStoreFeatured, false);
     setHidden(els.extStoreInstalled, true);
+    // Show category pills only on featured tab.
+    if (els.extCategoryFilter) setHidden(els.extCategoryFilter, false);
   } else {
     setHidden(els.extStoreFeatured, true);
     setHidden(els.extStoreInstalled, false);
+    // Hide category pills on installed tab.
+    if (els.extCategoryFilter) setHidden(els.extCategoryFilter, true);
   }
 
   var tabs = els.extStoreTabs.querySelectorAll('.ext-store-tab');
@@ -4763,6 +4802,13 @@ async function renderExtensionStore() {
     t.classList.toggle('active', t.dataset.tab === state.extensionStoreTab);
     t.setAttribute('aria-selected', t.dataset.tab === state.extensionStoreTab ? 'true' : 'false');
   });
+
+  // Update Web Store search link.
+  if (els.extWebstoreLink && searchQuery) {
+    els.extWebstoreLink.href = 'https://chromewebstore.google.com/search/' + encodeURIComponent(searchQuery);
+  } else if (els.extWebstoreLink) {
+    els.extWebstoreLink.href = 'https://chromewebstore.google.com/';
+  }
 
   if (state.extensionStoreTab === 'featured' || searchQuery) {
     clearNode(els.extStoreFeatured);
@@ -4780,12 +4826,24 @@ async function renderExtensionStore() {
         ? await api.searchExtensions(searchQuery)
         : await api.getFeaturedExtensions();
       clearNode(els.extStoreFeatured);
-      if (!featured || !featured.length) {
-        renderStoreTabEmpty(els.extStoreFeatured, searchQuery
+
+      // Apply category filter.
+      var filtered = featured;
+      if (activeCategory && activeCategory !== 'All') {
+        filtered = (featured || []).filter(function (ext) {
+          return (ext.category || '').toLowerCase() === activeCategory.toLowerCase();
+        });
+      }
+
+      if (!filtered || !filtered.length) {
+        var emptyMsg = searchQuery
           ? 'No extensions found for "' + searchQuery + '".'
-          : 'No extensions available.');
+          : activeCategory !== 'All'
+            ? 'No ' + activeCategory + ' extensions in the featured list.'
+            : 'No extensions available.';
+        renderStoreTabEmpty(els.extStoreFeatured, emptyMsg);
       } else {
-        featured.forEach(function (ext) {
+        filtered.forEach(function (ext) {
           els.extStoreFeatured.appendChild(renderExtensionCard(ext, false));
         });
       }
@@ -4802,19 +4860,41 @@ async function renderExtensionStore() {
 
     try {
       var installed = await api.getInstalledExtensions();
+      // Update installed badge.
+      if (els.extInstalledBadge) {
+        var installedCount = installed ? installed.length : 0;
+        els.extInstalledBadge.textContent = String(installedCount);
+        setHidden(els.extInstalledBadge, installedCount === 0);
+      }
       if (!installed || !installed.length) {
         renderStoreTabEmpty(els.extStoreInstalled, 'No extensions installed. Browse the Featured tab to get started.');
       } else {
+        var hasMatches = false;
         installed.forEach(function (ext) {
           if (searchQuery && !(ext.name || '').toLowerCase().includes(searchQuery)) return;
+          hasMatches = true;
           els.extStoreInstalled.appendChild(renderExtensionCard(ext, true));
         });
+        if (!hasMatches) {
+          renderStoreTabEmpty(els.extStoreInstalled, 'No installed extensions match "' + searchQuery + '".');
+        }
       }
     } catch (error) {
       renderStoreTabEmpty(els.extStoreInstalled, 'Could not load installed extensions.');
     }
+  } else {
+    // Update badge even when not on installed tab.
+    try {
+      var allInstalled = await api.getInstalledExtensions();
+      if (els.extInstalledBadge) {
+        var count = allInstalled ? allInstalled.length : 0;
+        els.extInstalledBadge.textContent = String(count);
+        setHidden(els.extInstalledBadge, count === 0);
+      }
+    } catch (e) { /* ignore */ }
   }
 }
+
 
 async function renderExtensionToolbar() {
   if (!els.extensionToolbar) return;
@@ -4830,10 +4910,14 @@ async function renderExtensionToolbar() {
       btn.className = 'extension-toolbar-icon';
       btn.title = ext.name;
       btn.type = 'button';
+      btn.setAttribute('aria-label', ext.name + ' extension');
+      btn.setAttribute('data-ext-id', ext.id);
+
       if (ext.icon) {
         var img = document.createElement('img');
         img.src = ext.icon;
-        img.alt = ext.name;
+        img.alt = '';
+        img.draggable = false;
         img.onerror = function () {
           var fb = document.createElement('span');
           fb.className = 'ext-icon-fallback';
@@ -4850,19 +4934,43 @@ async function renderExtensionToolbar() {
         fbSpan.textContent = (ext.name || '?').charAt(0).toUpperCase();
         btn.appendChild(fbSpan);
       }
-      btn.addEventListener('click', async function () {
+
+      // Opera-style popup: opens a native floating window near the button.
+      btn.addEventListener('click', async function (e) {
+        e.stopPropagation();
+        // Mark button as active while popup is open.
+        btn.classList.toggle('active');
         try {
-          var popup = await api.getExtensionPopup(ext.id);
-          if (popup && popup.url) {
-            invokeOptional('newTab', popup.url);
+          // Get screen-space coordinates of the button's bottom-left corner.
+          var rect = btn.getBoundingClientRect();
+          var screenX = Math.round(rect.left + window.screenX);
+          var screenY = Math.round(rect.bottom + window.screenY);
+
+          if (api.openExtensionPopup) {
+            var result = await api.openExtensionPopup(ext.id, screenX, screenY);
+            if (result && !result.success) {
+              if (result.reason === 'no-popup') {
+                notify(ext.name + ' has no popup page. Check the Extension Store to configure it.', 'info');
+              } else {
+                notify('Could not open ' + ext.name + ': ' + (result.reason || 'Unknown error'), 'error');
+              }
+            }
           } else {
-            var optUrl = await api.getExtensionOptionsUrl(ext.id);
-            if (optUrl) invokeOptional('newTab', optUrl);
-            else notify(ext.name + ' has no popup or options page.', 'info');
+            // Fallback: open in new tab if IPC not available.
+            var popup = await api.getExtensionPopup(ext.id);
+            if (popup && popup.url) {
+              invokeOptional('newTab', popup.url);
+            } else {
+              var optUrl = await api.getExtensionOptionsUrl(ext.id);
+              if (optUrl) invokeOptional('newTab', optUrl);
+              else notify(ext.name + ' has no popup or options page.', 'info');
+            }
           }
         } catch (err) {
           notify('Extension error: ' + errorMessage(err), 'error');
         }
+        // Remove active class after a brief delay.
+        setTimeout(function () { btn.classList.remove('active'); }, 300);
       });
       els.extensionToolbar.appendChild(btn);
     });
@@ -4930,6 +5038,31 @@ if (els.btnInstallExtFile) {
     });
   });
 }
+
+// Category filter pills.
+if (els.extCategoryFilter) {
+  els.extCategoryFilter.addEventListener('click', function (e) {
+    var pill = e.target.closest('.ext-category-pill');
+    if (!pill) return;
+    // Update active pill.
+    var allPills = els.extCategoryFilter.querySelectorAll('.ext-category-pill');
+    allPills.forEach(function (p) { p.classList.remove('active'); });
+    pill.classList.add('active');
+    state.extensionStoreCategory = pill.dataset.category || 'All';
+    renderExtensionStore();
+  });
+}
+
+// Chrome Web Store link — open in new browser tab.
+if (els.extWebstoreLink) {
+  els.extWebstoreLink.addEventListener('click', function (e) {
+    e.preventDefault();
+    var href = els.extWebstoreLink.href || 'https://chromewebstore.google.com/';
+    invokeOptional('newTab', href);
+    closeExtensionStore();
+  });
+}
+
 
 api.on('extension-installed', function () {
   renderExtensionStore();

@@ -2440,28 +2440,47 @@ body.fullscreen .browser-stage {
 
 .download-popout {
   position: fixed;
-  z-index: 1450;
-  bottom: 16px;
+  z-index: 2200;
+  /* Anchored BELOW the browser chrome (navbar), aligned top-right like Chrome/Opera */
+  top: calc(var(--chrome-height) + 8px);
   right: 16px;
-  width: min(404px, calc(100vw - var(--app-rail-width) - 20px));
-  max-height: min(620px, calc(100vh - var(--chrome-height) - 32px));
+  width: min(420px, calc(100vw - var(--app-rail-width) - 32px));
+  max-height: min(640px, calc(100vh - var(--chrome-height) - 24px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
   color: var(--text-primary);
-  background: rgba(12, 18, 29, 0.985);
-  border: 1px solid rgba(150, 169, 203, 0.2);
+  background: rgba(10, 15, 26, 0.98);
+  border: 1px solid rgba(150, 169, 203, 0.22);
   border-radius: 16px;
   box-shadow:
-    0 28px 70px rgba(0, 0, 0, 0.68),
-    0 8px 24px rgba(0, 0, 0, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  animation: dl-popout-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+    0 32px 80px rgba(0, 0, 0, 0.72),
+    0 12px 32px rgba(0, 0, 0, 0.42),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  /* Slide DOWN from nav bar (not up from bottom) */
+  animation: dl-popout-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
   resize: both;
-  min-width: 300px;
+  min-width: 320px;
   min-height: 200px;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  /* Caret/arrow pointing up toward the download button */
+}
+
+/* Arrow pointer toward the download button in the nav bar */
+.download-popout::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  right: 72px;
+  width: 12px;
+  height: 6px;
+  background: rgba(10, 15, 26, 0.98);
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  border-left: 1px solid rgba(150, 169, 203, 0.18);
+  border-right: 1px solid rgba(150, 169, 203, 0.18);
+  pointer-events: none;
 }
 
 .download-popout.dragging {
@@ -2470,8 +2489,9 @@ body.fullscreen .browser-stage {
   cursor: grabbing;
 }
 
+/* Slides DOWN from top (from the nav bar button) */
 @keyframes dl-popout-in {
-  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  from { opacity: 0; transform: translateY(-12px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -3121,7 +3141,7 @@ kbd {
 
 .notification-stack {
   position: fixed;
-  z-index: 1400;
+  z-index: 2400;
   right: 12px;
   top: calc(var(--chrome-height) + 10px);
   width: min(360px, calc(100vw - 24px));
@@ -3133,7 +3153,7 @@ kbd {
 
 @media (min-width: 900px) {
   body.download-popout-open .notification-stack {
-    right: 426px;
+    right: 440px;
   }
 }
 
@@ -3592,6 +3612,12 @@ kbd {
     left: calc(var(--app-rail-width) + 8px);
     width: auto;
     max-height: calc(100vh - var(--chrome-height) - 16px);
+    min-width: unset;
+    resize: none;
+  }
+
+  .download-popout::before {
+    display: none;
   }
 
   .password-save-popout {
@@ -4846,24 +4872,42 @@ kbd {
   align-items: center;
   gap: 2px;
   margin: 0 2px;
+  /* Subtle separator on left to visually group extension icons */
+  padding-left: 4px;
+  border-left: 1px solid rgba(190, 205, 235, 0.1);
+}
+
+.extension-toolbar:empty {
+  border-left: none;
+  padding-left: 0;
 }
 
 .extension-toolbar-icon {
-  width: 28px;
-  height: 28px;
+  position: relative;
+  width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
-  transition: background 0.14s;
+  transition: background 0.14s, box-shadow 0.14s, transform 0.1s;
   padding: 0;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
 }
 
 .extension-toolbar-icon:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.06);
+  transform: scale(1.05);
+}
+
+/* Active state when popup is open */
+.extension-toolbar-icon.active {
+  background: rgba(93, 169, 255, 0.14);
+  border-color: rgba(93, 169, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(93, 169, 255, 0.15);
 }
 
 .extension-toolbar-icon img {
@@ -4960,6 +5004,38 @@ kbd {
   min-width: 0;
 }
 
+/* Header actions cluster (Web Store link + close button) */
+.ext-store-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Chrome Web Store link button */
+.ext-store-webstore-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  height: 30px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+}
+
+.ext-store-webstore-link:hover {
+  color: var(--cyan);
+  background: rgba(56, 217, 245, 0.07);
+  border-color: rgba(56, 217, 245, 0.25);
+}
+
 .ext-store-title-row h2 {
   margin: 0;
   font-size: 18px;
@@ -4996,14 +5072,24 @@ kbd {
 /* ── Search Row ── */
 .ext-store-search-row {
   display: flex;
-  gap: 10px;
-  margin-bottom: 14px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.ext-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-subtle);
+  pointer-events: none;
+  flex: 0 0 14px;
 }
 
 .ext-store-search {
   flex: 1;
   height: 38px;
-  padding: 0 14px;
+  padding: 0 14px 0 34px;  /* left padding for search icon */
   color: var(--text-primary);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -5017,6 +5103,7 @@ kbd {
 .ext-store-search:focus {
   border-color: var(--cyan);
   background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(56, 217, 245, 0.12);
 }
 
 .ext-store-search::placeholder {
@@ -5047,6 +5134,60 @@ kbd {
   border-color: rgba(255, 255, 255, 0.18);
 }
 
+/* ── Category Filter Pills ── */
+.ext-category-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+}
+
+.ext-category-pill {
+  height: 28px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.14s, background 0.14s, border-color 0.14s;
+}
+
+.ext-category-pill:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.ext-category-pill.active {
+  color: var(--cyan);
+  background: rgba(56, 217, 245, 0.1);
+  border-color: rgba(56, 217, 245, 0.3);
+}
+
+/* ── Installed count badge ── */
+.ext-installed-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #0d1117;
+  background: var(--cyan);
+  border-radius: 9px;
+  margin-left: 4px;
+  line-height: 1;
+  vertical-align: middle;
+}
+
 /* ── Tabs ── */
 .ext-store-tabs {
   display: flex;
@@ -5054,6 +5195,8 @@ kbd {
 }
 
 .ext-store-tab {
+  display: flex;
+  align-items: center;
   padding: 8px 16px;
   color: var(--text-muted);
   background: transparent;
@@ -5160,13 +5303,46 @@ kbd {
 
 .ext-card-category {
   display: inline-block;
-  margin-top: 8px;
   padding: 2px 8px;
   font-size: 10px;
   font-weight: 650;
   color: var(--text-subtle);
   background: rgba(255, 255, 255, 0.05);
   border-radius: 5px;
+}
+
+/* Meta row: holds category pill, version, and store link */
+.ext-card-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* "View in Store" link-style button */
+.ext-card-store-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--cyan);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.12s, background 0.12s;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.ext-card-store-link:hover {
+  opacity: 1;
+  background: rgba(56, 217, 245, 0.08);
 }
 
 .ext-card-actions {

@@ -236,6 +236,10 @@ const api = {
   uninstallExtension: (id) => ipcRenderer.invoke('uninstall-extension', id),
   getExtensionPopup: (id) => ipcRenderer.invoke('get-extension-popup', id),
   getExtensionOptionsUrl: (id) => ipcRenderer.invoke('get-extension-options-url', id),
+  // Open an extension's popup as a native floating window near the toolbar icon (Opera-style).
+  // screenX/screenY are the screen-space coordinates of the button's bottom-left corner.
+  openExtensionPopup: (id, screenX, screenY) =>
+    ipcRenderer.invoke('open-extension-popup', { id, screenX, screenY }),
 };
 
 contextBridge.exposeInMainWorld('electronAPI', api);

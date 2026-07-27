@@ -5038,7 +5038,97 @@ function registerIpcHandlers() {
     if (!extensionManager) return null;
     return extensionManager.getExtensionOptionsUrl(boundedString(id, 'extension id', 64, false));
   });
+
+  // ── Opera-style Extension Popup Window ──
+  // Creates a small frameless child BrowserWindow anchored near the toolbar icon.
+  let activeExtPopup = null;
+  registerHandler('open-extension-popup', async (event, payload) => {
+    if (!extensionManager || !mainWindow) return { success: false, reason: 'Not ready' };
+
+    // Close any existing popup first.
+    if (activeExtPopup && !activeExtPopup.isDestroyed()) {
+      activeExtPopup.close();
+      activeExtPopup = null;
+    }
+
+    const extId = boundedString(payload && payload.id, 'extension id', 64, false);
+    const screenX = typeof payload.screenX === 'number' ? Math.round(payload.screenX) : 0;
+    const screenY = typeof payload.screenY === 'number' ? Math.round(payload.screenY) : 0;
+
+    const popup = extensionManager.getExtensionPopup(extId);
+    const optUrl = extensionManager.getExtensionOptionsUrl(extId);
+
+    // If neither popup nor options, just signal the UI to show a notification.
+    if (!popup && !optUrl) {
+      return { success: false, reason: 'no-popup' };
+    }
+
+    const popupUrl = popup ? popup.url : optUrl;
+    const popupWidth = popup ? (popup.width || 380) : 480;
+    const popupHeight = popup ? (popup.height || 560) : 620;
+
+    // Clamp position to keep the popup on screen.
+    const { screen } = require('electron');
+    const display = screen.getDisplayNearestPoint({ x: screenX, y: screenY });
+    const dBounds = display.workArea;
+    let winX = Math.round(screenX);
+    let winY = Math.round(screenY + 6); // 6px below the toolbar button
+    // Don't let it overflow right edge.
+    if (winX + popupWidth > dBounds.x + dBounds.width) {
+      winX = dBounds.x + dBounds.width - popupWidth - 8;
+    }
+    if (winY + popupHeight > dBounds.y + dBounds.height) {
+      winY = Math.max(dBounds.y, dBounds.y + dBounds.height - popupHeight - 8);
+    }
+
+    try {
+      const extWin = new BrowserWindow({
+        parent: mainWindow,
+        x: winX,
+        y: winY,
+        width: popupWidth,
+        height: popupHeight,
+        minWidth: 200,
+        minHeight: 100,
+        frame: false,
+        titleBarStyle: 'hidden',
+        resizable: true,
+        movable: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        transparent: false,
+        backgroundColor: '#1a1f2e',
+        hasShadow: true,
+        webPreferences: {
+          partition: NORMAL_PARTITION,
+          contextIsolation: false,
+          nodeIntegration: false,
+          sandbox: false,
+          allowRunningInsecureContent: false,
+        },
+      });
+
+      // Auto-close on blur.
+      extWin.on('blur', () => {
+        if (!extWin.isDestroyed()) extWin.close();
+      });
+      extWin.on('closed', () => {
+        if (activeExtPopup === extWin) activeExtPopup = null;
+      });
+
+      // Suppress new windows from within the popup.
+      extWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
+      await extWin.loadURL(popupUrl);
+      extWin.show();
+      activeExtPopup = extWin;
+      return { success: true };
+    } catch (err) {
+      return { success: false, reason: err.message };
+    }
+  });
 }
+
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
