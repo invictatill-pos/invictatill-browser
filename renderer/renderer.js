@@ -421,6 +421,9 @@ function updateViewLayout() {
     left = Math.max(left, Math.ceil(els.drawer.getBoundingClientRect().right));
   }
   if (state.menuOpen && window.innerWidth > 600) right = Math.max(right, 304);
+  if (state.downloadPopoutOpen && window.innerWidth > 720 && els.downloadPopout) {
+    right = Math.max(right, Math.ceil(els.downloadPopout.getBoundingClientRect().width + 8));
+  }
   if (state.passwordSaveRequest && window.innerWidth > 720 && els.passwordSavePopout) {
     right = Math.max(right, Math.ceil(els.passwordSavePopout.getBoundingClientRect().width + 12));
   }
