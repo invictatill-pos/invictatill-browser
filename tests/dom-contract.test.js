@@ -34,7 +34,6 @@ test('find-in-page controls and accessible landmarks exist', () => {
   assert.match(html, /aria-live=/);
   assert.match(html, /id=["']screen-picker-modal["'][^>]*aria-labelledby=["']screen-picker-title["']/);
   assert.ok(idSet.has('screen-picker-origin'));
-  assert.ok(idSet.has('screen-picker-audio-label'));
   for (const id of ['update-settings-card', 'update-settings-status', 'btn-check-updates', 'btn-settings-install-update']) {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }

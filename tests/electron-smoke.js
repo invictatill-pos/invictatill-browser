@@ -701,7 +701,6 @@ async function main() {
     assert.equal(requestOutcome.pickerVisible, true,
       `Display-media picker did not open: ${JSON.stringify(requestOutcome)}`);
     assert.match(await window.locator('#screen-picker-origin').textContent(), /127\.0\.0\.1/);
-    assert.equal(await window.locator('#chk-share-audio').isEnabled(), true);
     const pickerLayout = await window.evaluate(() => {
       const rect = (selector) => {
         const bounds = document.querySelector(selector).getBoundingClientRect();
@@ -783,7 +782,6 @@ async function main() {
       })()`, true);
     }, pageUrl).catch((error) => ({ cancelled: false, error: error.stack || String(error) }));
     await picker.waitFor({ state: 'visible', timeout: 15_000 });
-    assert.equal(await window.locator('#chk-share-audio').isDisabled(), true);
     await window.keyboard.press('Escape');
     await picker.waitFor({ state: 'hidden' });
     const cancellation = await cancelledDisplayRequest;

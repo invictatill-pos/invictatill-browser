@@ -161,11 +161,9 @@ const els = {
   screenPickerPreviewTitle: $('screen-picker-preview-title'),
   screenPickerPreviewPrompt: $('screen-picker-preview-prompt'),
   screenPickerOrigin: $('screen-picker-origin'),
-  screenPickerAudioLabel: $('screen-picker-audio-label'),
   btnCancelScreenPicker: $('btn-cancel-screen-picker'),
   btnCancelScreenPickerX: $('btn-cancel-screen-picker-x'),
   btnSubmitScreenPicker: $('btn-submit-screen-picker'),
-  chkShareAudio: $('chk-share-audio'),
   // Extension Store elements.
   extensionToolbar: $('extension-toolbar'),
   btnExtensions: $('btn-extensions'),
@@ -419,9 +417,6 @@ function updateViewLayout() {
     left = Math.max(left, Math.ceil(els.drawer.getBoundingClientRect().right));
   }
   if (state.menuOpen && window.innerWidth > 600) right = Math.max(right, 304);
-  if (state.downloadPopoutOpen && window.innerWidth > 720 && els.downloadPopout) {
-    right = Math.max(right, Math.ceil(els.downloadPopout.getBoundingClientRect().width + 12));
-  }
   if (state.passwordSaveRequest && window.innerWidth > 720 && els.passwordSavePopout) {
     right = Math.max(right, Math.ceil(els.passwordSavePopout.getBoundingClientRect().width + 12));
   }
@@ -4534,6 +4529,7 @@ async function initialize() {
     }
   } catch (error) {}
   updateViewLayout();
+  renderExtensionToolbar();
   if (!state.focusTicker) state.focusTicker = window.setInterval(renderFocusCountdown, 1000);
 }
 
