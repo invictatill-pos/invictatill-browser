@@ -417,6 +417,11 @@ function isAllowedRemoteUrl(candidate, allowBlank) {
   }
 }
 
+function isAllowedExtensionUrl(candidate) {
+  if (typeof candidate !== 'string') return false;
+  return /^chrome-extension:\/\/[a-z]{32}\//i.test(candidate);
+}
+
 function isNewTabUrl(url) {
   const value = String(url || '').trim().toLowerCase();
   return !value || value === 'about:blank' || value === 'invicta://newtab' || value === 'invictatill://newtab' || value === 'chrome://newtab';
@@ -903,8 +908,7 @@ function setSplitScreen(options) {
 
 function isAllowedNavigationUrl(candidate) {
   if (isAllowedRemoteUrl(candidate, true)) return true;
-  // Allow blob: and data: navigations that originate from valid pages
-  // (used by report generators for file downloads and previews).
+  if (isAllowedExtensionUrl(candidate)) return true;
   if (/^blob:https?:\/\//i.test(candidate)) return true;
   if (/^data:application\/(pdf|octet-stream|vnd\.[a-z])/i.test(candidate)) return true;
   return false;
@@ -1276,10 +1280,14 @@ async function showContextMenu(tab, params) {
       label: 'Save Link As',
       click: () => contents.downloadURL(linkUrl),
     });
+    template.push({
+      label: 'Copy Link Text',
+      click: () => clipboard.writeText(params.linkText || params.anchorText || ''),
+      enabled: Boolean(params.linkText || params.anchorText),
+    });
     template.push({ type: 'separator' });
   }
 
-  // Image context items.
   if (params.mediaType === 'image' && params.srcURL) {
     const imgUrl = safeRemoteUrl(params.srcURL) || params.srcURL;
     template.push({
@@ -1297,6 +1305,27 @@ async function showContextMenu(tab, params) {
     template.push({
       label: 'Copy Image Address',
       click: () => clipboard.writeText(imgUrl),
+    });
+    template.push({
+      label: 'Search Image with Google',
+      click: () => createTab('https://lens.google.com/uploadbyurl?url=' + encodeURIComponent(imgUrl), { activate: true }),
+    });
+    template.push({ type: 'separator' });
+  }
+
+  if ((params.mediaType === 'video' || params.mediaType === 'audio') && params.srcURL) {
+    const mediaUrl = safeRemoteUrl(params.srcURL) || params.srcURL;
+    template.push({
+      label: 'Open ' + params.mediaType.charAt(0).toUpperCase() + params.mediaType.slice(1) + ' in New Tab',
+      click: () => createTab(mediaUrl, { activate: true }),
+    });
+    template.push({
+      label: 'Save ' + params.mediaType.charAt(0).toUpperCase() + params.mediaType.slice(1) + ' As\u2026',
+      click: () => contents.downloadURL(mediaUrl),
+    });
+    template.push({
+      label: 'Copy ' + params.mediaType.charAt(0).toUpperCase() + params.mediaType.slice(1) + ' Address',
+      click: () => clipboard.writeText(mediaUrl),
     });
     template.push({ type: 'separator' });
   }
@@ -1319,8 +1348,8 @@ async function showContextMenu(tab, params) {
       template.push({ type: 'separator' });
     }
     template.push({ role: 'undo' }, { role: 'redo' }, { type: 'separator' });
-    template.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' });
-    template.push({ label: 'Select All', click: () => contents.selectAll() });
+    template.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'delete' });
+    template.push({ role: 'selectAll' });
     template.push({ type: 'separator' });
   } else if (params.selectionText) {
     template.push({ role: 'copy' });
@@ -1361,7 +1390,7 @@ async function showContextMenu(tab, params) {
   template.push({ label: 'Reload', click: () => reloadTab(tab.id, false) });
   template.push({ type: 'separator' });
   template.push({
-    label: 'Save Page As…',
+    label: 'Save Page As\u2026',
     click: () => {
       const pageUrl = contents.getURL();
       if (isAllowedRemoteUrl(pageUrl, false)) {
@@ -1370,7 +1399,7 @@ async function showContextMenu(tab, params) {
     },
   });
   template.push({
-    label: 'Print…',
+    label: 'Print\u2026',
     accelerator: 'Ctrl+P',
     click: () => contents.print(),
   });

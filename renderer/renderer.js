@@ -1044,6 +1044,7 @@ async function openSiteInfoModal() {
       try {
         if (typeof api.setSitePermission === 'function') {
           await api.setSitePermission(tab.url, perm.key, select.value);
+          updatePermissionIndicator(tab.url);
           notify(perm.label + ' set to ' + select.value + ' for ' + origin, 'success', 3000);
         }
       } catch (err) {
@@ -1716,6 +1717,7 @@ async function resetSitePermissions() {
       }
     }
     notify('Reset all site permissions', 'info', 3000);
+    updatePermissionIndicator(tab.url);
     await openSiteInfoModal();
   } catch (error) {
     notify('Failed to reset permissions: ' + errorMessage(error), 'error');

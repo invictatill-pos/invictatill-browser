@@ -490,7 +490,9 @@ function createExtensionManager(options) {
       if (!entry || entry.enabled === false) continue;
       const extPath = entry.path || path.join(extensionsRoot, extId);
       if (!fs.existsSync(path.join(extPath, 'manifest.json'))) continue;
-      targetSession.loadExtension(extPath, { allowFileAccess: true }).catch(() => {});
+      targetSession.loadExtension(extPath, { allowFileAccess: true }).catch(function (err) {
+        if (isDev) console.error('Failed to load extension ' + extId + ' into session:', err.message);
+      });
     }
   }
 
@@ -519,22 +521,27 @@ function createExtensionManager(options) {
     if (loadedExtensions.has(extId)) return loadedExtensions.get(extId);
 
     const extPath = entry.path || path.join(extensionsRoot, extId);
-    if (!fs.existsSync(path.join(extPath, 'manifest.json'))) return null;
+    if (!fs.existsSync(path.join(extPath, 'manifest.json'))) {
+      throw new Error('Extension manifest not found');
+    }
 
-    let lastExt = null;
+    var lastExt = null;
+    var lastError = null;
     const targets = allSessions();
     for (const targetSession of targets) {
       try {
         const ext = await targetSession.loadExtension(extPath, { allowFileAccess: true });
         if (!lastExt) lastExt = ext;
       } catch (error) {
+        lastError = error;
         if (isDev) console.error('Failed to load extension ' + extId + ' into session:', error.message);
       }
     }
-    if (lastExt) {
-      loadedExtensions.set(extId, lastExt);
-      if (onStatusChange) onStatusChange('loaded', extId);
+    if (!lastExt) {
+      throw new Error(lastError ? lastError.message : 'Failed to load extension into any session');
     }
+    loadedExtensions.set(extId, lastExt);
+    if (onStatusChange) onStatusChange('loaded', extId);
     return lastExt;
   }
 
