@@ -1263,8 +1263,40 @@ async function showContextMenu(tab, params) {
       },
     });
     template.push({
+      label: 'Open Link in New Window',
+      click: () => {
+        createTab(linkUrl, { activate: true });
+      },
+    });
+    template.push({
       label: 'Copy Link Address',
       click: () => clipboard.writeText(linkUrl),
+    });
+    template.push({
+      label: 'Save Link As',
+      click: () => contents.downloadURL(linkUrl),
+    });
+    template.push({ type: 'separator' });
+  }
+
+  // Image context items.
+  if (params.mediaType === 'image' && params.srcURL) {
+    const imgUrl = safeRemoteUrl(params.srcURL) || params.srcURL;
+    template.push({
+      label: 'Open Image in New Tab',
+      click: () => createTab(imgUrl, { activate: true }),
+    });
+    template.push({
+      label: 'Save Image As',
+      click: () => contents.downloadURL(imgUrl),
+    });
+    template.push({
+      label: 'Copy Image',
+      click: () => contents.copyImageAt(params.x, params.y),
+    });
+    template.push({
+      label: 'Copy Image Address',
+      click: () => clipboard.writeText(imgUrl),
     });
     template.push({ type: 'separator' });
   }
@@ -1288,9 +1320,18 @@ async function showContextMenu(tab, params) {
     }
     template.push({ role: 'undo' }, { role: 'redo' }, { type: 'separator' });
     template.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' });
+    template.push({ label: 'Select All', click: () => contents.selectAll() });
     template.push({ type: 'separator' });
   } else if (params.selectionText) {
-    template.push({ role: 'copy' }, { type: 'separator' });
+    template.push({ role: 'copy' });
+    const selText = params.selectionText.trim().slice(0, 100);
+    if (selText) {
+      template.push({
+        label: 'Search "' + (selText.length > 30 ? selText.slice(0, 30) + '\u2026' : selText) + '" on Google',
+        click: () => createTab('https://www.google.com/search?q=' + encodeURIComponent(selText), { activate: true }),
+      });
+    }
+    template.push({ type: 'separator' });
   }
 
   if (writingCapture && writingFrame) {
@@ -1315,18 +1356,24 @@ async function showContextMenu(tab, params) {
     clearWritingTarget(writingFrame, writingToken);
   }
 
-  template.push({
-    label: 'Back',
-    enabled: canGoBack(contents),
-    click: () => goBack(tab.id),
-  });
-  template.push({
-    label: 'Forward',
-    enabled: canGoForward(contents),
-    click: () => goForward(tab.id),
-  });
+  template.push({ label: 'Back', enabled: canGoBack(contents), click: () => goBack(tab.id) });
+  template.push({ label: 'Forward', enabled: canGoForward(contents), click: () => goForward(tab.id) });
   template.push({ label: 'Reload', click: () => reloadTab(tab.id, false) });
   template.push({ type: 'separator' });
+  template.push({
+    label: 'Save Page As…',
+    click: () => {
+      const pageUrl = contents.getURL();
+      if (isAllowedRemoteUrl(pageUrl, false)) {
+        contents.downloadURL(pageUrl);
+      }
+    },
+  });
+  template.push({
+    label: 'Print…',
+    accelerator: 'Ctrl+P',
+    click: () => contents.print(),
+  });
   template.push({
     label: tab.isMuted ? 'Unmute Tab' : 'Mute Tab',
     click: () => setTabMuted(tab.id, !tab.isMuted),
@@ -1399,7 +1446,22 @@ async function showWhatsappContextMenu(params) {
       label: 'Open Link in New Tab',
       click: () => createTab(linkUrl, { activate: true }),
     });
+    template.push({
+      label: 'Open Link in New Window',
+      click: () => createTab(linkUrl, { activate: true }),
+    });
     template.push({ label: 'Copy Link Address', click: () => clipboard.writeText(linkUrl) });
+    template.push({ label: 'Save Link As', click: () => contents.downloadURL(linkUrl) });
+    template.push({ type: 'separator' });
+  }
+
+  // Image context items.
+  if (params.mediaType === 'image' && params.srcURL) {
+    const imgUrl = safeRemoteUrl(params.srcURL) || params.srcURL;
+    template.push({ label: 'Open Image in New Tab', click: () => createTab(imgUrl, { activate: true }) });
+    template.push({ label: 'Save Image As', click: () => contents.downloadURL(imgUrl) });
+    template.push({ label: 'Copy Image', click: () => contents.copyImageAt(params.x, params.y) });
+    template.push({ label: 'Copy Image Address', click: () => clipboard.writeText(imgUrl) });
     template.push({ type: 'separator' });
   }
 
@@ -1419,9 +1481,18 @@ async function showWhatsappContextMenu(params) {
     }
     template.push({ role: 'undo' }, { role: 'redo' }, { type: 'separator' });
     template.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' });
+    template.push({ label: 'Select All', click: () => contents.selectAll() });
     template.push({ type: 'separator' });
   } else if (params.selectionText) {
-    template.push({ role: 'copy' }, { type: 'separator' });
+    template.push({ role: 'copy' });
+    const selText = params.selectionText.trim().slice(0, 100);
+    if (selText) {
+      template.push({
+        label: 'Search "' + (selText.length > 30 ? selText.slice(0, 30) + '\u2026' : selText) + '" on Google',
+        click: () => createTab('https://www.google.com/search?q=' + encodeURIComponent(selText), { activate: true }),
+      });
+    }
+    template.push({ type: 'separator' });
   }
 
   if (writingCapture && writingFrame) {
@@ -1520,6 +1591,24 @@ function getWhatsappSession() {
   configurePermissions(whatsappSession);
   configureScreenSharePicker(whatsappSession);
   configureDownloads(whatsappSession);
+
+  // Pre-authorize microphone and camera for WhatsApp Web so users don't get
+  // a native system dialog — identical to selecting "Always allow" once.
+  // This mirrors what Chrome does when users previously granted permission.
+  const waOrigin = new URL(WHATSAPP_WEB_URL).origin;
+  const waPreGrant = [
+    waOrigin + '|microphone',
+    waOrigin + '|media:audio',
+    waOrigin + '|camera',
+    waOrigin + '|media:video',
+  ];
+  for (const key of waPreGrant) {
+    if (permissionGrants[key] === undefined) {
+      permissionGrants[key] = true;
+    }
+  }
+  savePermissionGrants();
+
   return whatsappSession;
 }
 
@@ -1607,8 +1696,8 @@ function ensureWhatsappSurface() {
   return whatsappSurface;
 }
 
-const WHATSAPP_BASE_WIDTH = 700;
-const WHATSAPP_MIN_ZOOM = 0.6;
+const WHATSAPP_BASE_WIDTH = 750;
+const WHATSAPP_MIN_ZOOM = 0.8;
 
 function resizeWhatsappView() {
   const surface = whatsappSurface;
@@ -1687,7 +1776,20 @@ function attachTabEvents(tab) {
   const contents = tab.view.webContents;
 
   attachNavigationGuards(contents);
-  contents.on('will-navigate', (event, url) => applyTabUserAgent(tab, url));
+  contents.on('will-navigate', (event, url) => {
+    applyTabUserAgent(tab, url);
+    // Apply Chrome-compatible user agent for Chrome Web Store so the
+    // "Add to Chrome" button appears instead of "Switch to Chrome".
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname === 'chromewebstore.google.com' || parsed.hostname === 'chrome.google.com') {
+        const chromeUA = chromeCompatibilityUserAgent();
+        if (contents.getUserAgent() !== chromeUA) {
+          contents.setUserAgent(chromeUA);
+        }
+      }
+    } catch (e) {}
+  });
   contents.on('will-redirect', (event, url) => applyTabUserAgent(tab, url));
   contents.setWindowOpenHandler((details) => {
     const url = safeRemoteUrl(details.url);
@@ -2506,6 +2608,8 @@ const PROMPTABLE_PERMISSIONS = new Set([
   'geolocation',
   'notifications',
   'clipboard-read',
+  'clipboard-write',
+  'clipboard-sanitized-write',
   'pointerLock',
   'fullscreen',
   'display-capture',
@@ -2646,12 +2750,15 @@ function configurePermissions(targetSession) {
       if (response.response === 1) {
         for (const key of keys) permissionGrants[key] = true;
         savePermissionGrants();
+        sendToShell('permission-state-changed', { origin, permission, granted: true, remembered: true });
         finish(true);
       } else if (response.response === 0) {
+        sendToShell('permission-state-changed', { origin, permission, granted: true, remembered: false });
         finish(true);
       } else {
         for (const key of keys) permissionGrants[key] = false;
         savePermissionGrants();
+        sendToShell('permission-state-changed', { origin, permission, granted: false, remembered: true });
         finish(false);
       }
     } catch (error) {

@@ -695,6 +695,73 @@ textarea::placeholder {
   color: var(--orange);
 }
 
+/* ── Permission indicator bar ──────────────────────────────────────── */
+.permission-indicator-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.permission-indicator-bar.hidden {
+  display: none;
+}
+
+.perm-indicator-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid transparent;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  padding: 0;
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.perm-indicator-pill:hover {
+  background: rgba(93, 169, 255, 0.14);
+  border-color: rgba(93, 169, 255, 0.3);
+  transform: scale(1.12);
+}
+
+/* Microphone active — teal glow */
+.perm-indicator-pill[data-perm="microphone"] {
+  color: var(--green);
+}
+
+/* Camera active — blue glow */
+.perm-indicator-pill[data-perm="camera"] {
+  color: var(--blue);
+}
+
+/* Location — orange glow */
+.perm-indicator-pill[data-perm="geolocation"] {
+  color: var(--orange);
+}
+
+/* Notifications — purple */
+.perm-indicator-pill[data-perm="notifications"] {
+  color: var(--purple);
+}
+
+/* Screen share — cyan */
+.perm-indicator-pill[data-perm="display-capture"] {
+  color: var(--cyan);
+}
+
+/* Separator between indicator bar and bookmark */
+.permission-indicator-bar:not(.hidden) + .omnibox-action {
+  margin-left: 2px;
+}
+
+
 .action-button[aria-pressed="true"] {
   color: var(--cyan);
   background: rgba(56, 217, 245, 0.12);

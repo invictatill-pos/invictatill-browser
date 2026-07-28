@@ -125,6 +125,7 @@ const els = {
   btnCloseSiteInfo: $('btn-close-site-info'),
   btnCloseSiteInfoDone: $('btn-close-site-info-done'),
   btnResetSitePermissions: $('btn-reset-site-permissions'),
+  permissionIndicatorBar: $('permission-indicator-bar'),
   btnZoomOut: $('btn-zoom-out'),
   btnZoomIn: $('btn-zoom-in'),
   btnZoomReset: $('btn-zoom-reset'),
@@ -919,6 +920,61 @@ function updateSecurityIndicator(url) {
     els.securityText.textContent = 'Invalid';
     indicator.title = 'Invalid address';
   }
+}
+
+const PERM_INDICATOR_META = [
+  { key: 'microphone', icon: '🎙️', label: 'Microphone active' },
+  { key: 'camera', icon: '📷', label: 'Camera active' },
+  { key: 'geolocation', icon: '📍', label: 'Location access' },
+  { key: 'notifications', icon: '🔔', label: 'Notifications allowed' },
+  { key: 'display-capture', icon: '🖥️', label: 'Screen sharing' },
+  { key: 'clipboard-read', icon: '📋', label: 'Clipboard read' },
+];
+
+// Update the compact permission pill row in the address bar.
+async function updatePermissionIndicator(url) {
+  const bar = els.permissionIndicatorBar;
+  if (!bar) return;
+  // Clear existing pills.
+  while (bar.firstChild) bar.removeChild(bar.firstChild);
+  bar.classList.add('hidden');
+
+  if (!url || isNewTabUrl(url)) return;
+  let origin = '';
+  try {
+    const p = new URL(url);
+    if (p.protocol !== 'https:' && p.protocol !== 'http:') return;
+    origin = p.origin;
+  } catch (e) { return; }
+
+  let siteData = { origin, permissions: {} };
+  try {
+    if (typeof api.getSitePermissions === 'function') {
+      siteData = await api.getSitePermissions(url);
+    }
+  } catch (e) {}
+
+  const granted = PERM_INDICATOR_META.filter(function (m) {
+    return siteData && siteData.permissions && siteData.permissions[m.key] === 'allow';
+  });
+
+  if (granted.length === 0) return;
+
+  granted.forEach(function (m) {
+    const pill = document.createElement('button');
+    pill.className = 'perm-indicator-pill';
+    pill.dataset.perm = m.key;
+    pill.textContent = m.icon;
+    pill.title = m.label + ' — click to manage permissions';
+    pill.setAttribute('aria-label', m.label);
+    pill.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openSiteInfoModal();
+    });
+    bar.appendChild(pill);
+  });
+
+  bar.classList.remove('hidden');
 }
 
 const PERM_METADATA = [
@@ -3604,6 +3660,9 @@ function registerBrowserEvents() {
       if (channel === 'tab-navigated') {
         loadHistory();
         updateBookmarkButton();
+        // Refresh address-bar permission pills on every navigation.
+        const tab = activeTab();
+        if (tab && tab.url) updatePermissionIndicator(tab.url).catch(function () {});
       }
     });
   });
@@ -3621,6 +3680,8 @@ function registerBrowserEvents() {
       }
       renderTabs();
       renderBrowserControls();
+      // Refresh permission indicator for the newly active tab.
+      if (tab.url) updatePermissionIndicator(tab.url).catch(function () {});
     } else {
       refreshBrowserState();
     }
@@ -3669,6 +3730,20 @@ function registerBrowserEvents() {
   registerEvent('update-error', handleUpdateError);
   registerEvent('update-installing', handleUpdateInstalling);
   registerEvent('focus-state', applyFocusState);
+  // Permission events: refresh indicator bar whenever a permission changes.
+  registerEvent('permission-state-changed', function (payload) {
+    const tab = activeTab();
+    const url = tab && tab.url ? tab.url : '';
+    // Only refresh if the changed origin matches the current tab.
+    try {
+      if (payload && payload.origin && url) {
+        const tabOrigin = new URL(url).origin;
+        if (tabOrigin === payload.origin) {
+          updatePermissionIndicator(url).catch(function () {});
+        }
+      }
+    } catch (e) {}
+  });
 }
 
 function bindClick(id, handler) {

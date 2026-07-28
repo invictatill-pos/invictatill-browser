@@ -33,6 +33,7 @@ const allowedEvents = new Set([
   'close-screen-picker',
   'extension-installed',
   'extension-status-changed',
+  'permission-state-changed',
 ]);
 
 const eventWrappers = new Map();
