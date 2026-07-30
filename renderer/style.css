@@ -954,28 +954,15 @@ body.fullscreen .whatsapp-panel {
 
 .whatsapp-panel {
   position: fixed;
-  /* OVERLAY mode: float above the browser page, don't push it */
-  z-index: 9800;
+  z-index: 875;
   top: var(--chrome-height);
   bottom: 0;
   left: var(--app-rail-width);
   width: var(--whatsapp-panel-width);
-  /* Clamp for any window size */
-  max-width: calc(100vw - var(--app-rail-width));
-  min-width: 300px;
   overflow: hidden;
-  background: linear-gradient(180deg, #0d1f28 0%, #0b141a 60%);
-  border-right: 1px solid rgba(37, 211, 102, 0.2);
-  box-shadow:
-    20px 0 60px rgba(0, 0, 0, 0.55),
-    4px 0 16px rgba(37, 211, 102, 0.06);
-  animation: wa-panel-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
-  transform-origin: left center;
-}
-
-@keyframes wa-panel-in {
-  from { opacity: 0; transform: translateX(-12px); }
-  to   { opacity: 1; transform: translateX(0); }
+  background: #0b141a;
+  border-right: 1px solid rgba(64, 84, 96, 0.8);
+  box-shadow: 18px 0 50px rgba(0, 0, 0, 0.35);
 }
 
 .whatsapp-panel-resize-handle {
@@ -1230,11 +1217,8 @@ body.whatsapp-resizing .whatsapp-panel {
   background: var(--bg-canvas);
 }
 
-/* WhatsApp panel is now OVERLAY mode — browser-stage does NOT shrink */
-/* The panel floats on top of the content */
 body.whatsapp-panel-open .browser-stage {
-  /* No change — overlay mode means page stays full width */
-  left: var(--app-rail-width);
+  left: calc(var(--app-rail-width) + var(--whatsapp-panel-width));
 }
 
 body.ai-panel-open .browser-stage {
@@ -2587,52 +2571,56 @@ body.fullscreen .browser-stage {
 
 .download-popout {
   position: fixed;
-  /* Opera-style: fixed bottom-right, NON-MOVABLE — always on top of everything */
-  z-index: 9900;
-  bottom: 24px;
-  right: 20px;
-  top: auto !important;
-  left: auto !important;
-  width: min(420px, calc(100vw - var(--app-rail-width) - 40px));
-  max-height: min(580px, calc(100vh - var(--chrome-height) - 48px));
+  z-index: 2200;
+  /* Anchored BELOW the browser chrome (navbar), aligned top-right */
+  top: calc(var(--chrome-height) + 8px);
+  right: 16px;
+  width: min(420px, calc(100vw - var(--app-rail-width) - 32px));
+  max-height: min(640px, calc(100vh - var(--chrome-height) - 24px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
   color: var(--text-primary);
-  background: linear-gradient(160deg, rgba(12, 18, 32, 0.99) 0%, rgba(8, 13, 22, 0.99) 100%);
-  border: 1px solid rgba(56, 217, 245, 0.25);
-  border-bottom: 1px solid rgba(56, 217, 245, 0.15);
-  border-radius: 18px 18px 14px 14px;
+  background: rgba(10, 15, 26, 0.98);
+  border: 1px solid rgba(150, 169, 203, 0.22);
+  border-radius: 16px;
   box-shadow:
-    0 -4px 24px rgba(56, 217, 245, 0.08),
-    0 32px 80px rgba(0, 0, 0, 0.78),
-    0 12px 32px rgba(0, 0, 0, 0.52),
-    inset 0 1px 0 rgba(56, 217, 245, 0.12);
-  animation: dl-popout-slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
-  /* No resize — Opera style is fixed-size */
-  resize: none;
-  min-width: 300px;
-  min-height: 160px;
-  backdrop-filter: blur(32px) saturate(1.6);
-  -webkit-backdrop-filter: blur(32px) saturate(1.6);
+    0 32px 80px rgba(0, 0, 0, 0.72),
+    0 12px 32px rgba(0, 0, 0, 0.42),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  animation: dl-popout-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  resize: both;
+  min-width: 320px;
+  min-height: 200px;
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
 }
 
-/* Subtle top accent glow line — Opera style indicator */
+/* Arrow pointer toward the download button in the nav bar */
 .download-popout::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 12px;
-  right: 12px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(56, 217, 245, 0.6) 40%, rgba(167, 139, 250, 0.4) 60%, transparent);
+  top: -6px;
+  right: 72px;
+  width: 12px;
+  height: 6px;
+  background: rgba(10, 15, 26, 0.98);
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+  border-left: 1px solid rgba(150, 169, 203, 0.18);
+  border-right: 1px solid rgba(150, 169, 203, 0.18);
   pointer-events: none;
-  border-radius: 1px;
 }
 
-/* Slides UP from bottom — Opera bottom-bar style */
-@keyframes dl-popout-slide-up {
-  from { opacity: 0; transform: translateY(20px) scale(0.96); }
+.download-popout.dragging {
+  opacity: 0.92;
+  transition: none;
+  cursor: grabbing;
+}
+
+/* Slides DOWN from top (from the nav bar button) */
+@keyframes dl-popout-in {
+  from { opacity: 0; transform: translateY(-12px) scale(0.97); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
@@ -2642,15 +2630,18 @@ body.fullscreen .browser-stage {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  min-height: 64px;
-  padding: 12px 14px 12px 16px;
-  background: linear-gradient(135deg, rgba(56, 217, 245, 0.09) 0%, rgba(54, 211, 153, 0.06) 60%, transparent 100%);
-  border-bottom: 1px solid rgba(56, 217, 245, 0.14);
+  min-height: 68px;
+  padding: 13px 14px 13px 16px;
+  background: linear-gradient(135deg, rgba(54, 211, 153, 0.11), rgba(56, 217, 245, 0.035) 70%);
+  border-bottom: 1px solid rgba(190, 205, 235, 0.11);
   flex-shrink: 0;
-  /* Non-movable — no grab cursor */
-  cursor: default;
+  cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.download-popout-header:active {
+  cursor: grabbing;
 }
 
 .download-popout-title {
@@ -3745,15 +3736,17 @@ kbd {
   }
 
   .download-popout {
-    /* Stay bottom-right on small screens too */
-    bottom: 16px;
-    right: 10px;
-    top: auto !important;
-    left: auto !important;
-    width: min(340px, calc(100vw - var(--app-rail-width) - 20px));
-    max-height: min(480px, calc(100vh - var(--chrome-height) - 36px));
+    top: calc(var(--chrome-height) + 8px);
+    right: 8px;
+    left: calc(var(--app-rail-width) + 8px);
+    width: auto;
+    max-height: calc(100vh - var(--chrome-height) - 16px);
     min-width: unset;
     resize: none;
+  }
+
+  .download-popout::before {
+    display: none;
   }
 
   .password-save-popout {
@@ -3772,14 +3765,11 @@ kbd {
 @media (max-width: 1100px) {
   .whatsapp-panel {
     right: 0;
-    width: min(var(--whatsapp-panel-width), calc(100vw - var(--app-rail-width)));
-    max-width: calc(100vw - var(--app-rail-width));
-    min-width: 300px;
+    width: auto;
   }
 
-  /* Overlay mode: browser-stage always stays full width */
   body.whatsapp-panel-open .browser-stage {
-    left: var(--app-rail-width);
+    display: none;
   }
 }
 

@@ -402,7 +402,7 @@ function shouldShowPageView() {
   if (state.drawerOpen && window.innerWidth <= 900) return false;
   if (state.downloadPopoutOpen && window.innerWidth <= 720) return false;
   if (state.passwordSaveRequest && window.innerWidth <= 720) return false;
-  // WhatsApp is now overlay mode — browser page remains visible at all screen widths
+  if (state.whatsappPanelOpen && window.innerWidth <= 1100) return false;
   return true;
 }
 
@@ -414,9 +414,9 @@ function updateViewLayout() {
     left = Math.ceil(els.appRail.getBoundingClientRect().width);
   }
   const whatsappPanelShown = state.whatsappPanelOpen && !state.isFullscreen;
-  // WhatsApp panel is OVERLAY mode — it floats above the browser page.
-  // Do NOT adjust the browser page left offset when WhatsApp is open.
-  // (The WhatsApp WebView bounds are still calculated separately below.)
+  if (whatsappPanelShown && window.innerWidth > 1100 && els.whatsappPanel) {
+    left = Math.ceil(els.whatsappPanel.getBoundingClientRect().right);
+  }
   let right = 0;
   if (state.drawerOpen && !state.isFullscreen && window.innerWidth > 900 && els.drawer) {
     left = Math.max(left, Math.ceil(els.drawer.getBoundingClientRect().right));
@@ -3801,13 +3801,8 @@ function wireUi() {
     var dragging = false;
     var startX = 0;
     var startWidth = 0;
-    var MIN_W = 300;  // Minimum 300px so content is always visible
+    var MIN_W = 420;
     var MAX_W = 1600;
-    // Dynamic max: no wider than viewport minus app-rail
-    function getDynMax() {
-      var railWidth = els.appRail ? els.appRail.getBoundingClientRect().width : 48;
-      return Math.max(MIN_W, window.innerWidth - railWidth - 8);
-    }
 
     function onMouseDown(e) {
       if (e.button !== 0) return;
@@ -3823,8 +3818,7 @@ function wireUi() {
     function onMouseMove(e) {
       if (!dragging) return;
       var delta = e.clientX - startX;
-      var dynMax = Math.min(MAX_W, getDynMax());
-      var newWidth = Math.min(dynMax, Math.max(MIN_W, startWidth + delta));
+      var newWidth = Math.min(MAX_W, Math.max(MIN_W, startWidth + delta));
       document.documentElement.style.setProperty('--whatsapp-panel-width', newWidth + 'px');
       scheduleLayout();
     }
@@ -3860,13 +3854,7 @@ function wireUi() {
 
     try {
       var saved = localStorage.getItem('invicta-whatsapp-width');
-      if (saved) {
-        var savedPx = parseInt(saved, 10);
-        var dynMax = getDynMax();
-        // Clamp to viewport so we never restore a width larger than the window
-        var clampedPx = Math.min(Math.max(MIN_W, savedPx), dynMax);
-        document.documentElement.style.setProperty('--whatsapp-panel-width', clampedPx + 'px');
-      }
+      if (saved) document.documentElement.style.setProperty('--whatsapp-panel-width', saved);
     } catch (error) { /* ignore */ }
   })();
 
@@ -4629,20 +4617,58 @@ async function initialize() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Download popout — Opera-style fixed bottom-right (non-movable)
+// Floating download popout — drag-to-move
 // ═══════════════════════════════════════════════════════════════════
-(function initDownloadPanel() {
+(function initDownloadDrag() {
+  var dragState = null;
   var popout = els.downloadPopout;
-  if (!popout) return;
+  var header = popout && popout.querySelector('.download-popout-header');
+  if (!header) return;
 
-  // Clear any previously saved drag position so CSS fixed position takes effect.
-  try { localStorage.removeItem('invicta-dl-popout-pos'); } catch (e) { /* ignore */ }
+  // Restore saved position.
+  try {
+    var saved = localStorage.getItem('invicta-dl-popout-pos');
+    if (saved) {
+      var pos = JSON.parse(saved);
+      if (typeof pos.bottom === 'number') popout.style.bottom = pos.bottom + 'px';
+      if (typeof pos.right === 'number') popout.style.right = pos.right + 'px';
+    }
+  } catch (error) { /* ignore */ }
 
-  // Ensure CSS controls position — remove any inline style overrides.
-  popout.style.removeProperty('top');
-  popout.style.removeProperty('left');
-  popout.style.removeProperty('bottom');
-  popout.style.removeProperty('right');
+  header.addEventListener('mousedown', function (e) {
+    if (e.button !== 0 || e.target.closest('button')) return;
+    e.preventDefault();
+    var rect = popout.getBoundingClientRect();
+    dragState = { startX: e.clientX, startY: e.clientY, startBottom: window.innerHeight - rect.bottom, startRight: window.innerWidth - rect.right };
+    popout.classList.add('dragging');
+    document.addEventListener('mousemove', onDragMove);
+    document.addEventListener('mouseup', onDragEnd);
+  });
+
+  function onDragMove(e) {
+    if (!dragState) return;
+    var dx = e.clientX - dragState.startX;
+    var dy = e.clientY - dragState.startY;
+    var newBottom = Math.max(4, dragState.startBottom - dy);
+    var newRight = Math.max(4, dragState.startRight - dx);
+    popout.style.bottom = newBottom + 'px';
+    popout.style.right = newRight + 'px';
+    popout.style.top = 'auto';
+  }
+
+  function onDragEnd() {
+    if (!dragState) return;
+    popout.classList.remove('dragging');
+    dragState = null;
+    document.removeEventListener('mousemove', onDragMove);
+    document.removeEventListener('mouseup', onDragEnd);
+    try {
+      localStorage.setItem('invicta-dl-popout-pos', JSON.stringify({
+        bottom: parseInt(popout.style.bottom) || 16,
+        right: parseInt(popout.style.right) || 16,
+      }));
+    } catch (error) { /* ignore */ }
+  }
 })();
 
 // Auto-show download popout when a new download starts.
