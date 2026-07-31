@@ -2433,18 +2433,6 @@ function isDangerousDownload(item) {
   return ['exe', 'msi', 'bat', 'cmd', 'ps1', 'vbs', 'js', 'jar', 'scr'].includes(downloadExtension(item));
 }
 
-function downloadMetaText(item) {
-  if (isDownloadDone(item)) {
-    return 'Downloaded' + (item.totalBytes ? ' • ' + formatByteSize(item.totalBytes) : '');
-  }
-  if (isDownloadActive(item)) {
-    const prefix = item.paused ? 'Paused' : 'Downloading ' + Math.round(item.percent) + '%';
-    const received = formatByteSize(item.receivedBytes);
-    const total = formatByteSize(item.totalBytes);
-    return prefix + (received ? ' • ' + received + (total ? ' of ' + total : '') : '');
-  }
-  return item.error ? String(item.error) : String(item.state || 'Download stopped');
-}
 
 function downloadMetaText(item) {
   if (isDownloadDone(item)) {
@@ -2482,10 +2470,15 @@ function createDownloadAction(label, className, handler, title) {
 
 function appendDownloadActions(actions, item, compact) {
   if (isDownloadDone(item)) {
+    const openBtn = createDownloadAction('Open', compact ? 'download-mini-primary' : 'dl-btn-open', function () {
+      runDownloadAction(['openDownload', 'showDownload'], item);
+    }, item.exists === false ? 'File missing from disk' : 'Open downloaded file');
+    if (item.exists === false) {
+      openBtn.disabled = true;
+      openBtn.classList.add('download-mini-missing');
+    }
     actions.append(
-      createDownloadAction('Open', compact ? 'download-mini-primary' : 'dl-btn-open', function () {
-        runDownloadAction(['openDownload', 'showDownload'], item);
-      }, item.exists === false ? 'File is missing from disk' : 'Open downloaded file'),
+      openBtn,
       createDownloadAction(compact ? 'Folder' : 'Show in folder', compact ? 'download-mini-secondary' : '', function () {
         runDownloadAction(['showDownloadInFolder', 'showItemInFolder'], item);
       }, 'Show file in folder')
@@ -2526,105 +2519,6 @@ function setDownloadPopoutOpen(open) {
   scheduleLayout();
 }
 
-function renderDownloadPopout() {
-  clearNode(els.downloadPopoutList);
-  const activeCount = state.downloads.filter(isDownloadActive).length;
-  els.downloadPopoutBadge.textContent = String(activeCount);
-  setHidden(els.downloadPopoutBadge, activeCount === 0);
-
-  const visible = state.downloads.filter(function (item) {
-    return !state.dismissedDownloads.has(String(downloadId(item)));
-  });
-  if (activeCount) {
-    els.downloadPopoutSummary.textContent = activeCount + ' file' + (activeCount === 1 ? '' : 's') + ' downloading in the background.';
-  } else if (state.downloads.length) {
-    els.downloadPopoutSummary.textContent = state.downloads.length + ' recent download' + (state.downloads.length === 1 ? '' : 's') + ' — closing this panel will not delete files.';
-  } else {
-    els.downloadPopoutSummary.textContent = 'Your files will appear here.';
-  }
-
-  if (!visible.length) {
-    const empty = createElement('p', 'download-mini-empty', state.downloads.length
-      ? 'Recent items are hidden. View all downloads to see them.'
-      : 'No downloads yet.');
-    els.downloadPopoutList.appendChild(empty);
-    return;
-  }
-
-  visible.forEach(function (item) {
-    const row = createElement('article', 'download-mini-item');
-    row.dataset.state = isDownloadDone(item) ? 'completed' : (isDownloadActive(item) ? 'active' : 'stopped');
-    const heading = createElement('div', 'download-mini-heading');
-    // File type icon based on extension.
-    var ext = (item.filename || '').split('.').pop().toLowerCase();
-    var iconChar = isDownloadDone(item) ? '✓' : (isDownloadActive(item) ? '↓' : '!');
-    if (ext === 'pdf') iconChar = '📄';
-    else if (ext === 'xlsx' || ext === 'xls') iconChar = '📊';
-    else if (ext === 'csv') iconChar = '📋';
-    else if (ext === 'zip' || ext === 'rar' || ext === '7z') iconChar = '📦';
-    else if (ext === 'exe' || ext === 'msi') iconChar = '⚙️';
-    else if (ext === 'doc' || ext === 'docx') iconChar = '📝';
-    else if (ext === 'mp4' || ext === 'mkv' || ext === 'avi') iconChar = '🎬';
-    else if (ext === 'mp3' || ext === 'wav' || ext === 'flac') iconChar = '🎵';
-    else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp' || ext === 'svg') iconChar = '🖼️';
-    else if (ext === 'ppt' || ext === 'pptx') iconChar = '📽️';
-    const icon = createElement('span', 'download-mini-icon', iconChar);
-    icon.setAttribute('aria-hidden', 'true');
-    const copy = createElement('div', 'download-mini-copy');
-    copy.append(
-      createElement('p', 'download-mini-title', item.filename),
-      createElement('p', 'download-mini-meta', downloadMetaText(item))
-    );
-    const dismiss = createElement('button', 'download-mini-dismiss', '×');
-    dismiss.type = 'button';
-    dismiss.setAttribute('aria-label', 'Hide ' + item.filename + ' from this box; download continues');
-    dismiss.title = 'Hide — download continues';
-    dismiss.addEventListener('click', function () {
-      state.dismissedDownloads.add(String(downloadId(item)));
-      renderDownloadPopout();
-    });
-    heading.append(icon, copy, dismiss);
-    row.appendChild(heading);
-
-    if (isDownloadActive(item)) {
-      const progress = createElement('progress', 'download-mini-progress');
-      progress.max = 100;
-      progress.value = item.percent;
-      progress.textContent = Math.round(item.percent) + '%';
-      row.appendChild(progress);
-    }
-
-    const actions = createElement('div', 'download-mini-actions');
-    if (isDownloadDone(item)) {
-      const open = createElement('button', 'download-mini-primary', 'Open');
-      open.type = 'button';
-      open.addEventListener('click', function () { runDownloadAction(['openDownload', 'showDownload'], item); });
-      const folder = createElement('button', 'download-mini-secondary', 'Show in folder');
-      folder.type = 'button';
-      folder.addEventListener('click', function () { runDownloadAction(['showDownloadInFolder', 'showItemInFolder'], item); });
-      actions.append(open, folder);
-    } else if (isDownloadActive(item)) {
-      const pauseResume = createElement('button', '', item.paused ? 'Resume' : 'Pause');
-      pauseResume.type = 'button';
-      pauseResume.addEventListener('click', function () {
-        performDownloadAction(item, item.paused ? 'resume' : 'pause', item.paused ? ['resumeDownload'] : ['pauseDownload']);
-      });
-      const cancel = createElement('button', 'download-mini-cancel', 'Cancel download');
-      cancel.type = 'button';
-      cancel.addEventListener('click', function () {
-        performDownloadAction(item, 'cancel', ['cancelDownload']);
-      });
-      actions.append(pauseResume, cancel);
-    } else {
-      const retry = createElement('button', '', 'Retry');
-      retry.type = 'button';
-      retry.addEventListener('click', function () { performDownloadAction(item, 'retry', ['retryDownload']); });
-      actions.appendChild(retry);
-    }
-    row.appendChild(actions);
-    els.downloadPopoutList.appendChild(row);
-  });
-}
 
 function renderDownloadPopout() {
   clearNode(els.downloadPopoutList);
@@ -2635,16 +2529,22 @@ function renderDownloadPopout() {
   setHidden(els.downloadPopoutBadge, activeCount === 0);
   setHidden(els.downloadPopoutTools, state.downloads.length === 0);
 
-  const visible = state.downloads.filter(function (item) {
-    return !state.dismissedDownloads.has(String(downloadId(item)));
-  }).slice(0, 30);
+  // Update summary info-bar
   if (activeCount) {
-    els.downloadPopoutSummary.textContent = activeCount + ' active - ' + completedCount + ' finished - ' + stoppedCount + ' need attention.';
+    els.downloadPopoutSummary.textContent =
+      activeCount + ' active — ' + completedCount + ' finished' +
+      (stoppedCount ? ' — ' + stoppedCount + ' need attention' : '') + '.';
   } else if (state.downloads.length) {
-    els.downloadPopoutSummary.textContent = state.downloads.length + ' recent download' + (state.downloads.length === 1 ? '' : 's') + ' - closing this panel will not delete files.';
+    els.downloadPopoutSummary.textContent =
+      state.downloads.length + ' recent download' + (state.downloads.length === 1 ? '' : 's') +
+      ' — closing this panel will not delete files.';
   } else {
     els.downloadPopoutSummary.textContent = 'Your files will appear here.';
   }
+
+  const visible = state.downloads.filter(function (item) {
+    return !state.dismissedDownloads.has(String(downloadId(item)));
+  }).slice(0, 30);
 
   if (!visible.length) {
     const empty = createElement('p', 'download-mini-empty', state.downloads.length
@@ -2656,46 +2556,69 @@ function renderDownloadPopout() {
 
   visible.forEach(function (item) {
     const row = createElement('article', 'download-mini-item');
-    row.dataset.state = isDownloadDone(item) ? 'completed' : (isDownloadActive(item) ? 'active' : 'stopped');
+    const dlState = isDownloadDone(item) ? 'completed' : (isDownloadActive(item) ? 'active' : 'stopped');
+    row.dataset.state = dlState;
     row.dataset.danger = isDangerousDownload(item) ? 'true' : 'false';
+    row.dataset.missing = (item.exists === false) ? 'true' : 'false';
+
+    // ── Heading row (icon + copy + dismiss) ──
     const heading = createElement('div', 'download-mini-heading');
+
+    // File type badge with data-ext for CSS colour-coding
+    const ext = downloadExtension(item);
     const icon = createElement('span', 'download-mini-icon', downloadIcon(item));
     icon.setAttribute('aria-hidden', 'true');
+    icon.dataset.ext = ext;
+
+    // File details
     const copy = createElement('div', 'download-mini-copy');
-    const title = createElement('p', 'download-mini-title', item.filename);
-    const meta = createElement('p', 'download-mini-meta', downloadMetaText(item));
+    const titleEl = createElement('p', 'download-mini-title', item.filename);
+    const metaEl = createElement('p', 'download-mini-meta', downloadMetaText(item));
     const source = downloadSourceText(item);
-    if (source) meta.title = source;
-    copy.append(title, meta);
-    const dismiss = createElement('button', 'download-mini-dismiss', 'x');
+    if (source) metaEl.title = source;
+    copy.append(titleEl, metaEl);
+
+    // Per-card dismiss (×) button
+    const dismiss = createElement('button', 'download-mini-dismiss', '×');
     dismiss.type = 'button';
-    dismiss.setAttribute('aria-label', 'Hide ' + item.filename + ' from this box; download continues');
-    dismiss.title = 'Hide - download continues';
+    dismiss.setAttribute('aria-label', 'Hide ' + item.filename + ' from this panel; download continues');
+    dismiss.title = 'Hide — download continues';
     dismiss.addEventListener('click', function () {
       state.dismissedDownloads.add(String(downloadId(item)));
       renderDownloadPopout();
     });
+
     heading.append(icon, copy, dismiss);
     row.appendChild(heading);
 
+    // Dangerous file warning chip
     if (isDangerousDownload(item)) {
-      row.appendChild(createElement('p', 'download-warning', 'Executable file - open only if you trust the source.'));
+      const warn = createElement('p', 'download-warning', '⚠️ Executable file — open only if you trust the source.');
+      row.appendChild(warn);
     }
+
+    // Progress bar for active downloads
     if (isDownloadActive(item)) {
       const progress = createElement('progress', 'download-mini-progress');
       progress.max = 100;
-      progress.value = item.percent;
-      progress.textContent = Math.round(item.percent) + '%';
+      progress.value = item.percent || 0;
+      progress.textContent = Math.round(item.percent || 0) + '%';
       row.appendChild(progress);
     }
+
+    // Action buttons row
     const actions = createElement('div', 'download-mini-actions');
     appendDownloadActions(actions, item, true);
     row.appendChild(actions);
+
     els.downloadPopoutList.appendChild(row);
   });
 
   if (state.downloads.length > visible.length) {
-    els.downloadPopoutList.appendChild(createElement('p', 'download-mini-more', (state.downloads.length - visible.length) + ' more in the full downloads view.'));
+    els.downloadPopoutList.appendChild(
+      createElement('p', 'download-mini-more',
+        (state.downloads.length - visible.length) + ' more in the full downloads view.')
+    );
   }
 }
 

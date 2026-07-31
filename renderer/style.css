@@ -2494,10 +2494,18 @@ body.fullscreen .browser-stage {
 }
 
 .download-warning {
-  margin: 6px 0 0;
-  color: var(--yellow);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 7px 0 0 51px;
+  padding: 3px 8px;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px;
   font-size: 10px;
-  line-height: 1.35;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 /* Right column */
@@ -2739,10 +2747,11 @@ body.fullscreen .browser-stage {
 
 .download-popout-header .eyebrow {
   margin: 2px 0 0;
-  color: var(--text-muted);
-  font-size: 10.5px;
-  font-weight: 550;
-  letter-spacing: 0.01em;
+  color: var(--text-subtle);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .download-popout-header h2 {
@@ -2793,20 +2802,26 @@ body.fullscreen .browser-stage {
 }
 
 .download-popout-tools button {
-  min-height: 28px;
+  min-height: 30px;
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 7px;
   font-size: 10px;
   font-weight: 650;
+  letter-spacing: 0.01em;
+  transition: color 0.13s, background 0.13s, border-color 0.13s;
 }
 
 .download-popout-tools button:hover {
   color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 /* ── Scrollable list ── */
@@ -2825,7 +2840,12 @@ body.fullscreen .browser-stage {
 .download-mini-item {
   padding: 13px 14px 12px 16px;
   border-bottom: 1px solid rgba(190, 205, 235, 0.08);
-  transition: background 0.14s, box-shadow 0.14s;
+  transition: background 0.16s, box-shadow 0.16s;
+  cursor: default;
+}
+
+.download-mini-item:hover {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .download-mini-item:last-child {
@@ -2833,21 +2853,35 @@ body.fullscreen .browser-stage {
 }
 
 .download-mini-item[data-state="active"] {
-  background: linear-gradient(90deg, rgba(56, 217, 245, 0.075), transparent 72%);
-  box-shadow: inset 2px 0 0 rgba(56, 217, 245, 0.7);
+  background: linear-gradient(90deg, rgba(56, 217, 245, 0.07), transparent 72%);
+  box-shadow: inset 3px 0 0 rgba(56, 217, 245, 0.7);
+}
+
+.download-mini-item[data-state="active"]:hover {
+  background: linear-gradient(90deg, rgba(56, 217, 245, 0.1), transparent 72%);
 }
 
 .download-mini-item[data-state="completed"] {
-  background: linear-gradient(90deg, rgba(54, 211, 153, 0.055), transparent 72%);
+  background: linear-gradient(90deg, rgba(54, 211, 153, 0.05), transparent 72%);
+  box-shadow: inset 3px 0 0 rgba(54, 211, 153, 0.45);
+}
+
+.download-mini-item[data-state="completed"]:hover {
+  background: linear-gradient(90deg, rgba(54, 211, 153, 0.08), transparent 72%);
 }
 
 .download-mini-item[data-state="stopped"] {
-  background: linear-gradient(90deg, rgba(251, 113, 133, 0.07), transparent 72%);
-  box-shadow: inset 2px 0 0 rgba(251, 113, 133, 0.68);
+  background: linear-gradient(90deg, rgba(251, 113, 133, 0.065), transparent 72%);
+  box-shadow: inset 3px 0 0 rgba(251, 113, 133, 0.65);
+}
+
+.download-mini-item[data-state="stopped"]:hover {
+  background: linear-gradient(90deg, rgba(251, 113, 133, 0.1), transparent 72%);
 }
 
 .download-mini-item[data-danger="true"] {
-  background: linear-gradient(90deg, rgba(245, 158, 11, 0.08), transparent 72%);
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.07), transparent 72%);
+  box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.65);
 }
 
 /* ── Item heading row ── */
@@ -2858,29 +2892,153 @@ body.fullscreen .browser-stage {
 }
 
 .download-mini-icon {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
-  font-size: 15px;
+  border-radius: 11px;
+  font-size: 10px;
   font-weight: 800;
-  color: rgba(34, 211, 238, 0.9);
-  background: rgba(34, 211, 238, 0.08);
-  border: 1px solid rgba(34, 211, 238, 0.18);
+  letter-spacing: -0.02em;
+  /* Default (active/unknown) — cyan */
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
 }
 
+/* ── File-type colour coding via data-ext ── */
+
+/* IMG: green */
+.download-mini-icon[data-ext="png"],
+.download-mini-icon[data-ext="jpg"],
+.download-mini-icon[data-ext="jpeg"],
+.download-mini-icon[data-ext="gif"],
+.download-mini-icon[data-ext="webp"],
+.download-mini-icon[data-ext="svg"],
+.download-mini-icon[data-ext="bmp"],
+.download-mini-icon[data-ext="ico"] {
+  color: #00c46e;
+  background: rgba(0, 196, 110, 0.11);
+  border-color: rgba(0, 196, 110, 0.28);
+}
+
+/* PDF: soft red */
+.download-mini-icon[data-ext="pdf"] {
+  color: #f87171;
+  background: rgba(248, 113, 113, 0.1);
+  border-color: rgba(248, 113, 113, 0.28);
+}
+
+/* XLS / CSV: cyan-teal */
+.download-mini-icon[data-ext="xls"],
+.download-mini-icon[data-ext="xlsx"],
+.download-mini-icon[data-ext="csv"],
+.download-mini-icon[data-ext="ods"] {
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.1);
+  border-color: rgba(34, 211, 238, 0.26);
+}
+
+/* DOC / DOCX: blue */
+.download-mini-icon[data-ext="doc"],
+.download-mini-icon[data-ext="docx"],
+.download-mini-icon[data-ext="odt"],
+.download-mini-icon[data-ext="txt"],
+.download-mini-icon[data-ext="rtf"] {
+  color: #60a5fa;
+  background: rgba(96, 165, 250, 0.1);
+  border-color: rgba(96, 165, 250, 0.25);
+}
+
+/* PPT: orange */
+.download-mini-icon[data-ext="ppt"],
+.download-mini-icon[data-ext="pptx"],
+.download-mini-icon[data-ext="odp"] {
+  color: #fb923c;
+  background: rgba(251, 146, 60, 0.1);
+  border-color: rgba(251, 146, 60, 0.25);
+}
+
+/* ZIP / RAR / archive: purple */
+.download-mini-icon[data-ext="zip"],
+.download-mini-icon[data-ext="rar"],
+.download-mini-icon[data-ext="7z"],
+.download-mini-icon[data-ext="tar"],
+.download-mini-icon[data-ext="gz"] {
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.1);
+  border-color: rgba(167, 139, 250, 0.25);
+}
+
+/* EXE / MSI / dangerous: amber warning */
+.download-mini-icon[data-ext="exe"],
+.download-mini-icon[data-ext="msi"],
+.download-mini-icon[data-ext="bat"],
+.download-mini-icon[data-ext="cmd"],
+.download-mini-icon[data-ext="ps1"],
+.download-mini-icon[data-ext="vbs"],
+.download-mini-icon[data-ext="jar"],
+.download-mini-icon[data-ext="scr"] {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+/* VID: violet */
+.download-mini-icon[data-ext="mp4"],
+.download-mini-icon[data-ext="mkv"],
+.download-mini-icon[data-ext="avi"],
+.download-mini-icon[data-ext="mov"],
+.download-mini-icon[data-ext="webm"] {
+  color: #c084fc;
+  background: rgba(192, 132, 252, 0.1);
+  border-color: rgba(192, 132, 252, 0.25);
+}
+
+/* AUD: pink */
+.download-mini-icon[data-ext="mp3"],
+.download-mini-icon[data-ext="wav"],
+.download-mini-icon[data-ext="flac"],
+.download-mini-icon[data-ext="m4a"],
+.download-mini-icon[data-ext="ogg"] {
+  color: #f472b6;
+  background: rgba(244, 114, 182, 0.1);
+  border-color: rgba(244, 114, 182, 0.25);
+}
+
+/* JSON / code */
+.download-mini-icon[data-ext="json"],
+.download-mini-icon[data-ext="xml"],
+.download-mini-icon[data-ext="js"],
+.download-mini-icon[data-ext="ts"],
+.download-mini-icon[data-ext="css"],
+.download-mini-icon[data-ext="html"] {
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.08);
+  border-color: rgba(52, 211, 153, 0.22);
+}
+
+/* Completed state — override to lush green regardless of type */
 .download-mini-item[data-state="completed"] .download-mini-icon {
   color: #00c46e;
-  background: rgba(0, 196, 110, 0.1);
-  border-color: rgba(0, 196, 110, 0.22);
+  background: rgba(0, 196, 110, 0.12);
+  border-color: rgba(0, 196, 110, 0.28);
 }
 
+/* Stopped / error state — override to red */
 .download-mini-item[data-state="stopped"] .download-mini-icon {
   color: #fb7185;
-  background: rgba(251, 113, 133, 0.1);
-  border-color: rgba(251, 113, 133, 0.2);
+  background: rgba(251, 113, 133, 0.11);
+  border-color: rgba(251, 113, 133, 0.25);
+}
+
+/* Dangerous (EXE etc.) — amber override */
+.download-mini-item[data-danger="true"] .download-mini-icon {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.11);
+  border-color: rgba(245, 158, 11, 0.3);
 }
 
 .download-mini-copy {
@@ -2928,18 +3086,24 @@ body.fullscreen .browser-stage {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* ── Progress bar ── */
+/* ── Progress bar (active shimmer) ── */
+@keyframes dl-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
 .download-mini-progress {
   -webkit-appearance: none;
   appearance: none;
   display: block;
   width: 100%;
-  height: 3px;
-  margin: 8px 0 0;
+  height: 5px;
+  margin: 9px 0 0;
   border: none;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.09);
   overflow: hidden;
+  position: relative;
 }
 
 .download-mini-progress::-webkit-progress-bar {
@@ -2948,34 +3112,39 @@ body.fullscreen .browser-stage {
 }
 
 .download-mini-progress::-webkit-progress-value {
-  background: linear-gradient(90deg, #22d3ee, #00c46e);
+  background: linear-gradient(90deg, #22d3ee 0%, #00c46e 60%, #22d3ee 100%);
+  background-size: 200% 100%;
   border-radius: 99px;
+  animation: dl-shimmer 1.8s linear infinite;
 }
 
 .download-mini-progress::-moz-progress-bar {
-  background: linear-gradient(90deg, #22d3ee, #00c46e);
+  background: linear-gradient(90deg, #22d3ee 0%, #00c46e 60%, #22d3ee 100%);
+  background-size: 200% 100%;
   border-radius: 99px;
+  animation: dl-shimmer 1.8s linear infinite;
 }
 
-/* ── Action buttons ── */
+/* ── Action buttons row ── */
 .download-mini-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: 6px;
   margin-top: 10px;
-  padding-left: 47px;
-  justify-content: flex-end;
+  /* Left-align from icon baseline: icon is 40px + 11px gap = 51px */
+  padding-left: 51px;
+  justify-content: flex-start;
 }
 
 .download-mini-actions button {
-  min-width: 68px;
-  height: 29px;
-  padding: 0 11px;
-  font-size: 10.5px;
+  min-width: 62px;
+  height: 27px;
+  padding: 0 10px;
+  font-size: 10px;
   font-weight: 650;
   border-radius: 7px;
   cursor: pointer;
-  transition: background 0.13s, color 0.13s, border-color 0.13s;
+  transition: background 0.13s, color 0.13s, border-color 0.13s, opacity 0.13s;
   color: rgba(255, 255, 255, 0.55);
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -3001,11 +3170,21 @@ body.fullscreen .browser-stage {
   color: #04120c;
 }
 
-/* "Show in folder" — ghost style */
-.download-mini-actions .download-mini-secondary {
-  color: rgba(255, 255, 255, 0.5);
-  background: transparent;
+/* "Open" when file is missing — dimmed & disabled */
+.download-mini-actions .download-mini-primary.download-mini-missing,
+.download-mini-actions .download-mini-primary.download-mini-missing:hover {
+  color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.1);
+  cursor: not-allowed;
+  font-weight: 650;
+}
+
+/* "Show in folder" / "Link" / "Remove" — ghost style */
+.download-mini-actions .download-mini-secondary {
+  color: rgba(255, 255, 255, 0.48);
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.09);
 }
 
 .download-mini-actions .download-mini-secondary:hover {
@@ -3014,7 +3193,7 @@ body.fullscreen .browser-stage {
   border-color: rgba(255, 255, 255, 0.18);
 }
 
-/* "Cancel" */
+/* "Cancel" — red tint */
 .download-mini-actions .download-mini-cancel {
   color: #fb7185;
   border-color: rgba(251, 113, 133, 0.2);
