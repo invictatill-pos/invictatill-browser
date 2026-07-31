@@ -105,7 +105,7 @@ test('open tabs share the available strip width instead of overflowing', () => {
 test('downloads use a roomy top-right side panel with usable controls', () => {
   assert.match(css, /\.download-popout\s*{[^}]*\btop:\s*calc\(var\(--chrome-height\)\s*\+\s*8px\);/s);
   assert.match(css, /\.download-popout\s*{[^}]*\bwidth:\s*min\(420px,/s);
-  assert.match(css, /\.download-mini-actions button\s*{[^}]*\bheight:\s*29px;/s);
+  assert.match(css, /\.download-mini-actions button\s*{[^}]*\bheight:\s*27px;/s);
   assert.match(html, /class=["']download-popout-header-icon["']/);
   assert.match(renderer, /recent download.*closing this panel will not delete files/);
   assert.match(renderer, /classList\.toggle\('download-popout-open', state\.downloadPopoutOpen\)/);

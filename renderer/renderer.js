@@ -2535,9 +2535,7 @@ function renderDownloadPopout() {
       activeCount + ' active — ' + completedCount + ' finished' +
       (stoppedCount ? ' — ' + stoppedCount + ' need attention' : '') + '.';
   } else if (state.downloads.length) {
-    els.downloadPopoutSummary.textContent =
-      state.downloads.length + ' recent download' + (state.downloads.length === 1 ? '' : 's') +
-      ' — closing this panel will not delete files.';
+    els.downloadPopoutSummary.textContent = state.downloads.length + ' recent download' + (state.downloads.length === 1 ? '' : 's') + ' — closing this panel will not delete files.';
   } else {
     els.downloadPopoutSummary.textContent = 'Your files will appear here.';
   }
