@@ -47,6 +47,10 @@ const portableInstance = app.isPackaged && Boolean(
 );
 const hasInstanceLock = privateInstance || app.requestSingleInstanceLock();
 
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.invictatill.browser');
+}
+
 if (testMode && process.env.INVICTA_TEST_DOWNLOAD_DIR) {
   const isolatedDownloadPath = path.resolve(process.env.INVICTA_TEST_DOWNLOAD_DIR);
   fs.mkdirSync(isolatedDownloadPath, { recursive: true });
@@ -542,6 +546,27 @@ function trustedWritingSender(event, claimedOrigin) {
       return null;
     }
     return { tab, whatsapp, origin: parsed.origin, contents: event.sender };
+  } catch (error) {
+    return null;
+  }
+}
+
+function trustedPageOpenSender(event, claimedOrigin, targetUrl) {
+  if (!event || !event.sender) return null;
+  const tab = tabForRemoteContents(event.sender);
+  if (!tab) return null;
+  const senderUrl = event.senderFrame && event.senderFrame.url
+    ? event.senderFrame.url
+    : event.sender.getURL();
+  try {
+    const parsedSender = new URL(senderUrl);
+    if (parsedSender.protocol !== 'https:' && parsedSender.protocol !== 'http:') return null;
+    if (typeof claimedOrigin !== 'string' || new URL(claimedOrigin).origin !== parsedSender.origin) {
+      return null;
+    }
+    const parsedTarget = new URL(targetUrl);
+    if (parsedTarget.protocol !== 'https:' && parsedTarget.protocol !== 'http:') return null;
+    return { tab, url: parsedTarget.href };
   } catch (error) {
     return null;
   }
@@ -1793,12 +1818,71 @@ function isDownloadExportUrl(candidate) {
     var pathname = parsed.pathname.toLowerCase();
     var search = parsed.search.toLowerCase();
     if (/\/export|export\b|download\b|\/report\b/i.test(pathname)) return true;
-    if (/\.(xlsx|xls|csv|pdf|zip|docx?|pptx?|txt)$/i.test(pathname)) return true;
+    if (/\.(xlsx|xls|csv|pdf|zip|docx?|pptx?|txt|json)$/i.test(pathname)) return true;
     if (/export|download|report|generate/i.test(search)) return true;
     return false;
   } catch (e) {
     return false;
   }
+}
+
+function openUrlInWorkspaceTab(url, sourceTab, options) {
+  const target = safeRemoteUrl(url);
+  if (!target) return null;
+  return createTab(target, {
+    activate: !(options && options.activate === false),
+    workspaceId: sourceTab && sourceTab.workspaceId ? sourceTab.workspaceId : activeWorkspaceId,
+  });
+}
+
+function handleTabWindowOpen(details, sourceTab, contents) {
+  const url = safeRemoteUrl(details && details.url);
+  if (!url) return { action: 'deny' };
+  const disposition = details && details.disposition;
+  const tabDisposition = disposition === 'foreground-tab' || disposition === 'background-tab';
+  if (tabDisposition) {
+    setImmediate(() => {
+      openUrlInWorkspaceTab(url, sourceTab, { activate: disposition !== 'background-tab' });
+    });
+    return { action: 'deny' };
+  }
+  if (isDownloadExportUrl(url)) {
+    setImmediate(() => {
+      if (contents && !contents.isDestroyed()) contents.downloadURL(url);
+    });
+    return { action: 'deny' };
+  }
+  const features = typeof details.features === 'string' ? details.features : '';
+  const isLoginPopup = disposition === 'new-window' || (features && /width=|height=/i.test(features));
+  if (isLoginPopup) {
+    var popupWidth = 1024;
+    var popupHeight = 768;
+    var wMatch = features.match(/width=(\d+)/i);
+    var hMatch = features.match(/height=(\d+)/i);
+    if (wMatch) popupWidth = Math.min(Math.max(300, Number(wMatch[1])), 1600);
+    if (hMatch) popupHeight = Math.min(Math.max(200, Number(hMatch[1])), 1200);
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        width: popupWidth,
+        height: popupHeight,
+        autoHideMenuBar: true,
+        parent: mainWindow || undefined,
+        webPreferences: {
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+          webviewTag: false,
+          allowRunningInsecureContent: false,
+          spellcheck: true,
+        },
+      },
+    };
+  }
+  setImmediate(() => {
+    openUrlInWorkspaceTab(url, sourceTab, { activate: true });
+  });
+  return { action: 'deny' };
 }
 
 function attachTabEvents(tab) {
@@ -1821,42 +1905,7 @@ function attachTabEvents(tab) {
   });
   contents.on('will-redirect', (event, url) => applyTabUserAgent(tab, url));
   contents.setWindowOpenHandler((details) => {
-    const url = safeRemoteUrl(details.url);
-    if (!url) return { action: 'deny' };
-    const features = typeof details.features === 'string' ? details.features : '';
-    const isLoginPopup = details.disposition === 'new-window' ||
-      (features && /width=|height=/i.test(features));
-    const isExportDownload = isDownloadExportUrl(url);
-    if (isLoginPopup || isExportDownload) {
-      var popupWidth = isExportDownload ? 600 : 1024;
-      var popupHeight = isExportDownload ? 400 : 768;
-      var wMatch = features.match(/width=(\d+)/i);
-      var hMatch = features.match(/height=(\d+)/i);
-      if (wMatch) popupWidth = Math.min(Math.max(300, Number(wMatch[1])), 1600);
-      if (hMatch) popupHeight = Math.min(Math.max(200, Number(hMatch[1])), 1200);
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          width: popupWidth,
-          height: popupHeight,
-          autoHideMenuBar: true,
-          parent: mainWindow || undefined,
-          webPreferences: {
-            sandbox: true,
-            contextIsolation: true,
-            nodeIntegration: false,
-            webviewTag: false,
-            allowRunningInsecureContent: false,
-            spellcheck: true,
-          },
-        },
-      };
-    }
-    const activate = details.disposition !== 'background-tab';
-    setImmediate(() => {
-      createTab(url, { activate });
-    });
-    return { action: 'deny' };
+    return handleTabWindowOpen(details, tab, contents);
   });
 
   contents.on('before-input-event', (event, input) => {
@@ -4545,6 +4594,18 @@ function launchPrivateWindow() {
 }
 
 function registerIpcHandlers() {
+  ipcMain.on('open-link-from-page', (event, payload) => {
+    try {
+      if (!isPlainObject(payload)) return;
+      const senderDetails = trustedPageOpenSender(event, payload.origin, payload.url);
+      if (!senderDetails) return;
+      openUrlInWorkspaceTab(senderDetails.url, senderDetails.tab, {
+        activate: payload.activate !== false,
+      });
+    } catch (error) {
+      // Invalid page link requests are ignored; normal navigation can continue.
+    }
+  });
   ipcMain.on('credential-submitted', (event, payload) => {
     try {
       if (!isPlainObject(payload)) return;

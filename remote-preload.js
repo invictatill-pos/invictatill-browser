@@ -197,6 +197,37 @@ function startCredentialObserver() {
   scheduleAutofill();
 }
 
+function linkTargetForEvent(event) {
+  const target = event && event.target instanceof Element ? event.target : null;
+  const anchor = target && target.closest('a[href]');
+  if (!anchor) return null;
+  if (anchor.hasAttribute('download')) return null;
+  try {
+    const url = new URL(anchor.getAttribute('href'), location.href);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return url.href;
+  } catch (error) {
+    return null;
+  }
+}
+
+function startModifiedClickHandler() {
+  if (!isWebPage()) return;
+  document.addEventListener('click', (event) => {
+    if (!event.isTrusted || event.defaultPrevented) return;
+    if (event.button !== 0 || (!event.ctrlKey && !event.metaKey) || event.shiftKey || event.altKey) return;
+    const url = linkTargetForEvent(event);
+    if (!url) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    ipcRenderer.send('open-link-from-page', {
+      origin: location.origin,
+      url,
+      activate: false,
+    });
+  }, true);
+}
+
 function sensitiveWritingField(element) {
   if (!element || typeof element.getAttribute !== 'function') return true;
   const metadata = [
@@ -676,6 +707,7 @@ function startLiveWritingAssistant() {
 }
 
 function startPageFeatures() {
+  startModifiedClickHandler();
   startCredentialObserver();
   startLiveWritingAssistant();
 }
