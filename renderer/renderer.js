@@ -82,6 +82,10 @@ const els = {
   downloadPopoutList: $('download-popout-list'),
   downloadPopoutSummary: $('download-popout-summary'),
   downloadPopoutBadge: $('download-popout-badge'),
+  downloadPopoutTools: $('download-popout-tools'),
+  openDownloadsFolderButton: $('btn-open-downloads-folder'),
+  openDownloadsFolderDrawerButton: $('btn-open-downloads-folder-drawer'),
+  clearDownloadsPopoutButton: $('btn-clear-downloads-popout'),
   passwordSavePopout: $('password-save-popout'),
   passwordSaveTitle: $('password-save-title'),
   passwordSaveDescription: $('password-save-description'),
@@ -2326,7 +2330,12 @@ function normalizeDownload(raw) {
     filename: String(item.filename || item.fileName || item.name || 'Download'),
     state: String(item.state || item.status || 'progressing'),
     percent: clamp(percent, 0, 100),
-    filePath: item.filePath || item.savePath || item.path || ''
+    filePath: item.filePath || item.savePath || item.path || '',
+    extension: String(item.extension || '').toLowerCase(),
+    sourceHost: String(item.sourceHost || ''),
+    speedBytesPerSecond: Number(item.speedBytesPerSecond || 0),
+    etaSeconds: Number.isFinite(Number(item.etaSeconds)) ? Number(item.etaSeconds) : null,
+    exists: item.exists !== false
   });
 }
 
@@ -2360,6 +2369,10 @@ function isDownloadDone(item) {
   return ['completed', 'complete', 'done'].includes(String(item.state).toLowerCase());
 }
 
+function isDownloadStopped(item) {
+  return !isDownloadActive(item) && !isDownloadDone(item);
+}
+
 function formatByteSize(value) {
   const bytes = Math.max(0, Number(value) || 0);
   if (!bytes) return '';
@@ -2374,6 +2387,52 @@ function formatByteSize(value) {
   return (size >= 10 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[unit];
 }
 
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  if (!total) return '';
+  if (total < 60) return total + 's';
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  if (minutes < 60) return minutes + 'm' + (rest ? ' ' + rest + 's' : '');
+  const hours = Math.floor(minutes / 60);
+  const remMinutes = minutes % 60;
+  return hours + 'h' + (remMinutes ? ' ' + remMinutes + 'm' : '');
+}
+
+function downloadExtension(item) {
+  const fromRecord = String(item.extension || '').toLowerCase().replace(/^\./, '');
+  if (fromRecord) return fromRecord;
+  const name = String(item.filename || '');
+  const dot = name.lastIndexOf('.');
+  return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
+}
+
+function downloadIcon(item) {
+  const ext = downloadExtension(item);
+  if (ext === 'pdf') return 'PDF';
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') return 'XLS';
+  if (ext === 'json') return '{}';
+  if (ext === 'zip' || ext === 'rar' || ext === '7z') return 'ZIP';
+  if (ext === 'exe' || ext === 'msi') return 'EXE';
+  if (ext === 'doc' || ext === 'docx') return 'DOC';
+  if (ext === 'ppt' || ext === 'pptx') return 'PPT';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'IMG';
+  if (['mp4', 'mkv', 'avi', 'mov'].includes(ext)) return 'VID';
+  if (['mp3', 'wav', 'flac', 'm4a'].includes(ext)) return 'AUD';
+  return isDownloadDone(item) ? 'OK' : (isDownloadActive(item) ? 'DL' : 'ERR');
+}
+
+function downloadStateText(item) {
+  if (isDownloadDone(item)) return item.exists === false ? 'File missing' : 'Downloaded';
+  if (isDownloadActive(item)) return item.paused ? 'Paused' : 'Downloading';
+  const stateText = String(item.state || 'Stopped').replace(/[-_]+/g, ' ');
+  return stateText.charAt(0).toUpperCase() + stateText.slice(1);
+}
+
+function isDangerousDownload(item) {
+  return ['exe', 'msi', 'bat', 'cmd', 'ps1', 'vbs', 'js', 'jar', 'scr'].includes(downloadExtension(item));
+}
+
 function downloadMetaText(item) {
   if (isDownloadDone(item)) {
     return 'Downloaded' + (item.totalBytes ? ' • ' + formatByteSize(item.totalBytes) : '');
@@ -2385,6 +2444,74 @@ function downloadMetaText(item) {
     return prefix + (received ? ' • ' + received + (total ? ' of ' + total : '') : '');
   }
   return item.error ? String(item.error) : String(item.state || 'Download stopped');
+}
+
+function downloadMetaText(item) {
+  if (isDownloadDone(item)) {
+    const size = formatByteSize(item.totalBytes || item.receivedBytes);
+    return downloadStateText(item) + (size ? ' - ' + size : '');
+  }
+  if (isDownloadActive(item)) {
+    const prefix = item.paused ? 'Paused' : 'Downloading ' + Math.round(item.percent) + '%';
+    const received = formatByteSize(item.receivedBytes);
+    const total = formatByteSize(item.totalBytes);
+    const speed = item.speedBytesPerSecond ? formatByteSize(item.speedBytesPerSecond) + '/s' : '';
+    const eta = item.etaSeconds ? formatDuration(item.etaSeconds) + ' left' : '';
+    return [prefix, received ? received + (total ? ' of ' + total : '') : '', speed, eta].filter(Boolean).join(' - ');
+  }
+  return item.error ? String(item.error) : downloadStateText(item);
+}
+
+function downloadSourceText(item) {
+  if (item.sourceHost) return item.sourceHost;
+  if (!item.url) return '';
+  try {
+    return new URL(String(item.url).replace(/^blob:/, '')).hostname;
+  } catch (error) {
+    return '';
+  }
+}
+
+function createDownloadAction(label, className, handler, title) {
+  const button = createElement('button', className || '', label);
+  button.type = 'button';
+  if (title) button.title = title;
+  button.addEventListener('click', handler);
+  return button;
+}
+
+function appendDownloadActions(actions, item, compact) {
+  if (isDownloadDone(item)) {
+    actions.append(
+      createDownloadAction('Open', compact ? 'download-mini-primary' : 'dl-btn-open', function () {
+        runDownloadAction(['openDownload', 'showDownload'], item);
+      }, item.exists === false ? 'File is missing from disk' : 'Open downloaded file'),
+      createDownloadAction(compact ? 'Folder' : 'Show in folder', compact ? 'download-mini-secondary' : '', function () {
+        runDownloadAction(['showDownloadInFolder', 'showItemInFolder'], item);
+      }, 'Show file in folder')
+    );
+  } else if (isDownloadActive(item)) {
+    actions.append(
+      createDownloadAction(item.paused ? 'Resume' : 'Pause', '', function () {
+        performDownloadAction(item, item.paused ? 'resume' : 'pause', item.paused ? ['resumeDownload'] : ['pauseDownload']);
+      }),
+      createDownloadAction('Cancel', compact ? 'download-mini-cancel' : 'dl-btn-cancel', function () {
+        performDownloadAction(item, 'cancel', ['cancelDownload']);
+      })
+    );
+  } else {
+    actions.appendChild(createDownloadAction('Retry', '', function () {
+      performDownloadAction(item, 'retry', ['retryDownload']);
+    }));
+  }
+  actions.appendChild(createDownloadAction(compact ? 'Link' : 'Copy link', compact ? 'download-mini-secondary' : '', function () {
+    copyDownloadLink(item);
+  }));
+  if (!isDownloadActive(item)) {
+    actions.appendChild(createDownloadAction('Remove', compact ? 'download-mini-secondary' : 'dl-btn-remove', function () {
+      performDownloadAction(item, 'remove', ['removeDownload']);
+    }));
+  }
 }
 
 function setDownloadPopoutOpen(open) {
@@ -2499,6 +2626,79 @@ function renderDownloadPopout() {
   });
 }
 
+function renderDownloadPopout() {
+  clearNode(els.downloadPopoutList);
+  const activeCount = state.downloads.filter(isDownloadActive).length;
+  const stoppedCount = state.downloads.filter(isDownloadStopped).length;
+  const completedCount = state.downloads.filter(isDownloadDone).length;
+  els.downloadPopoutBadge.textContent = String(activeCount);
+  setHidden(els.downloadPopoutBadge, activeCount === 0);
+  setHidden(els.downloadPopoutTools, state.downloads.length === 0);
+
+  const visible = state.downloads.filter(function (item) {
+    return !state.dismissedDownloads.has(String(downloadId(item)));
+  }).slice(0, 30);
+  if (activeCount) {
+    els.downloadPopoutSummary.textContent = activeCount + ' active - ' + completedCount + ' finished - ' + stoppedCount + ' need attention.';
+  } else if (state.downloads.length) {
+    els.downloadPopoutSummary.textContent = state.downloads.length + ' recent download' + (state.downloads.length === 1 ? '' : 's') + ' - closing this panel will not delete files.';
+  } else {
+    els.downloadPopoutSummary.textContent = 'Your files will appear here.';
+  }
+
+  if (!visible.length) {
+    const empty = createElement('p', 'download-mini-empty', state.downloads.length
+      ? 'Recent items are hidden. View all downloads to see them.'
+      : 'No downloads yet.');
+    els.downloadPopoutList.appendChild(empty);
+    return;
+  }
+
+  visible.forEach(function (item) {
+    const row = createElement('article', 'download-mini-item');
+    row.dataset.state = isDownloadDone(item) ? 'completed' : (isDownloadActive(item) ? 'active' : 'stopped');
+    row.dataset.danger = isDangerousDownload(item) ? 'true' : 'false';
+    const heading = createElement('div', 'download-mini-heading');
+    const icon = createElement('span', 'download-mini-icon', downloadIcon(item));
+    icon.setAttribute('aria-hidden', 'true');
+    const copy = createElement('div', 'download-mini-copy');
+    const title = createElement('p', 'download-mini-title', item.filename);
+    const meta = createElement('p', 'download-mini-meta', downloadMetaText(item));
+    const source = downloadSourceText(item);
+    if (source) meta.title = source;
+    copy.append(title, meta);
+    const dismiss = createElement('button', 'download-mini-dismiss', 'x');
+    dismiss.type = 'button';
+    dismiss.setAttribute('aria-label', 'Hide ' + item.filename + ' from this box; download continues');
+    dismiss.title = 'Hide - download continues';
+    dismiss.addEventListener('click', function () {
+      state.dismissedDownloads.add(String(downloadId(item)));
+      renderDownloadPopout();
+    });
+    heading.append(icon, copy, dismiss);
+    row.appendChild(heading);
+
+    if (isDangerousDownload(item)) {
+      row.appendChild(createElement('p', 'download-warning', 'Executable file - open only if you trust the source.'));
+    }
+    if (isDownloadActive(item)) {
+      const progress = createElement('progress', 'download-mini-progress');
+      progress.max = 100;
+      progress.value = item.percent;
+      progress.textContent = Math.round(item.percent) + '%';
+      row.appendChild(progress);
+    }
+    const actions = createElement('div', 'download-mini-actions');
+    appendDownloadActions(actions, item, true);
+    row.appendChild(actions);
+    els.downloadPopoutList.appendChild(row);
+  });
+
+  if (state.downloads.length > visible.length) {
+    els.downloadPopoutList.appendChild(createElement('p', 'download-mini-more', (state.downloads.length - visible.length) + ' more in the full downloads view.'));
+  }
+}
+
 async function runDownloadAction(names, item) {
   try {
     const result = await invokeFirst(names, downloadId(item));
@@ -2506,6 +2706,21 @@ async function runDownloadAction(names, item) {
     await loadDownloads();
   } catch (error) {
     notify(errorMessage(error), 'error');
+  }
+}
+
+async function copyDownloadLink(item) {
+  try {
+    if (typeof api.copyDownloadUrl === 'function') {
+      await api.copyDownloadUrl(downloadId(item));
+    } else if (navigator.clipboard && item.url) {
+      await navigator.clipboard.writeText(item.url);
+    } else {
+      throw new Error('Copy link unavailable');
+    }
+    notify('Download link copied', 'success', 2200);
+  } catch (error) {
+    notify('Could not copy link: ' + errorMessage(error), 'error');
   }
 }
 
@@ -2633,6 +2848,67 @@ function renderDownloads() {
   renderDownloadPopout();
 }
 
+function renderDownloads() {
+  clearNode(els.downloadsList);
+  const activeCount = state.downloads.filter(isDownloadActive).length;
+  const completedCount = state.downloads.filter(isDownloadDone).length;
+  const stoppedCount = state.downloads.filter(isDownloadStopped).length;
+  const totalBytes = state.downloads.reduce(function (sum, item) {
+    return sum + (Number(item.totalBytes || item.receivedBytes) || 0);
+  }, 0);
+  els.downloadsSummary.textContent = state.downloads.length
+    ? activeCount + ' active - ' + completedCount + ' finished - ' + stoppedCount + ' stopped - ' + formatByteSize(totalBytes)
+    : 'No downloads';
+  els.downloadBadge.textContent = String(activeCount);
+  setHidden(els.downloadBadge, activeCount === 0);
+
+  state.downloads.forEach(function (item) {
+    const ext = downloadExtension(item);
+    const dlState = isDownloadDone(item) ? 'completed' : (isDownloadActive(item) ? String(item.state || 'progressing').toLowerCase() : 'interrupted');
+    const row = createElement('div', 'data-item download-data-item');
+    row.dataset.dlState = dlState;
+    row.dataset.danger = isDangerousDownload(item) ? 'true' : 'false';
+    row.dataset.missing = isDownloadDone(item) && item.exists === false ? 'true' : 'false';
+
+    const iconEl = createElement('div', 'data-item-icon', downloadIcon(item));
+    iconEl.dataset.ext = ext;
+    iconEl.setAttribute('aria-hidden', 'true');
+    row.appendChild(iconEl);
+
+    const main = createElement('div', 'data-item-main');
+    const titleRow = createElement('div', 'download-title-row');
+    titleRow.appendChild(createElement('p', 'data-item-title', item.filename || 'Unknown file'));
+    titleRow.appendChild(createElement('span', 'download-status-chip', downloadStateText(item)));
+    main.appendChild(titleRow);
+
+    main.appendChild(createElement('p', 'data-item-meta', downloadMetaText(item)));
+
+    const source = downloadSourceText(item);
+    const sourceLine = [source, ext ? ext.toUpperCase() : '', item.mimeType || ''].filter(Boolean).join(' - ');
+    if (sourceLine) main.appendChild(createElement('p', 'data-item-source', sourceLine));
+    if (isDangerousDownload(item)) {
+      main.appendChild(createElement('p', 'download-warning', 'Executable file - open only if you trust the source.'));
+    }
+
+    if (isDownloadActive(item)) {
+      const progress = createElement('progress', 'download-progress');
+      progress.max = 100;
+      progress.value = item.percent || 0;
+      progress.textContent = Math.round(item.percent || 0) + '%';
+      main.appendChild(progress);
+    }
+
+    const actions = createElement('div', 'data-item-actions');
+    appendDownloadActions(actions, item, false);
+    main.appendChild(actions);
+    row.appendChild(main);
+    els.downloadsList.appendChild(row);
+  });
+
+  setHidden(els.downloadsEmpty, state.downloads.length > 0);
+  renderDownloadPopout();
+}
+
 async function clearFinishedDownloads() {
   try {
     if (typeof api.clearDownloads === 'function') {
@@ -2645,6 +2921,15 @@ async function clearFinishedDownloads() {
     renderDownloads();
   } catch (error) {
     notify('Could not clear downloads: ' + errorMessage(error), 'error');
+  }
+}
+
+async function openDownloadsFolder() {
+  try {
+    const result = await invokeFirst(['openDownloadsFolder']);
+    if (result && result.success === false) throw new Error(result.error || 'Could not open downloads folder');
+  } catch (error) {
+    notify('Could not open downloads folder: ' + errorMessage(error), 'error');
   }
 }
 
@@ -3871,6 +4156,9 @@ function wireUi() {
     setDownloadPopoutOpen(false);
     openDrawer('downloads');
   });
+  bindClick('btn-open-downloads-folder', openDownloadsFolder);
+  bindClick('btn-open-downloads-folder-drawer', openDownloadsFolder);
+  bindClick('btn-clear-downloads-popout', clearFinishedDownloads);
   bindClick('btn-close-drawer', function () { closeDrawer(true); });
   bindClick('btn-menu', toggleMenu);
   els.focusForm.addEventListener('submit', function (event) {

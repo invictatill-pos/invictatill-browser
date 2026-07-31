@@ -2369,6 +2369,24 @@ body.fullscreen .browser-stage {
   margin: 0;
 }
 
+.list-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.secondary-text-button {
+  color: var(--cyan);
+  background: transparent;
+  border: 0;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.secondary-text-button:hover {
+  color: #fff;
+}
+
 .data-list {
   display: flex;
   flex-direction: column;
@@ -2394,12 +2412,21 @@ body.fullscreen .browser-stage {
 .data-item[data-dl-state="completed"] {
   border-left: 3px solid var(--green);
 }
+.data-item[data-missing="true"] {
+  border-left-color: var(--yellow);
+}
 .data-item[data-dl-state="progressing"] {
   border-left: 3px solid var(--cyan);
+}
+.data-item[data-dl-state="paused"] {
+  border-left: 3px solid var(--yellow);
 }
 .data-item[data-dl-state="failed"],
 .data-item[data-dl-state="interrupted"] {
   border-left: 3px solid var(--red);
+}
+.data-item[data-danger="true"] {
+  border-color: rgba(245, 158, 11, 0.3);
 }
 
 /* File type badge — left column */
@@ -2428,6 +2455,50 @@ body.fullscreen .browser-stage {
 .data-item-icon[data-ext="msi"]  { background: rgba(139, 92, 246, 0.12); }
 .data-item-icon[data-ext="pptx"],
 .data-item-icon[data-ext="ppt"]  { background: rgba(249, 115, 22, 0.12); }
+.data-item-icon[data-ext="json"] { background: rgba(45, 212, 191, 0.12); }
+
+.download-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.download-title-row .data-item-title {
+  flex: 1;
+}
+
+.download-status-chip {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  color: var(--green);
+  background: rgba(54, 211, 153, 0.1);
+  border: 1px solid rgba(54, 211, 153, 0.22);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.data-item[data-dl-state="progressing"] .download-status-chip {
+  color: var(--cyan);
+  background: rgba(56, 217, 245, 0.09);
+  border-color: rgba(56, 217, 245, 0.2);
+}
+
+.data-item[data-dl-state="interrupted"] .download-status-chip,
+.data-item[data-dl-state="failed"] .download-status-chip {
+  color: var(--red);
+  background: rgba(251, 113, 133, 0.08);
+  border-color: rgba(251, 113, 133, 0.22);
+}
+
+.download-warning {
+  margin: 6px 0 0;
+  color: var(--yellow);
+  font-size: 10px;
+  line-height: 1.35;
+}
 
 /* Right column */
 .data-item-main {
@@ -2509,6 +2580,9 @@ body.fullscreen .browser-stage {
 }
 .data-item-actions .dl-btn-cancel:hover {
   background: rgba(239, 68, 68, 0.12);
+}
+.data-item-actions .dl-btn-remove {
+  color: var(--text-muted);
 }
 
 /* History drawer items still use simple layout */
@@ -2709,6 +2783,32 @@ body.fullscreen .browser-stage {
   line-height: 1.4;
 }
 
+.download-popout-tools {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(7, 10, 17, 0.18);
+  border-bottom: 1px solid rgba(190, 205, 235, 0.08);
+}
+
+.download-popout-tools button {
+  min-height: 28px;
+  flex: 1;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.download-popout-tools button:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
 /* ── Scrollable list ── */
 .download-popout-list {
   min-height: 0;
@@ -2744,6 +2844,10 @@ body.fullscreen .browser-stage {
 .download-mini-item[data-state="stopped"] {
   background: linear-gradient(90deg, rgba(251, 113, 133, 0.07), transparent 72%);
   box-shadow: inset 2px 0 0 rgba(251, 113, 133, 0.68);
+}
+
+.download-mini-item[data-danger="true"] {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.08), transparent 72%);
 }
 
 /* ── Item heading row ── */
@@ -2931,6 +3035,16 @@ body.fullscreen .browser-stage {
   text-align: center;
   font-size: 11px;
   flex: 1;
+}
+
+.download-mini-more {
+  margin: 0;
+  padding: 11px 16px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.025);
+  border-top: 1px solid rgba(190, 205, 235, 0.08);
+  font-size: 10px;
+  text-align: center;
 }
 
 /* ── Footer ── */

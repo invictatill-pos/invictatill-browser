@@ -313,6 +313,10 @@
       <button class="icon-button" id="btn-close-download-popout" type="button" aria-label="Close download box; downloads will continue" title="Close — downloads continue">×</button>
     </div>
     <p class="download-popout-summary" id="download-popout-summary">Your files will appear here.</p>
+    <div class="download-popout-tools" id="download-popout-tools">
+      <button type="button" id="btn-open-downloads-folder">Open folder</button>
+      <button type="button" id="btn-clear-downloads-popout">Clear finished</button>
+    </div>
     <div class="download-popout-list" id="download-popout-list" aria-live="polite"></div>
     <button class="download-popout-footer" id="btn-open-all-downloads" type="button">View all downloads</button>
   </section>
@@ -545,7 +549,10 @@
       <section class="drawer-panel" id="drawer-panel-downloads" role="tabpanel" aria-labelledby="drawer-tab-downloads" data-panel="downloads" hidden>
         <div class="list-toolbar">
           <p id="downloads-summary">0 downloads</p>
-          <button class="danger-text-button" id="btn-clear-downloads" type="button">Clear finished</button>
+          <div class="list-toolbar-actions">
+            <button class="secondary-text-button" id="btn-open-downloads-folder-drawer" type="button">Open folder</button>
+            <button class="danger-text-button" id="btn-clear-downloads" type="button">Clear finished</button>
+          </div>
         </div>
         <div class="data-list" id="downloads-list" aria-live="polite"></div>
         <p class="empty-state" id="downloads-empty">No downloads yet.</p>

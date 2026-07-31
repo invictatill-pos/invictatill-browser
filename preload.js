@@ -131,6 +131,8 @@ const api = {
   downloadAction: (id, action) =>
     ipcRenderer.invoke('download-action', { id, action }),
   showDownload: (id) => ipcRenderer.invoke('show-download', id),
+  openDownloadsFolder: () => ipcRenderer.invoke('open-downloads-folder'),
+  copyDownloadUrl: (id) => ipcRenderer.invoke('copy-download-url', id),
   clearBrowsingData: (options) =>
     ipcRenderer.invoke('clear-browsing-data', options),
   getSitePermissions: (url) => ipcRenderer.invoke('get-site-permissions', url),

@@ -46,8 +46,7 @@
     "publish": {
       "provider": "github",
       "owner": "invictatill-pos",
-      "repo": "invictatill-browser",
-      "releaseType": "draft"
+      "repo": "invictatill-browser"
     },
     "win": {
       "target": [

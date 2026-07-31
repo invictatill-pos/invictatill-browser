@@ -2512,21 +2512,34 @@ function uniquePath(candidate) {
 function publicDownload(record) {
   const totalBytes = Number.isFinite(record.totalBytes) ? record.totalBytes : 0;
   const receivedBytes = Number.isFinite(record.receivedBytes) ? record.receivedBytes : 0;
+  const startedAt = Number.isFinite(record.startedAt) ? record.startedAt : Date.now();
+  const elapsedSeconds = Math.max(1, (Date.now() - startedAt) / 1000);
+  const speedBytesPerSecond = record.state === 'progressing' || record.state === 'downloading'
+    ? Math.round(receivedBytes / elapsedSeconds)
+    : 0;
+  const remainingBytes = totalBytes > receivedBytes ? totalBytes - receivedBytes : 0;
+  const extension = path.extname(record.filename || '').replace(/^\./, '').toLowerCase();
   return {
     id: record.id,
     url: record.url,
     filename: record.filename,
+    extension,
     mimeType: record.mimeType,
+    sourceHost: record.sourceHost || '',
     totalBytes,
     receivedBytes,
     percent: totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : 0,
+    speedBytesPerSecond,
+    etaSeconds: speedBytesPerSecond > 0 && remainingBytes > 0 ? Math.ceil(remainingBytes / speedBytesPerSecond) : null,
     state: record.state,
     paused: Boolean(record.paused),
     canResume: Boolean(record.canResume),
     savePath: record.savePath,
     filePath: record.savePath,
+    exists: Boolean(record.savePath && fs.existsSync(record.savePath)),
     startedAt: record.startedAt,
     completedAt: record.completedAt || null,
+    durationMs: record.completedAt && startedAt ? Math.max(0, record.completedAt - startedAt) : null,
     error: record.error || null,
   };
 }
@@ -2555,12 +2568,19 @@ function configureDownloads(targetSession) {
     const filename = sanitizeFilename(path.basename(item.getFilename() || 'download'));
     const savePath = uniquePath(path.join(app.getPath('downloads'), filename));
     item.setSavePath(savePath);
+    let sourceHost = '';
+    try {
+      sourceHost = new URL(url.startsWith('blob:') ? url.slice(5) : url).hostname;
+    } catch (error) {
+      sourceHost = '';
+    }
 
     const record = {
       id,
       url,
       filename,
       mimeType: item.getMimeType() || '',
+      sourceHost,
       totalBytes: item.getTotalBytes() || 0,
       receivedBytes: item.getReceivedBytes() || 0,
       state: 'progressing',
@@ -2640,6 +2660,13 @@ function showDownload(id) {
   return true;
 }
 
+async function openDownloadsFolder() {
+  const error = await shell.openPath(app.getPath('downloads'));
+  return error
+    ? { success: false, error }
+    : { success: true };
+}
+
 async function openDownload(id) {
   const downloadId = boundedString(id, 'download id', 200, false);
   const record = downloadRecords.find((item) => item.id === downloadId);
@@ -2650,6 +2677,14 @@ async function openDownload(id) {
   return error
     ? { success: false, error }
     : { success: true };
+}
+
+function copyDownloadUrl(id) {
+  const downloadId = boundedString(id, 'download id', 200, false);
+  const record = downloadRecords.find((item) => item.id === downloadId);
+  if (!record || !record.url) throw new Error('Download URL not found');
+  clipboard.writeText(record.url);
+  return { success: true };
 }
 
 function clearDownloads() {
@@ -2862,6 +2897,7 @@ function sanitizeDownloadRecord(value) {
     id: typeof value.id === 'string' ? value.id.slice(0, 200) : 'download-' + Date.now(),
     url: value.url.slice(0, MAX_URL_LENGTH),
     filename: sanitizeFilename(value.filename || 'download'),
+    sourceHost: typeof value.sourceHost === 'string' ? value.sourceHost.slice(0, 250) : '',
     mimeType: typeof value.mimeType === 'string' ? value.mimeType.slice(0, 200) : '',
     totalBytes: Number.isFinite(value.totalBytes) ? value.totalBytes : 0,
     receivedBytes: Number.isFinite(value.receivedBytes) ? value.receivedBytes : 0,
@@ -4738,6 +4774,8 @@ function registerIpcHandlers() {
   });
   registerHandler('show-download', (event, id) => showDownload(id));
   registerHandler('open-download', (event, id) => openDownload(id));
+  registerHandler('open-downloads-folder', () => openDownloadsFolder());
+  registerHandler('copy-download-url', (event, id) => copyDownloadUrl(id));
   registerHandler('clear-downloads', () => clearDownloads());
   registerHandler('clear-browsing-data', (event, options) => clearBrowsingData(options));
 
