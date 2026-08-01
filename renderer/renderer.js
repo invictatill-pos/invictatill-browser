@@ -427,7 +427,10 @@ function updateViewLayout() {
   }
   if (state.menuOpen && window.innerWidth > 600) right = Math.max(right, 304);
   if (state.downloadPopoutOpen && window.innerWidth > 720 && els.downloadPopout) {
-    right = Math.max(right, Math.ceil(els.downloadPopout.getBoundingClientRect().width + 8));
+    // Use measured width with a safe fallback of 440px for the first render tick
+    // when the element was just un-hidden and getBoundingClientRect() may return 0.
+    const dlPopoutWidth = els.downloadPopout.getBoundingClientRect().width || 440;
+    right = Math.max(right, Math.ceil(dlPopoutWidth + 8));
   }
   if (state.passwordSaveRequest && window.innerWidth > 720 && els.passwordSavePopout) {
     right = Math.max(right, Math.ceil(els.passwordSavePopout.getBoundingClientRect().width + 12));
@@ -4894,6 +4897,10 @@ function openExtensionStore() {
   state.extensionStoreOpen = true;
   state.extensionStoreTab = 'featured';
   state.extensionStoreCategory = 'All';
+  // Mark modal open so the native BrowserView hides behind this HTML modal —
+  // the same mechanism used by command palette, site info, update modal, etc.
+  if (!state.modalOpen) state.previousModalFocus = document.activeElement;
+  state.modalOpen = true;
   setHidden(els.extensionStoreModal, false);
   els.extensionStoreModal.setAttribute('aria-hidden', 'false');
   // Reset category pill selection to "All".
@@ -4905,6 +4912,7 @@ function openExtensionStore() {
   if (els.extWebstoreLink) {
     els.extWebstoreLink.href = 'https://chromewebstore.google.com/';
   }
+  scheduleLayout();
   renderExtensionStore();
 }
 
@@ -4915,6 +4923,14 @@ function closeExtensionStore() {
   setHidden(els.extStoreStatus, true);
   if (els.extStoreSearch) els.extStoreSearch.value = '';
   state.extensionStoreCategory = 'All';
+  // Re-evaluate modalOpen so the BrowserView comes back after extension store closes.
+  state.modalOpen = Boolean(visibleModalSurface());
+  if (!state.modalOpen && state.previousModalFocus &&
+      typeof state.previousModalFocus.focus === 'function') {
+    state.previousModalFocus.focus();
+  }
+  if (!state.modalOpen) state.previousModalFocus = null;
+  scheduleLayout();
 }
 
 function renderFallbackIcon(ext) {
