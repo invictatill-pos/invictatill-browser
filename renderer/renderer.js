@@ -169,6 +169,9 @@ const els = {
   btnCancelScreenPicker: $('btn-cancel-screen-picker'),
   btnCancelScreenPickerX: $('btn-cancel-screen-picker-x'),
   btnSubmitScreenPicker: $('btn-submit-screen-picker'),
+  // Screen-picker audio-sharing elements (Bug #3 fix — were missing, making audio sharing non-functional).
+  chkShareAudio: $('chk-share-audio'),
+  screenPickerAudioLabel: $('screen-picker-audio-label'),
   // Extension Store elements.
   extensionToolbar: $('extension-toolbar'),
   btnExtensions: $('btn-extensions'),
@@ -422,6 +425,8 @@ function updateViewLayout() {
     left = Math.ceil(els.whatsappPanel.getBoundingClientRect().right);
   }
   let right = 0;
+  // The side drawer slides out from the left rail; its .right edge is the
+  // x-coordinate where the BrowserView should begin (intentional left offset).
   if (state.drawerOpen && !state.isFullscreen && window.innerWidth > 900 && els.drawer) {
     left = Math.max(left, Math.ceil(els.drawer.getBoundingClientRect().right));
   }
@@ -964,7 +969,7 @@ async function updatePermissionIndicator(url) {
     if (typeof api.getSitePermissions === 'function') {
       siteData = await api.getSitePermissions(url);
     }
-  } catch (e) {}
+  } catch (e) { console.warn('[Permissions] getSitePermissions failed (indicator):', e); }
 
   const granted = PERM_INDICATOR_META.filter(function (m) {
     return siteData && siteData.permissions && siteData.permissions[m.key] === 'allow';
@@ -2668,114 +2673,6 @@ async function performDownloadAction(item, action, aliases) {
   }
 }
 
-function renderDownloads() {
-  clearNode(els.downloadsList);
-  var activeCount = state.downloads.filter(isDownloadActive).length;
-  els.downloadsSummary.textContent = activeCount
-    ? activeCount + ' active download' + (activeCount === 1 ? '' : 's')
-    : 'No active downloads';
-  els.downloadBadge.textContent = String(activeCount);
-  setHidden(els.downloadBadge, activeCount === 0);
-
-  state.downloads.forEach(function (item) {
-    var ext = (item.filename || '').split('.').pop().toLowerCase();
-
-    // File type emoji + colour category
-    var iconChar = '📄';
-    if (ext === 'pdf') iconChar = '📄';
-    else if (ext === 'xlsx' || ext === 'xls') iconChar = '📊';
-    else if (ext === 'csv') iconChar = '📋';
-    else if (ext === 'zip' || ext === 'rar' || ext === '7z') iconChar = '📦';
-    else if (ext === 'exe' || ext === 'msi') iconChar = '⚙️';
-    else if (ext === 'doc' || ext === 'docx') iconChar = '📝';
-    else if (ext === 'ppt' || ext === 'pptx') iconChar = '📽️';
-    else if (ext === 'mp4' || ext === 'mkv' || ext === 'avi') iconChar = '🎬';
-    else if (ext === 'mp3' || ext === 'wav' || ext === 'flac') iconChar = '🎵';
-    else if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp' || ext === 'svg') iconChar = '🖼️';
-
-    var dlState = String(item.state || '').toLowerCase();
-
-    var row = createElement('div', 'data-item');
-    row.dataset.dlState = dlState;
-
-    // Icon badge
-    var iconEl = createElement('div', 'data-item-icon', iconChar);
-    iconEl.dataset.ext = ext;
-    iconEl.setAttribute('aria-hidden', 'true');
-    row.appendChild(iconEl);
-
-    // Right content
-    var main = createElement('div', 'data-item-main');
-
-    // Filename
-    main.appendChild(createElement('p', 'data-item-title', item.filename || 'Unknown file'));
-
-    // State + size meta
-    var totalMB = item.totalBytes > 0 ? (item.totalBytes / (1024 * 1024)).toFixed(1) + ' MB' : '';
-    var receivedMB = item.receivedBytes > 0 ? (item.receivedBytes / (1024 * 1024)).toFixed(1) + ' MB' : '';
-    var metaText;
-    if (isDownloadActive(item)) {
-      metaText = receivedMB && totalMB ? receivedMB + ' / ' + totalMB : 'Downloading…';
-      if (Number.isFinite(item.percent) && item.percent > 0) metaText += '  —  ' + Math.round(item.percent) + '%';
-      if (item.paused) metaText += '  (Paused)';
-    } else if (isDownloadDone(item)) {
-      metaText = (totalMB || receivedMB || '') + (totalMB || receivedMB ? '  —  ' : '') + 'Complete';
-    } else {
-      metaText = dlState.charAt(0).toUpperCase() + dlState.slice(1) || 'Stopped';
-    }
-    main.appendChild(createElement('p', 'data-item-meta', metaText));
-
-    // Source URL host
-    if (item.url) {
-      try {
-        var sourceHost = new URL(item.url).hostname;
-        main.appendChild(createElement('p', 'data-item-source', sourceHost));
-      } catch (e) { /* malformed url — skip */ }
-    }
-
-    // Progress bar for active downloads
-    if (isDownloadActive(item)) {
-      var progress = createElement('progress', 'download-progress');
-      progress.max = 100;
-      progress.value = item.percent || 0;
-      progress.textContent = Math.round(item.percent || 0) + '%';
-      main.appendChild(progress);
-    }
-
-    // Action buttons
-    var actions = createElement('div', 'data-item-actions');
-    if (isDownloadDone(item)) {
-      var open = createElement('button', 'dl-btn-open', 'Open');
-      open.type = 'button';
-      open.addEventListener('click', function () { runDownloadAction(['openDownload', 'showDownload'], item); });
-      var folder = createElement('button', '', 'Show in folder');
-      folder.type = 'button';
-      folder.addEventListener('click', function () { runDownloadAction(['showDownloadInFolder', 'showItemInFolder'], item); });
-      actions.append(open, folder);
-    } else if (isDownloadActive(item)) {
-      var pauseResume = createElement('button', '', item.paused ? 'Resume' : 'Pause');
-      pauseResume.type = 'button';
-      pauseResume.addEventListener('click', function () {
-        performDownloadAction(item, item.paused ? 'resume' : 'pause', item.paused ? ['resumeDownload'] : ['pauseDownload']);
-      });
-      var cancel = createElement('button', 'dl-btn-cancel', 'Cancel');
-      cancel.type = 'button';
-      cancel.addEventListener('click', function () { performDownloadAction(item, 'cancel', ['cancelDownload']); });
-      actions.append(pauseResume, cancel);
-    } else if (dlState === 'failed' || dlState === 'interrupted' || item.error) {
-      var retry = createElement('button', '', 'Retry');
-      retry.type = 'button';
-      retry.addEventListener('click', function () { performDownloadAction(item, 'retry', ['retryDownload']); });
-      actions.appendChild(retry);
-    }
-    main.appendChild(actions);
-    row.appendChild(main);
-    els.downloadsList.appendChild(row);
-  });
-
-  setHidden(els.downloadsEmpty, state.downloads.length > 0);
-  renderDownloadPopout();
-}
 
 function renderDownloads() {
   clearNode(els.downloadsList);
@@ -3878,7 +3775,7 @@ function registerBrowserEvents() {
         updateBookmarkButton();
         // Refresh address-bar permission pills on every navigation.
         const tab = activeTab();
-        if (tab && tab.url) updatePermissionIndicator(tab.url).catch(function () {});
+        if (tab && tab.url) updatePermissionIndicator(tab.url).catch(function (e) { console.warn('[Permissions] indicator update failed (tab-load):', e); });
       }
     });
   });
@@ -3897,7 +3794,7 @@ function registerBrowserEvents() {
       renderTabs();
       renderBrowserControls();
       // Refresh permission indicator for the newly active tab.
-      if (tab.url) updatePermissionIndicator(tab.url).catch(function () {});
+      if (tab.url) updatePermissionIndicator(tab.url).catch(function (e) { console.warn('[Permissions] indicator update failed (tab-activate):', e); });
     } else {
       refreshBrowserState();
     }
@@ -3955,7 +3852,7 @@ function registerBrowserEvents() {
       if (payload && payload.origin && url) {
         const tabOrigin = new URL(url).origin;
         if (tabOrigin === payload.origin) {
-          updatePermissionIndicator(url).catch(function () {});
+          updatePermissionIndicator(url).catch(function (e) { console.warn('[Permissions] indicator update failed (permission-change):', e); });
         }
       }
     } catch (e) {}
