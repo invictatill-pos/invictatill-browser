@@ -4840,6 +4840,99 @@ kbd {
   font-size: 11px;
 }
 
+/* ─── HTTP Basic Auth Modal ─────────────────────────────────────── */
+.http-auth-backdrop {
+  z-index: 2700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 5, 9, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.http-auth-modal {
+  width: min(400px, calc(100vw - 32px));
+  background: #111827;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 32px 28px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  outline: none;
+}
+
+.http-auth-icon {
+  font-size: 2.2rem;
+  margin-bottom: 4px;
+}
+
+.http-auth-title {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  text-align: center;
+}
+
+.http-auth-host {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--green);
+  margin: 0;
+  text-align: center;
+  word-break: break-all;
+}
+
+.http-auth-realm {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin: 0 0 8px;
+  text-align: center;
+  font-style: italic;
+}
+
+.http-auth-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.http-auth-input {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.http-auth-input:focus {
+  outline: none;
+  border-color: var(--green);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.http-auth-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.http-auth-actions .secondary-button,
+.http-auth-actions .primary-button {
+  min-width: 88px;
+}
+
+/* ─── Screen Picker Backdrop ────────────────────────────────────── */
 .screen-picker-backdrop {
   z-index: 2600;
   padding: 16px;

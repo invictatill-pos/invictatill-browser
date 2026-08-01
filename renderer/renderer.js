@@ -169,6 +169,15 @@ const els = {
   btnCancelScreenPicker: $('btn-cancel-screen-picker'),
   btnCancelScreenPickerX: $('btn-cancel-screen-picker-x'),
   btnSubmitScreenPicker: $('btn-submit-screen-picker'),
+  // HTTP Basic Auth modal elements.
+  httpAuthBackdrop: $('http-auth-modal-backdrop'),
+  httpAuthModal: $('http-auth-modal'),
+  httpAuthHost: $('http-auth-host'),
+  httpAuthRealm: $('http-auth-realm'),
+  httpAuthUsername: $('http-auth-username'),
+  httpAuthPassword: $('http-auth-password'),
+  httpAuthForm: $('http-auth-form'),
+  btnHttpAuthCancel: $('btn-http-auth-cancel'),
   // Extension Store elements.
   extensionToolbar: $('extension-toolbar'),
   btnExtensions: $('btn-extensions'),
@@ -228,6 +237,7 @@ const state = {
   whatsappPanelStatus: 'idle',
   lastWhatsappLayoutKey: '',
   passwordSaveRequest: null,
+  httpAuthRequest: null,  // { requestId, host, realm, isProxy }
   historyRange: 'day',
   historyQuery: '',
   settings: {
@@ -4514,6 +4524,53 @@ function wireUi() {
   if (typeof api.onCloseScreenPicker === 'function') {
     api.onCloseScreenPicker(function (data) {
       closeScreenPickerModal(data && data.requestId);
+    });
+  }
+
+  // — HTTP Basic Auth dialog —
+  if (typeof api.on === 'function') {
+    api.on('http-auth-request', function (data) {
+      if (!data || !data.requestId) return;
+      state.httpAuthRequest = data;
+      if (els.httpAuthHost) {
+        const portSuffix = data.port && data.port !== 80 && data.port !== 443 ? ':' + data.port : '';
+        els.httpAuthHost.textContent = (data.isProxy ? 'Proxy: ' : '') + data.host + portSuffix;
+      }
+      if (els.httpAuthRealm) {
+        els.httpAuthRealm.textContent = data.realm ? '"' + data.realm + '"' : '';
+        setHidden(els.httpAuthRealm, !data.realm);
+      }
+      if (els.httpAuthUsername) els.httpAuthUsername.value = '';
+      if (els.httpAuthPassword) els.httpAuthPassword.value = '';
+      setHidden(els.httpAuthBackdrop, false);
+      if (els.httpAuthModal) els.httpAuthModal.focus();
+      if (els.httpAuthUsername) els.httpAuthUsername.focus();
+    });
+  }
+
+  if (els.btnHttpAuthCancel) {
+    els.btnHttpAuthCancel.addEventListener('click', function () {
+      const req = state.httpAuthRequest;
+      state.httpAuthRequest = null;
+      setHidden(els.httpAuthBackdrop, true);
+      if (req && typeof api.respondHttpAuth === 'function') {
+        api.respondHttpAuth(req.requestId, '', '').catch(function () {});
+      }
+    });
+  }
+
+  if (els.httpAuthForm) {
+    els.httpAuthForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      const req = state.httpAuthRequest;
+      if (!req) return;
+      state.httpAuthRequest = null;
+      setHidden(els.httpAuthBackdrop, true);
+      const username = els.httpAuthUsername ? els.httpAuthUsername.value : '';
+      const password = els.httpAuthPassword ? els.httpAuthPassword.value : '';
+      if (typeof api.respondHttpAuth === 'function') {
+        api.respondHttpAuth(req.requestId, username, password).catch(function () {});
+      }
     });
   }
 

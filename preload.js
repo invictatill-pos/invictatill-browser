@@ -34,6 +34,7 @@ const allowedEvents = new Set([
   'extension-installed',
   'extension-status-changed',
   'permission-state-changed',
+  'http-auth-request',
 ]);
 
 const eventWrappers = new Map();
@@ -153,6 +154,8 @@ const api = {
     ipcRenderer.invoke('resolve-password-save-request', { requestId, decision }),
   deletePassword: (id) => ipcRenderer.invoke('delete-password', id),
   autofillCredentials: (credentials) => ipcRenderer.invoke('autofill-credentials', credentials),
+  respondHttpAuth: (requestId, username, password) =>
+    ipcRenderer.invoke('respond-http-auth', { requestId, username, password }),
   onShowScreenPicker: (callback) => {
     return subscribe('show-screen-picker', callback);
   },

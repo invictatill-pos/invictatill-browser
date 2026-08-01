@@ -120,6 +120,7 @@ const liveDownloads = new Map();
 const aiRequests = new Map();
 const pendingCredentialPrompts = new Map();
 const liveWritingRequestTimes = new Map();
+const pendingHttpAuthCallbacks = new Map(); // requestId → { callback, timeout }
 let invictaSessionToken = '';
 let localAiProcess = null;
 let localAiStartAttempted = false;
@@ -4960,6 +4961,18 @@ function registerIpcHandlers() {
     return resolveCredentialSavePrompt(payload.requestId, payload.decision);
   });
 
+  // HTTP Basic Auth response — renderer sends credentials (or null to cancel).
+  registerHandler('respond-http-auth', (event, payload) => {
+    assertPlainObject(payload, 'http auth response');
+    const entry = pendingHttpAuthCallbacks.get(payload.requestId);
+    if (!entry) return;
+    clearTimeout(entry.timeout);
+    pendingHttpAuthCallbacks.delete(payload.requestId);
+    const username = typeof payload.username === 'string' ? payload.username : '';
+    const password = typeof payload.password === 'string' ? payload.password : '';
+    try { entry.callback(username, password); } catch (e) {}
+  });
+
   registerHandler('delete-password', (event, id) => {
     savedPasswords = savedPasswords.filter((p) => p.id !== id);
     savePasswordsToStore();
@@ -5505,6 +5518,12 @@ app.on('before-quit', () => {
   localAiProcess = null;
   for (const pending of pendingCredentialPrompts.values()) clearTimeout(pending.timeout);
   pendingCredentialPrompts.clear();
+  // Cancel any in-flight HTTP Auth requests so their responses don't hang.
+  for (const { callback, timeout } of pendingHttpAuthCallbacks.values()) {
+    clearTimeout(timeout);
+    try { callback('', ''); } catch (e) {}
+  }
+  pendingHttpAuthCallbacks.clear();
   liveWritingRequestTimes.clear();
   flushSessionState();
   for (const sess of workspaceSessionsMap.values()) {
@@ -5541,4 +5560,34 @@ app.on('before-quit', () => {
 
 app.on('window-all-closed', () => {
   app.quit();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// HTTP Basic Authentication — intercept 401 challenges and show a
+// custom in-app credentials dialog instead of letting Electron
+// auto-cancel the request (which produces a raw 401 page).
+// ═══════════════════════════════════════════════════════════════════
+app.on('login', (event, _webContents, _details, authInfo, callback) => {
+  // MUST call preventDefault() or Electron will immediately cancel the request.
+  event.preventDefault();
+
+  const requestId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+
+  // Safety net: auto-cancel after 5 minutes so the callback is never left dangling.
+  const timeout = setTimeout(() => {
+    if (!pendingHttpAuthCallbacks.has(requestId)) return;
+    pendingHttpAuthCallbacks.delete(requestId);
+    try { callback('', ''); } catch (e) {}
+  }, 5 * 60 * 1000);
+
+  pendingHttpAuthCallbacks.set(requestId, { callback, timeout });
+
+  sendToShell('http-auth-request', {
+    requestId,
+    host: authInfo.host || '',
+    port: authInfo.port || 0,
+    realm: authInfo.realm || '',
+    scheme: authInfo.scheme || 'basic',
+    isProxy: Boolean(authInfo.isProxy),
+  });
 });
