@@ -169,9 +169,6 @@ const els = {
   btnCancelScreenPicker: $('btn-cancel-screen-picker'),
   btnCancelScreenPickerX: $('btn-cancel-screen-picker-x'),
   btnSubmitScreenPicker: $('btn-submit-screen-picker'),
-  // Screen-picker audio-sharing elements (Bug #3 fix — were missing, making audio sharing non-functional).
-  chkShareAudio: $('chk-share-audio'),
-  screenPickerAudioLabel: $('screen-picker-audio-label'),
   // Extension Store elements.
   extensionToolbar: $('extension-toolbar'),
   btnExtensions: $('btn-extensions'),
