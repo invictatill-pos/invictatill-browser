@@ -2709,6 +2709,10 @@ body.fullscreen .browser-stage {
   background: linear-gradient(135deg, rgba(54, 211, 153, 0.11), rgba(56, 217, 245, 0.035) 70%);
   border-bottom: 1px solid rgba(190, 205, 235, 0.11);
   flex-shrink: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 .download-popout-header:active {
   cursor: default;
 }
