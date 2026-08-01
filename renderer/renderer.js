@@ -427,10 +427,15 @@ function updateViewLayout() {
   }
   if (state.menuOpen && window.innerWidth > 600) right = Math.max(right, 304);
   if (state.downloadPopoutOpen && window.innerWidth > 720 && els.downloadPopout) {
-    // Use measured width with a safe fallback of 440px for the first render tick
-    // when the element was just un-hidden and getBoundingClientRect() may return 0.
-    const dlPopoutWidth = els.downloadPopout.getBoundingClientRect().width || 440;
-    right = Math.max(right, Math.ceil(dlPopoutWidth + 8));
+    // Compute how far the panel extends from the right edge of the window.
+    // The panel is fixed at `right: 16px`, so total space = panelWidth + 16px CSS gap.
+    // Add 8px buffer so the BrowserView never overlaps the panel's left edge.
+    // Use measured rect; fall back to 420px panel + 16px gap + 8px buffer = 444px.
+    var dlRect = els.downloadPopout.getBoundingClientRect();
+    var dlRight = dlRect.width > 0
+      ? Math.ceil(window.innerWidth - dlRect.left + 8)
+      : 444;
+    right = Math.max(right, dlRight);
   }
   if (state.passwordSaveRequest && window.innerWidth > 720 && els.passwordSavePopout) {
     right = Math.max(right, Math.ceil(els.passwordSavePopout.getBoundingClientRect().width + 12));
@@ -4829,57 +4834,17 @@ async function initialize() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Floating download popout — drag-to-move
+// Download popout — fixed position (drag removed by design)
+// Clear any previously saved drag position so the panel always anchors
+// at its CSS default (top-right, below the toolbar).
 // ═══════════════════════════════════════════════════════════════════
-(function initDownloadDrag() {
-  var dragState = null;
+(function clearDownloadDragPosition() {
+  try { localStorage.removeItem('invicta-dl-popout-pos'); } catch (e) { /* ignore */ }
   var popout = els.downloadPopout;
-  var header = popout && popout.querySelector('.download-popout-header');
-  if (!header) return;
-
-  // Restore saved position.
-  try {
-    var saved = localStorage.getItem('invicta-dl-popout-pos');
-    if (saved) {
-      var pos = JSON.parse(saved);
-      if (typeof pos.bottom === 'number') popout.style.bottom = pos.bottom + 'px';
-      if (typeof pos.right === 'number') popout.style.right = pos.right + 'px';
-    }
-  } catch (error) { /* ignore */ }
-
-  header.addEventListener('mousedown', function (e) {
-    if (e.button !== 0 || e.target.closest('button')) return;
-    e.preventDefault();
-    var rect = popout.getBoundingClientRect();
-    dragState = { startX: e.clientX, startY: e.clientY, startBottom: window.innerHeight - rect.bottom, startRight: window.innerWidth - rect.right };
-    popout.classList.add('dragging');
-    document.addEventListener('mousemove', onDragMove);
-    document.addEventListener('mouseup', onDragEnd);
-  });
-
-  function onDragMove(e) {
-    if (!dragState) return;
-    var dx = e.clientX - dragState.startX;
-    var dy = e.clientY - dragState.startY;
-    var newBottom = Math.max(4, dragState.startBottom - dy);
-    var newRight = Math.max(4, dragState.startRight - dx);
-    popout.style.bottom = newBottom + 'px';
-    popout.style.right = newRight + 'px';
-    popout.style.top = 'auto';
-  }
-
-  function onDragEnd() {
-    if (!dragState) return;
-    popout.classList.remove('dragging');
-    dragState = null;
-    document.removeEventListener('mousemove', onDragMove);
-    document.removeEventListener('mouseup', onDragEnd);
-    try {
-      localStorage.setItem('invicta-dl-popout-pos', JSON.stringify({
-        bottom: parseInt(popout.style.bottom) || 16,
-        right: parseInt(popout.style.right) || 16,
-      }));
-    } catch (error) { /* ignore */ }
+  if (popout) {
+    popout.style.removeProperty('bottom');
+    popout.style.removeProperty('right');
+    popout.style.removeProperty('top');
   }
 })();
 

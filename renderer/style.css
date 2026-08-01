@@ -2654,7 +2654,7 @@ body.fullscreen .browser-stage {
 .download-popout {
   position: fixed;
   z-index: 2200;
-  /* Anchored BELOW the browser chrome (navbar), aligned top-right */
+  /* Anchored BELOW the browser chrome (navbar), aligned top-right — non-movable */
   top: calc(var(--chrome-height) + 8px);
   right: 16px;
   width: min(420px, calc(100vw - var(--app-rail-width) - 32px));
@@ -2672,9 +2672,6 @@ body.fullscreen .browser-stage {
     0 2px 8px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
   animation: dl-popout-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
-  resize: both;
-  min-width: 320px;
-  min-height: 200px;
   backdrop-filter: blur(24px) saturate(1.4);
   -webkit-backdrop-filter: blur(24px) saturate(1.4);
 }
@@ -2694,11 +2691,6 @@ body.fullscreen .browser-stage {
   pointer-events: none;
 }
 
-.download-popout.dragging {
-  opacity: 0.92;
-  transition: none;
-  cursor: grabbing;
-}
 
 /* Slides DOWN from top (from the nav bar button) */
 @keyframes dl-popout-in {
@@ -2717,13 +2709,8 @@ body.fullscreen .browser-stage {
   background: linear-gradient(135deg, rgba(54, 211, 153, 0.11), rgba(56, 217, 245, 0.035) 70%);
   border-bottom: 1px solid rgba(190, 205, 235, 0.11);
   flex-shrink: 0;
-  cursor: grab;
-  user-select: none;
-  -webkit-user-select: none;
-}
-
 .download-popout-header:active {
-  cursor: grabbing;
+  cursor: default;
 }
 
 .download-popout-title {
