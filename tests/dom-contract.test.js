@@ -9,6 +9,7 @@ const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8');
 const renderer = fs.readFileSync(path.join(root, 'renderer', 'renderer.js'), 'utf8');
 const css = fs.readFileSync(path.join(root, 'renderer', 'style.css'), 'utf8');
+const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
 
 const htmlIds = [...html.matchAll(/\bid=["']([^"']+)["']/g)].map((match) => match[1]);
 const idSet = new Set(htmlIds);
@@ -63,8 +64,6 @@ test('find-in-page controls and accessible landmarks exist', () => {
 });
 
 test('tabwise zoom preservation and zoom bounds contract', () => {
-  const main = fs.readFileSync(path.join(root, 'main.js'), 'utf8');
-
   assert.match(main, /contents\.on\('zoom-changed'/);
   assert.match(main, /tab\.view\.webContents\.setZoomFactor/);
   assert.match(main, /CHROME_ZOOM_STEPS/);
@@ -72,6 +71,17 @@ test('tabwise zoom preservation and zoom bounds contract', () => {
   assert.match(renderer, /sameId\(rawTab\.id, state\.activeTabId\).*tab\.zoom/);
   assert.match(renderer, /clamp\(factor, 0\.25, 5\.0\)/);
   assert.match(renderer, /Number\.isFinite\(Number\(res\.zoom\)\)/);
+});
+
+test('native tab surface stays below browser chrome and app rail', () => {
+  assert.match(css, /--titlebar-height:\s*34px;/);
+  assert.match(css, /--tabs-height:\s*42px;/);
+  assert.match(css, /--nav-height:\s*52px;/);
+  assert.match(css, /--app-rail-width:\s*48px;/);
+  assert.match(main, /const DEFAULT_VIEW_LAYOUT = \{\s*top:\s*34 \+ 42 \+ 52,\s*left:\s*48,/s);
+  assert.match(main, /const minLayout = mainWindow && !mainWindow\.isDestroyed\(\) && mainWindow\.isFullScreen\(\)/);
+  assert.match(main, /layout\.top === undefined \? minLayout\.top : Math\.max\(minLayout\.top, layout\.top\)/);
+  assert.match(main, /layout\.left === undefined \? minLayout\.left : Math\.max\(minLayout\.left, layout\.left\)/);
 });
 
 test('InvictaTill AI is the only user-selectable AI agent', () => {

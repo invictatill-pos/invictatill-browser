@@ -112,6 +112,10 @@ const DEFAULT_VIEW_LAYOUT = {
   right: 0,
   bottom: 0,
 };
+const FULLSCREEN_VIEW_LAYOUT = {
+  top: 0,
+  left: 0,
+};
 let tabsVisible = true;
 let viewLayout = { ...DEFAULT_VIEW_LAYOUT };
 let splitScreen = { enabled: false, secondaryTabId: null };
@@ -881,15 +885,18 @@ function setViewVisible(visible) {
 
 function setViewLayout(layout) {
   assertPlainObject(layout, 'layout');
+  const minLayout = mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen()
+    ? FULLSCREEN_VIEW_LAYOUT
+    : DEFAULT_VIEW_LAYOUT;
   const next = {
     top: boundedNumber(
-      layout.top === undefined ? 0 : layout.top,
+      layout.top === undefined ? minLayout.top : Math.max(minLayout.top, layout.top),
       'layout.top',
       0,
       5000
     ),
     left: boundedNumber(
-      layout.left === undefined ? 0 : layout.left,
+      layout.left === undefined ? minLayout.left : Math.max(minLayout.left, layout.left),
       'layout.left',
       0,
       5000
