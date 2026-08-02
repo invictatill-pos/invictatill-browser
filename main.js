@@ -106,8 +106,14 @@ let powerBlockerId = null;
 let currentGamingLevel = 0;
 let nextTabId = 1;
 let activeTabId = null;
+const DEFAULT_VIEW_LAYOUT = {
+  top: 34 + 42 + 52,
+  left: 48,
+  right: 0,
+  bottom: 0,
+};
 let tabsVisible = true;
-let viewLayout = { top: 112, left: 48, right: 0, bottom: 0 };
+let viewLayout = { ...DEFAULT_VIEW_LAYOUT };
 let splitScreen = { enabled: false, secondaryTabId: null };
 let sessionSaveTimer = null;
 let historySaveTimer = null;
