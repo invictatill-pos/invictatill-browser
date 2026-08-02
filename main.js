@@ -2016,10 +2016,13 @@ function attachTabEvents(tab) {
   });
 
   contents.on('enter-html-full-screen', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFullScreen(true);
+    // Do NOT call mainWindow.setFullScreen(true) here.
+    // That would hide the entire browser chrome (top bar + sidebar).
+    // The page content already fills the tab view area — no OS-level fullscreen needed.
+    sendToShell('html-fullscreen-change', true);
   });
   contents.on('leave-html-full-screen', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFullScreen(false);
+    sendToShell('html-fullscreen-change', false);
   });
 }
 
