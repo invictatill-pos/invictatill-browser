@@ -116,7 +116,8 @@ const FULLSCREEN_VIEW_LAYOUT = {
   top: 0,
   left: 0,
 };
-let tabsVisible = true;
+let tabsVisible = false;
+let shellLayoutReady = false;
 let viewLayout = { ...DEFAULT_VIEW_LAYOUT };
 let splitScreen = { enabled: false, secondaryTabId: null };
 let sessionSaveTimer = null;
@@ -915,7 +916,7 @@ function resizeViews() {
   }
   resizeWhatsappView();
 
-  if (!tabsVisible || !primary) return;
+  if (!shellLayoutReady || !tabsVisible || !primary) return;
   if ((primary.workspaceId || 'default') !== activeWorkspaceId) return;
 
   const primaryCanShow = primary.url !== 'about:blank';
@@ -946,6 +947,7 @@ function setViewVisible(visible) {
 function setViewLayout(layout) {
   assertPlainObject(layout, 'layout');
   const next = normalizeViewLayout(layout);
+  shellLayoutReady = true;
   viewLayout = next;
   resizeViews();
   return { ...viewLayout };
@@ -5432,6 +5434,10 @@ function registerIpcHandlers() {
 
 
 function createMainWindow() {
+  tabsVisible = false;
+  shellLayoutReady = false;
+  viewLayout = { ...DEFAULT_VIEW_LAYOUT };
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,

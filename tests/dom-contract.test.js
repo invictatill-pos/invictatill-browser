@@ -83,6 +83,9 @@ test('native tab surface stays below browser chrome and app rail', () => {
   assert.match(main, /function normalizeViewLayout\(layout, minLayout\)/);
   assert.match(main, /source\.top === undefined \? minimum\.top : Math\.max\(minimum\.top, source\.top\)/);
   assert.match(main, /source\.left === undefined \? minimum\.left : Math\.max\(minimum\.left, source\.left\)/);
+  assert.match(main, /let tabsVisible = false;\s*let shellLayoutReady = false;/);
+  assert.match(main, /if \(!shellLayoutReady \|\| !tabsVisible \|\| !primary\) return;/);
+  assert.match(main, /shellLayoutReady = true;\s*viewLayout = next;\s*resizeViews\(\);/);
   assert.match(main, /viewLayout = bounds\.layout;/);
   assert.match(main, /prepareRemoteContentView\(view\);\s*mainWindow\.contentView\.addChildView\(view\);\s*prepareRemoteContentView\(view\);/s);
 });
