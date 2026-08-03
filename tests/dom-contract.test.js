@@ -78,16 +78,34 @@ test('native tab surface stays below browser chrome and app rail', () => {
   assert.match(css, /--tabs-height:\s*42px;/);
   assert.match(css, /--nav-height:\s*52px;/);
   assert.match(css, /--app-rail-width:\s*48px;/);
+  assert.match(css, /\.browser-chrome\s*{[^}]*\bz-index:\s*1200;/s);
+  assert.match(css, /\.app-rail\s*{[^}]*\bz-index:\s*1100;/s);
+  assert.match(css, /\.browser-stage\s*{[^}]*\bz-index:\s*1;[^}]*\boverflow:\s*hidden;/s);
   assert.match(main, /const DEFAULT_VIEW_LAYOUT = \{\s*top:\s*34 \+ 42 \+ 52,\s*left:\s*48,/s);
   assert.match(main, /function minimumViewLayout\(\)\s*{\s*return mainWindow && !mainWindow\.isDestroyed\(\) && mainWindow\.isFullScreen\(\)/s);
   assert.match(main, /function normalizeViewLayout\(layout, minLayout\)/);
   assert.match(main, /source\.top === undefined \? minimum\.top : Math\.max\(minimum\.top, source\.top\)/);
   assert.match(main, /source\.left === undefined \? minimum\.left : Math\.max\(minimum\.left, source\.left\)/);
+  assert.match(main, /function resizeTabViewToCurrentLayout\(tab\)/);
   assert.match(main, /let tabsVisible = false;\s*let shellLayoutReady = false;/);
   assert.match(main, /if \(!shellLayoutReady \|\| !tabsVisible \|\| !primary\) return;/);
   assert.match(main, /shellLayoutReady = true;\s*viewLayout = next;\s*resizeViews\(\);/);
   assert.match(main, /viewLayout = bounds\.layout;/);
   assert.match(main, /prepareRemoteContentView\(view\);\s*mainWindow\.contentView\.addChildView\(view\);\s*prepareRemoteContentView\(view\);/s);
+});
+
+test('HTTP Basic Auth prompt is clipped to the tab viewport', () => {
+  assert.match(html, /id=["']http-auth-modal-backdrop["'][^>]*role=["']dialog["']/);
+  assert.match(css, /\.http-auth-backdrop\s*{[^}]*\btop:\s*var\(--chrome-height\);[^}]*\bleft:\s*var\(--app-rail-width\);[^}]*\bz-index:\s*850;[^}]*\boverflow:\s*hidden;/s);
+  assert.match(css, /body\.whatsapp-panel-open \.http-auth-backdrop\s*{[^}]*left:\s*calc\(var\(--app-rail-width\) \+ var\(--whatsapp-panel-width\)\);/s);
+  assert.match(css, /body\.ai-panel-open \.http-auth-backdrop\s*{[^}]*left:\s*calc\(var\(--app-rail-width\) \+ var\(--drawer-width\)\);/s);
+  assert.match(css, /body\.fullscreen \.http-auth-backdrop\s*{[^}]*top:\s*0;[^}]*left:\s*0;/s);
+  assert.match(renderer, /\[els\.httpAuthBackdrop, els\.httpAuthModal\]/);
+  assert.match(renderer, /openModalSurface\(els\.httpAuthBackdrop, els\.httpAuthModal\);/);
+  assert.match(renderer, /closeModalSurface\(els\.httpAuthBackdrop\);/);
+  assert.match(main, /const requestingTab = tabForRemoteContents\(_webContents\);\s*resizeTabViewToCurrentLayout\(requestingTab\);\s*resizeViews\(\);/s);
+  assert.match(main, /pendingHttpAuthCallbacks\.set\(requestId, \{ callback, timeout, tabId: requestingTab \? requestingTab\.id : null \}\);/);
+  assert.match(main, /entry\.callback\(username, password\);[\s\S]*resizeTabViewToCurrentLayout\(tabs\.get\(entry\.tabId\)\);[\s\S]*resizeViews\(\);/);
 });
 
 test('InvictaTill AI is the only user-selectable AI agent', () => {

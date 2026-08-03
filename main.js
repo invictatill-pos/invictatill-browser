@@ -837,6 +837,29 @@ function safeViewSetVisible(view, visible) {
   }
 }
 
+function resizeTabViewToCurrentLayout(tab) {
+  if (!tab || !tab.view || !mainWindow || mainWindow.isDestroyed()) return;
+  const bounds = viewBoundsForLayout(viewLayout);
+  if (!bounds) return;
+  viewLayout = bounds.layout;
+  const { x, y, width, height } = bounds;
+  if (splitScreen.enabled && splitScreen.secondaryTabId && splitScreen.secondaryTabId !== tab.id) {
+    const primary = getActiveTab();
+    const secondary = tabs.get(splitScreen.secondaryTabId) || null;
+    if (primary && secondary && (tab.id === primary.id || tab.id === secondary.id)) {
+      const leftWidth = Math.max(1, Math.floor(width / 2));
+      const rightWidth = Math.max(1, width - leftWidth);
+      if (tab.id === primary.id) {
+        tab.view.setBounds({ x, y, width: leftWidth, height });
+      } else {
+        tab.view.setBounds({ x: x + leftWidth, y, width: rightWidth, height });
+      }
+      return;
+    }
+  }
+  tab.view.setBounds({ x, y, width, height });
+}
+
 function minimumViewLayout() {
   return mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen()
     ? FULLSCREEN_VIEW_LAYOUT
@@ -5026,6 +5049,10 @@ function registerIpcHandlers() {
     const username = typeof payload.username === 'string' ? payload.username : '';
     const password = typeof payload.password === 'string' ? payload.password : '';
     try { entry.callback(username, password); } catch (e) {}
+    if (entry.tabId !== null && entry.tabId !== undefined) {
+      resizeTabViewToCurrentLayout(tabs.get(entry.tabId));
+    }
+    resizeViews();
   });
 
   registerHandler('delete-password', (event, id) => {
@@ -5630,6 +5657,10 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
   // MUST call preventDefault() or Electron will immediately cancel the request.
   event.preventDefault();
 
+  const requestingTab = tabForRemoteContents(_webContents);
+  resizeTabViewToCurrentLayout(requestingTab);
+  resizeViews();
+
   const requestId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 
   // Safety net: auto-cancel after 5 minutes so the callback is never left dangling.
@@ -5639,7 +5670,7 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
     try { callback('', ''); } catch (e) {}
   }, 5 * 60 * 1000);
 
-  pendingHttpAuthCallbacks.set(requestId, { callback, timeout });
+  pendingHttpAuthCallbacks.set(requestId, { callback, timeout, tabId: requestingTab ? requestingTab.id : null });
 
   sendToShell('http-auth-request', {
     requestId,

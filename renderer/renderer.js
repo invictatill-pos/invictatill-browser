@@ -292,6 +292,7 @@ function visibleModalSurface() {
     [els.passwordsModalBackdrop, els.passwordsModal],
     [els.updateModalBackdrop, els.updateModal],
     [els.commandBackdrop, els.commandPalette],
+    [els.httpAuthBackdrop, els.httpAuthModal],
   ];
   for (const surface of surfaces) {
     if (surface[0] && !surface[0].classList.contains('hidden')) return surface;
@@ -4542,9 +4543,10 @@ function wireUi() {
       }
       if (els.httpAuthUsername) els.httpAuthUsername.value = '';
       if (els.httpAuthPassword) els.httpAuthPassword.value = '';
-      setHidden(els.httpAuthBackdrop, false);
-      if (els.httpAuthModal) els.httpAuthModal.focus();
-      if (els.httpAuthUsername) els.httpAuthUsername.focus();
+      openModalSurface(els.httpAuthBackdrop, els.httpAuthModal);
+      if (els.httpAuthUsername) {
+        window.setTimeout(function () { els.httpAuthUsername.focus(); }, 0);
+      }
     });
   }
 
@@ -4552,7 +4554,7 @@ function wireUi() {
     els.btnHttpAuthCancel.addEventListener('click', function () {
       const req = state.httpAuthRequest;
       state.httpAuthRequest = null;
-      setHidden(els.httpAuthBackdrop, true);
+      closeModalSurface(els.httpAuthBackdrop);
       if (req && typeof api.respondHttpAuth === 'function') {
         api.respondHttpAuth(req.requestId, '', '').catch(function () {});
       }
@@ -4565,7 +4567,7 @@ function wireUi() {
       const req = state.httpAuthRequest;
       if (!req) return;
       state.httpAuthRequest = null;
-      setHidden(els.httpAuthBackdrop, true);
+      closeModalSurface(els.httpAuthBackdrop);
       const username = els.httpAuthUsername ? els.httpAuthUsername.value : '';
       const password = els.httpAuthPassword ? els.httpAuthPassword.value : '';
       if (typeof api.respondHttpAuth === 'function') {

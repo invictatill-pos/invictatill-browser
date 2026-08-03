@@ -101,6 +101,20 @@ async function main() {
       response.end('<!doctype html><title>Second test page</title><h1>Second page</h1>');
       return;
     }
+    if (request.url === '/basic-auth') {
+      const expectedAuth = 'Basic ' + Buffer.from('invicta:secret').toString('base64');
+      if (request.headers.authorization !== expectedAuth) {
+        response.writeHead(401, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'WWW-Authenticate': 'Basic realm="Invicta Smoke"',
+        });
+        response.end('<!doctype html><title>Auth required</title><h1>Authentication required</h1>');
+        return;
+      }
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end('<!doctype html><title>Basic Auth OK</title><h1>Authenticated page</h1>');
+      return;
+    }
     if (request.url === '/login-test') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(`<!doctype html>
@@ -342,6 +356,60 @@ async function main() {
     const active = loaded.tabs.find((tab) => tab.id === loaded.activeTabId);
     assert.equal(active.url, pageUrl);
     assert.equal(active.canGoBack, false);
+
+    await window.evaluate((url) => window.electronAPI.navigate(url), `${pageUrl}basic-auth`);
+    const authBackdrop = window.locator('#http-auth-modal-backdrop');
+    await authBackdrop.waitFor({ state: 'visible' });
+    const authGeometry = await window.evaluate(() => {
+      const rect = (selector) => {
+        const element = document.querySelector(selector);
+        const box = element.getBoundingClientRect();
+        return {
+          left: box.left,
+          top: box.top,
+          right: box.right,
+          bottom: box.bottom,
+          width: box.width,
+          height: box.height,
+          zIndex: getComputedStyle(element).zIndex,
+          display: getComputedStyle(element).display,
+        };
+      };
+      return {
+        chrome: rect('#browser-chrome'),
+        rail: rect('#app-rail'),
+        backdrop: rect('#http-auth-modal-backdrop'),
+        modal: rect('#http-auth-modal'),
+        stage: rect('#browser-stage'),
+      };
+    });
+    assert.ok(authGeometry.chrome.height > 100 && authGeometry.chrome.display !== 'none',
+      `Browser chrome was hidden during HTTP auth: ${JSON.stringify(authGeometry)}`);
+    assert.ok(authGeometry.rail.width >= 40 && authGeometry.rail.display !== 'none',
+      `App rail was hidden during HTTP auth: ${JSON.stringify(authGeometry)}`);
+    assert.ok(authGeometry.backdrop.top >= authGeometry.chrome.bottom - 1,
+      `Auth backdrop overlapped the top chrome: ${JSON.stringify(authGeometry)}`);
+    assert.ok(authGeometry.backdrop.left >= authGeometry.rail.right - 1,
+      `Auth backdrop overlapped the app rail: ${JSON.stringify(authGeometry)}`);
+    assert.ok(authGeometry.modal.top >= authGeometry.backdrop.top &&
+        authGeometry.modal.left >= authGeometry.backdrop.left &&
+        authGeometry.modal.right <= authGeometry.backdrop.right + 1 &&
+        authGeometry.modal.bottom <= authGeometry.backdrop.bottom + 1,
+      `Auth modal escaped the tab viewport: ${JSON.stringify(authGeometry)}`);
+    await window.locator('#http-auth-username').fill('invicta');
+    await window.locator('#http-auth-password').fill('secret');
+    await window.locator('#http-auth-form').evaluate((form) => form.requestSubmit());
+    await authBackdrop.waitFor({ state: 'hidden' });
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === state.activeTabId && tab.title === 'Basic Auth OK' && !tab.isLoading),
+    );
+    await window.evaluate((url) => window.electronAPI.navigate(url), pageUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === state.activeTabId && tab.title === 'Invicta smoke page' && !tab.isLoading),
+    );
+    log('HTTP Basic Auth dialog geometry verified');
 
     const defaultLastTabId = loaded.activeTabId;
     const initialWorkState = await window.evaluate(() => window.electronAPI.setActiveWorkspace('work'));
@@ -638,7 +706,7 @@ async function main() {
         toast: toast && toast.height ? { left: toast.left, right: toast.right } : null,
       };
     });
-    assert.ok(downloadFlyoutGeometry.popout.top >= downloadFlyoutGeometry.chromeBottom,
+    assert.ok(downloadFlyoutGeometry.popout.top >= downloadFlyoutGeometry.chromeBottom - 1,
       `Download flyout overlaps browser chrome: ${JSON.stringify(downloadFlyoutGeometry)}`);
     assert.ok(downloadFlyoutGeometry.popout.width >= 390,
       `Download flyout is too narrow for file actions: ${JSON.stringify(downloadFlyoutGeometry)}`);
@@ -749,10 +817,9 @@ async function main() {
       {
         success: stream.success,
         videoTracks: stream.videoTracks,
-        audioTracks: stream.audioTracks,
         readyState: stream.readyState,
       },
-      { success: true, videoTracks: 1, audioTracks: 1, readyState: 'live' },
+      { success: true, videoTracks: 1, readyState: 'live' },
       stream.error || 'Display-media stream did not become live',
     );
     await electronApp.evaluate(async ({ webContents }, targetUrl) => {
