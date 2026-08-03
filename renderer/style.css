@@ -3566,7 +3566,7 @@ kbd {
 
 @media (min-width: 900px) {
   body.download-popout-open .notification-stack {
-    right: 440px;
+    right: 448px;
   }
 }
 

@@ -836,15 +836,75 @@ function safeViewSetVisible(view, visible) {
   }
 }
 
-function resizeViews() {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+function minimumViewLayout() {
+  return mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen()
+    ? FULLSCREEN_VIEW_LAYOUT
+    : DEFAULT_VIEW_LAYOUT;
+}
+
+function normalizeViewLayout(layout, minLayout) {
+  const source = isPlainObject(layout) ? layout : {};
+  const minimum = minLayout || minimumViewLayout();
+  return {
+    top: boundedNumber(
+      source.top === undefined ? minimum.top : Math.max(minimum.top, source.top),
+      'layout.top',
+      0,
+      5000
+    ),
+    left: boundedNumber(
+      source.left === undefined ? minimum.left : Math.max(minimum.left, source.left),
+      'layout.left',
+      0,
+      5000
+    ),
+    right: boundedNumber(
+      source.right === undefined ? 0 : source.right,
+      'layout.right',
+      0,
+      5000
+    ),
+    bottom: boundedNumber(
+      source.bottom === undefined ? 0 : source.bottom,
+      'layout.bottom',
+      0,
+      5000
+    ),
+  };
+}
+
+function viewBoundsForLayout(layout) {
+  if (!mainWindow || mainWindow.isDestroyed()) return null;
   const content = mainWindow.getContentBounds();
-  const x = Math.min(Math.max(0, Math.round(viewLayout.left || 0)), content.width);
-  const y = Math.min(Math.max(0, Math.round(viewLayout.top)), content.height);
-  const right = Math.min(Math.max(0, Math.round(viewLayout.right)), content.width - x);
-  const bottom = Math.min(Math.max(0, Math.round(viewLayout.bottom)), content.height - y);
+  const guardedLayout = normalizeViewLayout(layout);
+  const x = Math.min(Math.max(0, Math.round(guardedLayout.left || 0)), content.width);
+  const y = Math.min(Math.max(0, Math.round(guardedLayout.top)), content.height);
+  const right = Math.min(Math.max(0, Math.round(guardedLayout.right)), content.width - x);
+  const bottom = Math.min(Math.max(0, Math.round(guardedLayout.bottom)), content.height - y);
   const width = Math.max(1, content.width - x - right);
   const height = Math.max(1, content.height - y - bottom);
+  return { x, y, width, height, layout: guardedLayout };
+}
+
+function prepareRemoteContentView(view, layout) {
+  if (!view) return;
+  safeViewSetVisible(view, false);
+  const bounds = viewBoundsForLayout(layout || viewLayout);
+  if (!bounds) return;
+  view.setBounds({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+  });
+}
+
+function resizeViews() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const bounds = viewBoundsForLayout(viewLayout);
+  if (!bounds) return;
+  viewLayout = bounds.layout;
+  const { x, y, width, height } = bounds;
   const primary = getActiveTab();
   const secondary = splitScreen.enabled
     ? tabs.get(splitScreen.secondaryTabId) || null
@@ -885,35 +945,7 @@ function setViewVisible(visible) {
 
 function setViewLayout(layout) {
   assertPlainObject(layout, 'layout');
-  const minLayout = mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen()
-    ? FULLSCREEN_VIEW_LAYOUT
-    : DEFAULT_VIEW_LAYOUT;
-  const next = {
-    top: boundedNumber(
-      layout.top === undefined ? minLayout.top : Math.max(minLayout.top, layout.top),
-      'layout.top',
-      0,
-      5000
-    ),
-    left: boundedNumber(
-      layout.left === undefined ? minLayout.left : Math.max(minLayout.left, layout.left),
-      'layout.left',
-      0,
-      5000
-    ),
-    right: boundedNumber(
-      layout.right === undefined ? 0 : layout.right,
-      'layout.right',
-      0,
-      5000
-    ),
-    bottom: boundedNumber(
-      layout.bottom === undefined ? 0 : layout.bottom,
-      'layout.bottom',
-      0,
-      5000
-    ),
-  };
+  const next = normalizeViewLayout(layout);
   viewLayout = next;
   resizeViews();
   return { ...viewLayout };
@@ -1712,7 +1744,10 @@ function ensureWhatsappSurface() {
   };
   view.setBackgroundColor('#0b141a');
   view.webContents.setUserAgent(chromeCompatibilityUserAgent());
+  safeViewSetVisible(view, false);
+  view.setBounds(whatsappPanelBounds);
   mainWindow.contentView.addChildView(view);
+  view.setBounds(whatsappPanelBounds);
   safeViewSetVisible(view, false);
   attachNavigationGuards(view.webContents);
 
@@ -2096,7 +2131,9 @@ function createTab(url, options) {
   if (!lastActiveTabByWorkspace.has(targetWorkspaceId)) {
     lastActiveTabByWorkspace.set(targetWorkspaceId, id);
   }
+  prepareRemoteContentView(view);
   mainWindow.contentView.addChildView(view);
+  prepareRemoteContentView(view);
   attachTabEvents(tab);
   view.webContents.setAudioMuted(tab.isMuted);
   view.webContents.setZoomFactor(tab.zoom);

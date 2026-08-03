@@ -79,9 +79,12 @@ test('native tab surface stays below browser chrome and app rail', () => {
   assert.match(css, /--nav-height:\s*52px;/);
   assert.match(css, /--app-rail-width:\s*48px;/);
   assert.match(main, /const DEFAULT_VIEW_LAYOUT = \{\s*top:\s*34 \+ 42 \+ 52,\s*left:\s*48,/s);
-  assert.match(main, /const minLayout = mainWindow && !mainWindow\.isDestroyed\(\) && mainWindow\.isFullScreen\(\)/);
-  assert.match(main, /layout\.top === undefined \? minLayout\.top : Math\.max\(minLayout\.top, layout\.top\)/);
-  assert.match(main, /layout\.left === undefined \? minLayout\.left : Math\.max\(minLayout\.left, layout\.left\)/);
+  assert.match(main, /function minimumViewLayout\(\)\s*{\s*return mainWindow && !mainWindow\.isDestroyed\(\) && mainWindow\.isFullScreen\(\)/s);
+  assert.match(main, /function normalizeViewLayout\(layout, minLayout\)/);
+  assert.match(main, /source\.top === undefined \? minimum\.top : Math\.max\(minimum\.top, source\.top\)/);
+  assert.match(main, /source\.left === undefined \? minimum\.left : Math\.max\(minimum\.left, source\.left\)/);
+  assert.match(main, /viewLayout = bounds\.layout;/);
+  assert.match(main, /prepareRemoteContentView\(view\);\s*mainWindow\.contentView\.addChildView\(view\);\s*prepareRemoteContentView\(view\);/s);
 });
 
 test('InvictaTill AI is the only user-selectable AI agent', () => {
