@@ -381,8 +381,11 @@ async function main() {
         backdrop: rect('#http-auth-modal-backdrop'),
         modal: rect('#http-auth-modal'),
         stage: rect('#browser-stage'),
+        backdropParent: document.querySelector('#http-auth-modal-backdrop').parentElement.id,
       };
     });
+    assert.equal(authGeometry.backdropParent, 'browser-stage',
+      `Auth backdrop should be mounted inside the tab viewport: ${JSON.stringify(authGeometry)}`);
     assert.ok(authGeometry.chrome.height > 100 && authGeometry.chrome.display !== 'none',
       `Browser chrome was hidden during HTTP auth: ${JSON.stringify(authGeometry)}`);
     assert.ok(authGeometry.rail.width >= 40 && authGeometry.rail.display !== 'none',
@@ -391,6 +394,11 @@ async function main() {
       `Auth backdrop overlapped the top chrome: ${JSON.stringify(authGeometry)}`);
     assert.ok(authGeometry.backdrop.left >= authGeometry.rail.right - 1,
       `Auth backdrop overlapped the app rail: ${JSON.stringify(authGeometry)}`);
+    assert.ok(authGeometry.backdrop.top >= authGeometry.stage.top - 1 &&
+        authGeometry.backdrop.left >= authGeometry.stage.left - 1 &&
+        authGeometry.backdrop.right <= authGeometry.stage.right + 1 &&
+        authGeometry.backdrop.bottom <= authGeometry.stage.bottom + 1,
+      `Auth backdrop escaped the tab viewport: ${JSON.stringify(authGeometry)}`);
     assert.ok(authGeometry.modal.top >= authGeometry.backdrop.top &&
         authGeometry.modal.left >= authGeometry.backdrop.left &&
         authGeometry.modal.right <= authGeometry.backdrop.right + 1 &&

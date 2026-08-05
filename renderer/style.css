@@ -4841,14 +4841,11 @@ kbd {
   font-size: 11px;
 }
 
-/* ─── HTTP Basic Auth Modal ─────────────────────────────────────── */
+/* HTTP Basic Auth Modal */
 .http-auth-backdrop {
-  position: fixed;
-  top: var(--chrome-height);
-  right: 0;
-  bottom: 0;
-  left: var(--app-rail-width);
-  z-index: 850;
+  position: absolute;
+  inset: 0;
+  z-index: 50;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4856,19 +4853,6 @@ kbd {
   padding: 16px;
   background: rgba(2, 5, 9, 0.82);
   backdrop-filter: blur(4px);
-}
-
-body.whatsapp-panel-open .http-auth-backdrop {
-  left: calc(var(--app-rail-width) + var(--whatsapp-panel-width));
-}
-
-body.ai-panel-open .http-auth-backdrop {
-  left: calc(var(--app-rail-width) + var(--drawer-width));
-}
-
-body.fullscreen .http-auth-backdrop {
-  top: 0;
-  left: 0;
 }
 
 .http-auth-modal {

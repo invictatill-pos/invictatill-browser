@@ -96,10 +96,9 @@ test('native tab surface stays below browser chrome and app rail', () => {
 
 test('HTTP Basic Auth prompt is clipped to the tab viewport', () => {
   assert.match(html, /id=["']http-auth-modal-backdrop["'][^>]*role=["']dialog["']/);
-  assert.match(css, /\.http-auth-backdrop\s*{[^}]*\btop:\s*var\(--chrome-height\);[^}]*\bleft:\s*var\(--app-rail-width\);[^}]*\bz-index:\s*850;[^}]*\boverflow:\s*hidden;/s);
-  assert.match(css, /body\.whatsapp-panel-open \.http-auth-backdrop\s*{[^}]*left:\s*calc\(var\(--app-rail-width\) \+ var\(--whatsapp-panel-width\)\);/s);
-  assert.match(css, /body\.ai-panel-open \.http-auth-backdrop\s*{[^}]*left:\s*calc\(var\(--app-rail-width\) \+ var\(--drawer-width\)\);/s);
-  assert.match(css, /body\.fullscreen \.http-auth-backdrop\s*{[^}]*top:\s*0;[^}]*left:\s*0;/s);
+  assert.match(html, /<main class=["']browser-stage["'] id=["']browser-stage["'][^>]*>[\s\S]*id=["']http-auth-modal-backdrop["'][\s\S]*<\/main>/);
+  assert.match(css, /\.http-auth-backdrop\s*{[^}]*\bposition:\s*absolute;[^}]*\binset:\s*0;[^}]*\bz-index:\s*50;[^}]*\boverflow:\s*hidden;/s);
+  assert.doesNotMatch(css, /body\.(?:whatsapp-panel-open|ai-panel-open|fullscreen) \.http-auth-backdrop/);
   assert.match(renderer, /\[els\.httpAuthBackdrop, els\.httpAuthModal\]/);
   assert.match(renderer, /openModalSurface\(els\.httpAuthBackdrop, els\.httpAuthModal\);/);
   assert.match(renderer, /closeModalSurface\(els\.httpAuthBackdrop\);/);

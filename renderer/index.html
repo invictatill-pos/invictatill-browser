@@ -297,6 +297,26 @@
         <button class="secondary-button" id="btn-error-new-tab" type="button">New tab</button>
       </div>
     </section>
+
+    <!-- HTTP Basic Authentication dialog -->
+    <div class="modal-backdrop http-auth-backdrop hidden" id="http-auth-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="http-auth-title">
+      <div class="http-auth-modal" id="http-auth-modal" tabindex="-1">
+        <div class="http-auth-icon" aria-hidden="true">🔒</div>
+        <h2 id="http-auth-title" class="http-auth-title">Sign in</h2>
+        <p id="http-auth-host" class="http-auth-host"></p>
+        <p id="http-auth-realm" class="http-auth-realm"></p>
+        <form id="http-auth-form" class="http-auth-form" autocomplete="on" novalidate>
+          <label class="visually-hidden" for="http-auth-username">Username</label>
+          <input id="http-auth-username" class="http-auth-input" type="text" placeholder="Username" autocomplete="username" spellcheck="false" required>
+          <label class="visually-hidden" for="http-auth-password">Password</label>
+          <input id="http-auth-password" class="http-auth-input" type="password" placeholder="Password" autocomplete="current-password">
+          <div class="http-auth-actions">
+            <button type="button" id="btn-http-auth-cancel" class="secondary-button">Cancel</button>
+            <button type="submit" id="btn-http-auth-submit" class="primary-button">Sign in</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </main>
 
   <section class="download-popout hidden" id="download-popout" aria-labelledby="download-popout-title" aria-hidden="true">
@@ -828,25 +848,6 @@
         <button class="secondary-button" id="btn-close-passwords-done" type="button">Close</button>
       </footer>
     </section>
-  </div>
-  <!-- HTTP Basic Authentication dialog -->
-  <div class="modal-backdrop http-auth-backdrop hidden" id="http-auth-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="http-auth-title">
-    <div class="http-auth-modal" id="http-auth-modal" tabindex="-1">
-      <div class="http-auth-icon" aria-hidden="true">🔒</div>
-      <h2 id="http-auth-title" class="http-auth-title">Sign in</h2>
-      <p id="http-auth-host" class="http-auth-host"></p>
-      <p id="http-auth-realm" class="http-auth-realm"></p>
-      <form id="http-auth-form" class="http-auth-form" autocomplete="on" novalidate>
-        <label class="visually-hidden" for="http-auth-username">Username</label>
-        <input id="http-auth-username" class="http-auth-input" type="text" placeholder="Username" autocomplete="username" spellcheck="false" required>
-        <label class="visually-hidden" for="http-auth-password">Password</label>
-        <input id="http-auth-password" class="http-auth-input" type="password" placeholder="Password" autocomplete="current-password">
-        <div class="http-auth-actions">
-          <button type="button" id="btn-http-auth-cancel" class="secondary-button">Cancel</button>
-          <button type="submit" id="btn-http-auth-submit" class="primary-button">Sign in</button>
-        </div>
-      </form>
-    </div>
   </div>
   <div class="modal-backdrop screen-picker-backdrop hidden" id="screen-picker-modal-backdrop">
     <section class="update-modal screen-picker-modal" id="screen-picker-modal" role="dialog" aria-modal="true" aria-labelledby="screen-picker-title" aria-describedby="screen-picker-description screen-picker-origin" tabindex="-1">
