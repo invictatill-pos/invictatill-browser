@@ -1055,6 +1055,15 @@ function handleShortcut(event, input, tabId) {
     const tab = tabs.get(tabId || activeTabId);
     if (tab) rewriteActiveEditor(tab, 'correct');
     handled = true;
+  } else if (command && shift && key === 's') {
+    sendToShell('screenshot-active-page', null);
+    handled = true;
+  } else if (command && key === 'd') {
+    sendToShell('bookmark-active-page', null);
+    handled = true;
+  } else if (command && key === 'm') {
+    sendToShell('toggle-active-mute', null);
+    handled = true;
   } else if (command && key === 'r') {
     reloadActive(Boolean(shift));
     handled = true;
@@ -3374,31 +3383,33 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-07-22',
+    releaseDate: '2026-08-17',
     title: 'InvictaTill Browser ' + app.getVersion(),
     features: [
-      'Reliable Meeting Screen Share: Choose an InvictaTill tab, application window, or entire screen in Google Meet, Zoom, Teams, and other WebRTC meeting sites.',
-      'Source-Aware Audio Sharing: Tab audio stays scoped to the selected tab, while screen and window sharing can include Windows system audio when requested.',
-      'Accessible Screen Picker: Keyboard navigation, correct focus trapping, requesting-site identity, safe cancellation, and request-expiry handling.',
-      'Persistent Workspace Logins: Session cookies are flushed to disk on quit and restored per workspace so Gmail, Google, and work accounts stay signed in.',
-      'Cross-Workspace Password Vault 🔑: Encrypted password manager to save and autofill passwords across all your workspaces.',
-      'Visible Tab Titles & Drag-and-Drop Reordering: Complete tab visibility and custom reordering.',
-      'Update Center: Check, download, restart, and error states are now visible in Settings with manual retry support.',
-      'Workspace Continuity: Each workspace reopens its own last active tab, including after browser restart.',
-      'Tab Command Center: Search tabs across workspaces, pin important tabs, copy links, and run browser actions with Ctrl+Shift+A.',
-      'WFH Focus Sessions: Persistent focus and break timers, pause/resume, daily statistics, completion alerts, and remote-work launchers.',
+      'Polished & Faster UI: Smooth hover transitions, consistent design tokens, selectable chrome styling, and a fully working zoom popup panel.',
+      'Smarter Address Bar: History suggestions are race-free, keyboard-navigable, and screen-reader friendly with proper listbox roles.',
+      'Reliable Workspace Renaming: Inline rename no longer switches workspaces mid-edit, and icon pickers announce their selection.',
+      'Working AI Quick Actions: The 24H WFH report and Email Task extraction buttons now render their results reliably in chat.',
+      'Everywhere Shortcuts: Ctrl+D bookmark, Ctrl+M mute, and Ctrl+Shift+S screenshot now work from inside web pages.',
+      'Accurate Zoom Handling: Per-tab zoom now flows through the tab state so the toolbar always shows the correct level.',
+      'Extension Toolbar: Startup races can no longer duplicate extension icons, and the toolbar scrolls cleanly when crowded.',
+      'Permission Pills: Address-bar permission indicators now refresh on startup, workspace switches, and tab activation.',
+      'Reliable Screen Picker: Late source updates no longer wipe out your selection, and stale picker UI references were removed.',
+      'Safer Auth Flows: Overlapping HTTP auth prompts are resolved instead of hanging, and extension actions fail gracefully.',
     ],
     bugFixes: [
-      'Screen picker visibility: Fixed malformed modal markup that left the picker trapped inside hidden dialogs.',
-      'Screen-share handoff: Removed wrong-source fallbacks, stale callback races, and invalid audio constraints.',
-      'Site permissions: Undecided camera and microphone requests now prompt instead of being silently pre-approved.',
-      'Tab ordering: Fixed a runtime error when saving a drag-and-drop tab order.',
-      'Security: Removed an embedded service credential and prohibited plaintext password-vault fallback storage.',
-      'Address suggestions: Restored the renderer DOM-safety contract and passing test suite.',
-      'Automatic updates: Restored the complete updater event bridge, Settings controls, restart action, and portable-build guidance.',
-      'Release safety: Added required-asset validation for latest.yml and installer blockmaps before a draft can be approved.',
-      'Workspace switching: Fixed switching to the first tab instead of the last tab used in that workspace.',
-      'Workspace navigation: Ctrl+Tab, closed tabs, deleted workspaces, and split-view fallbacks now stay workspace-scoped.',
+      'Fixed a crash that made the AI Daily Work Report and Email Task extraction buttons fail with an undefined function error.',
+      'Fixed the zoom popup being clipped and invisible below the navigation bar.',
+      'Fixed missing amber styling for paused and missing downloads by defining the missing color token.',
+      'Fixed workspace rename inputs bubbling clicks that unexpectedly switched the active workspace.',
+      'Fixed address-bar suggestion races that could show stale results while typing quickly.',
+      'Fixed the Tasks panel Email Tasks button that had no wired handler.',
+      'Fixed unguarded API calls that could break the renderer when extension services were unavailable.',
+      'Fixed tab-switch events racing ahead of workspace state and leaving controls disabled.',
+      'Fixed screen-picker audio remnants and selection resets from late desktop-source updates.',
+      'Fixed HTTP Basic Auth prompts overwriting a pending request without resolving it.',
+      'Removed dead CSS rules and unused JavaScript so the shell stays lean and consistent.',
+      'Fixed duplicate extension toolbar rendering at startup and unguarded startup event subscriptions.',
     ],
   };
 }

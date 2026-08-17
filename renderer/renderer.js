@@ -8,7 +8,6 @@ const els = {
   tabsContainer: $('tabs-container'),
   addressBar: $('address-bar'),
   addressSuggestions: $('address-suggestions'),
-  omnibox: $('omnibox-shell'),
   newTabPage: $('new-tab-page'),
   pageError: $('page-error'),
   pageErrorTitle: $('page-error-title'),
@@ -32,7 +31,6 @@ const els = {
   whatsappPanelStatus: $('whatsapp-panel-status'),
   whatsappUnreadBadge: $('whatsapp-unread-badge'),
   drawer: $('workspace-drawer'),
-  drawerClose: $('btn-close-drawer'),
   menuButton: $('btn-menu'),
   menu: $('browser-menu'),
   commandBackdrop: $('command-backdrop'),
@@ -78,13 +76,10 @@ const els = {
   downloadBadge: $('download-badge-count'),
   downloadPopout: $('download-popout'),
   downloadPopoutButton: $('btn-download-popout'),
-  downloadPopoutClose: $('btn-close-download-popout'),
   downloadPopoutList: $('download-popout-list'),
   downloadPopoutSummary: $('download-popout-summary'),
   downloadPopoutBadge: $('download-popout-badge'),
   downloadPopoutTools: $('download-popout-tools'),
-  openDownloadsFolderButton: $('btn-open-downloads-folder'),
-  openDownloadsFolderDrawerButton: $('btn-open-downloads-folder-drawer'),
   clearDownloadsPopoutButton: $('btn-clear-downloads-popout'),
   passwordSavePopout: $('password-save-popout'),
   passwordSaveTitle: $('password-save-title'),
@@ -255,7 +250,6 @@ const state = {
   aiBusy: false,
   aiRequestId: 0,
   activeAiRequestId: null,
-  lastAiRequest: null,
   updateReady: false,
   updateStatus: 'idle',
   currentVersion: '',
@@ -584,6 +578,7 @@ function normalizeTab(raw) {
     pinned: Boolean(tab.pinned),
     canGoBack: Boolean(tab.canGoBack),
     canGoForward: Boolean(tab.canGoForward),
+    zoom: Number.isFinite(Number(tab.zoom)) ? Number(tab.zoom) : undefined,
     workspaceId: tab.workspaceId || 'default',
     workspaceName: tab.workspaceName || 'Default',
     workspaceIcon: tab.workspaceIcon || '🌐',
@@ -905,6 +900,7 @@ function renderBrowserControls() {
   updateSecurityIndicator(tab ? tab.url : '');
   updateBookmarkButton();
   updateZoomDisplay();
+  refreshPermissionIndicator(tab && !isNewTabUrl(tab.url) ? tab.url : '');
   setTitleStatus(tab && tab.loading ? 'Loading ' + tab.title : '');
   scheduleLayout();
 }
@@ -955,6 +951,17 @@ const PERM_INDICATOR_META = [
   { key: 'display-capture', icon: '🖥️', label: 'Screen sharing' },
   { key: 'clipboard-read', icon: '📋', label: 'Clipboard read' },
 ];
+
+let lastPermissionUrl = null;
+
+function refreshPermissionIndicator(url) {
+  const targetUrl = url || '';
+  if (targetUrl === lastPermissionUrl) return;
+  lastPermissionUrl = targetUrl;
+  updatePermissionIndicator(targetUrl).catch(function (e) {
+    console.warn('[Permissions] indicator update failed:', e);
+  });
+}
 
 // Update the compact permission pill row in the address bar.
 async function updatePermissionIndicator(url) {
@@ -1151,6 +1158,8 @@ function renderWorkspaces() {
           renderWorkspaces();
         }
       });
+      input.addEventListener('click', function (e) { e.stopPropagation(); });
+      input.addEventListener('mousedown', function (e) { e.stopPropagation(); });
       input.addEventListener('blur', saveRename);
 
       text.replaceWith(input);
@@ -1183,6 +1192,7 @@ function renderWorkspaces() {
     }
 
     pill.addEventListener('click', async function () {
+      if (event.target && event.target.closest && event.target.closest('.ws-rename-input')) return;
       if (w.id === activeWsId) return;
       try {
         if (typeof api.setActiveWorkspace === 'function') {
@@ -1245,7 +1255,9 @@ function openAddWorkspaceModal() {
 
   if (els.wsIconPicker) {
     els.wsIconPicker.querySelectorAll('.ws-icon-opt').forEach(function (btn) {
-      btn.classList.toggle('active', btn.dataset.icon === state.selectedWsIcon);
+      const selected = btn.dataset.icon === state.selectedWsIcon;
+      btn.classList.toggle('active', selected);
+      btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
   }
   if (els.wsColorPicker) {
@@ -1488,19 +1500,6 @@ function renderScreenPickerList() {
   });
 }
 
-function updateScreenPickerAudioOption() {
-  const requested = Boolean(state.screenPickerData && state.screenPickerData.audioRequested);
-  if (els.chkShareAudio) {
-    els.chkShareAudio.disabled = !requested;
-    if (!requested) els.chkShareAudio.checked = false;
-  }
-  if (els.screenPickerAudioLabel) {
-    if (!requested) els.screenPickerAudioLabel.textContent = 'The site did not request shared audio';
-    else if (state.screenPickerCategory === 'tabs') els.screenPickerAudioLabel.textContent = 'Also share this tab’s audio';
-    else els.screenPickerAudioLabel.textContent = 'Also share system audio';
-  }
-}
-
 function updateScreenPickerPreview() {
   const item = state.selectedScreenSource;
   if (!item) {
@@ -1538,8 +1537,6 @@ function openScreenPickerModal(data) {
       ? 'Request from ' + data.origin
       : 'Request from the active page';
   }
-  if (els.chkShareAudio) els.chkShareAudio.checked = Boolean(data.audioRequested);
-  updateScreenPickerAudioOption();
 
   if (els.screenPickerTabs) {
     els.screenPickerTabs.querySelectorAll('.screen-picker-tab-btn').forEach(function (btn) {
@@ -1594,8 +1591,6 @@ async function handleAddWorkspaceSubmit(event) {
 const CHROME_ZOOM_STEPS = Object.freeze([
   0.25, 0.33, 0.50, 0.67, 0.75, 0.80, 0.90, 1.00, 1.10, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00
 ]);
-
-const ZOOM_PRESETS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
 function getNextZoomIn(current) {
   const rounded = Math.round((current || 1.0) * 100) / 100;
@@ -3134,6 +3129,10 @@ function createMessage(content, sender, options) {
   return message;
 }
 
+function appendChatMessage(sender, content) {
+  createMessage(String(content || ''), sender === 'user' ? 'user' : 'assistant');
+}
+
 function setAiBusy(busy) {
   state.aiBusy = busy;
   els.aiSend.disabled = busy;
@@ -3170,7 +3169,6 @@ async function sendAiMessage(promptValue, includePageContext, echoUser) {
   const shouldEcho = echoUser !== false;
   if (shouldEcho) createMessage(prompt, 'user');
   els.aiInput.value = '';
-  state.lastAiRequest = { prompt: prompt, includePageContext: includeContext };
   els.aiContext.checked = false;
   updateAiContextNote();
   const requestId = state.aiRequestId + 1;
@@ -3791,6 +3789,10 @@ function registerBrowserEvents() {
     const tab = tabFromPayload(payload);
     if (tab && tab.id !== undefined) {
       upsertTab(tab);
+      if (!state.tabs.some(function (item) { return sameId(item.id, tab.id); })) {
+        refreshBrowserState();
+        return;
+      }
       state.activeTabId = tab.id;
       // ── Fix Bug 1 (push path): when the main process broadcasts tab-switched
       //    (e.g. keyboard shortcut or another renderer path), sync zoom too.
@@ -3816,6 +3818,16 @@ function registerBrowserEvents() {
   registerEvent('focus-address-bar', function () {
     els.addressBar.focus();
     els.addressBar.select();
+  });
+  registerEvent('bookmark-active-page', function () {
+    toggleBookmark();
+  });
+  registerEvent('toggle-active-mute', function () {
+    const tab = activeTab();
+    if (tab) toggleMute(tab.id, !tab.muted);
+  });
+  registerEvent('screenshot-active-page', function () {
+    takeScreenshot();
   });
   registerEvent('open-command-palette', openCommandPalette);
   registerEvent('show-find-bar', openFindBar);
@@ -4019,17 +4031,22 @@ function wireUi() {
   els.addressBar.addEventListener('focus', function () { els.addressBar.select(); });
   let suggestionIndex = -1;
   let currentSuggestions = [];
+  let suggestionSequence = 0;
 
   function renderSuggestions() {
     clearNode(els.addressSuggestions);
     if (currentSuggestions.length === 0) {
       setHidden(els.addressSuggestions, true);
+      els.addressBar.removeAttribute('aria-activedescendant');
       return;
     }
     setHidden(els.addressSuggestions, false);
     currentSuggestions.forEach((item, index) => {
       const div = document.createElement('div');
       div.className = 'suggestion-item' + (index === suggestionIndex ? ' selected' : '');
+      div.id = 'address-suggestion-' + index;
+      div.setAttribute('role', 'option');
+      div.setAttribute('aria-selected', index === suggestionIndex ? 'true' : 'false');
       const icon = document.createElement('span');
       icon.className = 'suggestion-icon';
       icon.textContent = '🕒';
@@ -4053,17 +4070,29 @@ function wireUi() {
       };
       els.addressSuggestions.appendChild(div);
     });
+    if (suggestionIndex >= 0 && suggestionIndex < currentSuggestions.length) {
+      els.addressBar.setAttribute('aria-activedescendant', 'address-suggestion-' + suggestionIndex);
+    }
   }
 
   els.addressBar.addEventListener('input', async function () {
     const val = els.addressBar.value.trim().toLowerCase();
+    const requestSequence = ++suggestionSequence;
     suggestionIndex = -1;
     if (!val || val.startsWith('invicta://')) {
       currentSuggestions = [];
       renderSuggestions();
       return;
     }
-    const history = await api.getHistory({ query: val, limit: 10 });
+    let history = [];
+    try {
+      if (typeof api.getHistory === 'function') {
+        history = await api.getHistory({ query: val, limit: 10 });
+      }
+    } catch (error) {
+      history = [];
+    }
+    if (requestSequence !== suggestionSequence) return;
     const unique = [];
     const seen = new Set();
     for (const h of history) {
@@ -4113,6 +4142,7 @@ function wireUi() {
 
   let ntpSuggestionIndex = -1;
   let currentNtpSuggestions = [];
+  let ntpSuggestionSequence = 0;
   const ntpSearchInput = $('ntp-search');
   const ntpSuggestionsContainer = $('ntp-suggestions');
 
@@ -4120,12 +4150,16 @@ function wireUi() {
     clearNode(ntpSuggestionsContainer);
     if (currentNtpSuggestions.length === 0) {
       setHidden(ntpSuggestionsContainer, true);
+      ntpSearchInput.removeAttribute('aria-activedescendant');
       return;
     }
     setHidden(ntpSuggestionsContainer, false);
     currentNtpSuggestions.forEach((item, index) => {
       const div = document.createElement('div');
       div.className = 'suggestion-item' + (index === ntpSuggestionIndex ? ' selected' : '');
+      div.id = 'ntp-suggestion-' + index;
+      div.setAttribute('role', 'option');
+      div.setAttribute('aria-selected', index === ntpSuggestionIndex ? 'true' : 'false');
       const icon = document.createElement('span');
       icon.className = 'suggestion-icon';
       icon.textContent = '🕒';
@@ -4149,17 +4183,29 @@ function wireUi() {
       };
       ntpSuggestionsContainer.appendChild(div);
     });
+    if (ntpSuggestionIndex >= 0 && ntpSuggestionIndex < currentNtpSuggestions.length) {
+      ntpSearchInput.setAttribute('aria-activedescendant', 'ntp-suggestion-' + ntpSuggestionIndex);
+    }
   }
 
   ntpSearchInput.addEventListener('input', async function () {
     const val = ntpSearchInput.value.trim().toLowerCase();
+    const requestSequence = ++ntpSuggestionSequence;
     ntpSuggestionIndex = -1;
     if (!val || val.startsWith('invicta://')) {
       currentNtpSuggestions = [];
       renderNtpSuggestions();
       return;
     }
-    const history = await api.getHistory({ query: val, limit: 10 });
+    let history = [];
+    try {
+      if (typeof api.getHistory === 'function') {
+        history = await api.getHistory({ query: val, limit: 10 });
+      }
+    } catch (error) {
+      history = [];
+    }
+    if (requestSequence !== ntpSuggestionSequence) return;
     const unique = [];
     const seen = new Set();
     for (const h of history) {
@@ -4333,6 +4379,7 @@ function wireUi() {
   bindClick('btn-ai-gmail-tasks', triggerEmailTaskExtraction);
   bindClick('btn-ai-24h-report', trigger24HReport);
   bindClick('btn-tasks-24h-report', trigger24HReport);
+  bindClick('btn-tasks-extract-email', triggerEmailTaskExtraction);
   bindClick('btn-zoom-out', zoomOut);
   bindClick('btn-zoom-in', zoomIn);
   // Badge click → toggle popup (reset on middle/right click handled below)
@@ -4412,7 +4459,9 @@ function wireUi() {
       if (!btn) return;
       state.selectedWsIcon = btn.dataset.icon || '🏢';
       els.wsIconPicker.querySelectorAll('.ws-icon-opt').forEach(function (opt) {
-        opt.classList.toggle('active', opt === btn);
+        const selected = opt === btn;
+        opt.classList.toggle('active', selected);
+        opt.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
     });
   }
@@ -4474,7 +4523,6 @@ function wireUi() {
       state.selectedScreenSource = null;
       renderScreenPickerList();
       updateScreenPickerPreview();
-      updateScreenPickerAudioOption();
     });
   }
 
@@ -4487,11 +4535,10 @@ function wireUi() {
     const requestId = state.screenPickerData.requestId;
     try {
       if (typeof api.selectScreenShareSource === 'function') {
-        const shareAudio = els.chkShareAudio ? els.chkShareAudio.checked : false;
         const result = await api.selectScreenShareSource({
           requestId,
           sourceId: selection.id,
-          audio: shareAudio,
+          audio: false,
         });
         if (!result || result.success !== true) {
           throw new Error(result && result.error ? result.error : 'The page rejected the selected source');
@@ -4516,9 +4563,15 @@ function wireUi() {
       state.screenPickerData.screens = Array.isArray(data.screens) ? data.screens : [];
       state.screenPickerData.windows = Array.isArray(data.windows) ? data.windows : [];
       if (state.screenPickerCategory !== 'tabs') {
-        state.selectedScreenSource = null;
+        const selectedId = state.selectedScreenSource && state.selectedScreenSource.id;
+        const stillExists = Boolean(selectedId) &&
+          (state.screenPickerData.screens || []).concat(state.screenPickerData.windows || [])
+            .some(function (item) { return item && item.id === selectedId; });
+        if (!stillExists) {
+          state.selectedScreenSource = null;
+          updateScreenPickerPreview();
+        }
         renderScreenPickerList();
-        updateScreenPickerPreview();
       }
     });
   }
@@ -4532,6 +4585,12 @@ function wireUi() {
   if (typeof api.on === 'function') {
     api.on('http-auth-request', function (data) {
       if (!data || !data.requestId) return;
+      const previous = state.httpAuthRequest;
+      if (previous && previous.requestId !== data.requestId) {
+        if (typeof api.respondHttpAuth === 'function') {
+          api.respondHttpAuth(previous.requestId, '', '').catch(function () {});
+        }
+      }
       state.httpAuthRequest = data;
       if (els.httpAuthHost) {
         const portSuffix = data.port && data.port !== 80 && data.port !== 443 ? ':' + data.port : '';
@@ -4802,11 +4861,13 @@ async function initialize() {
 })();
 
 // Auto-show download popout when a new download starts.
-api.on('download-created', function () {
-  if (!state.downloadPopoutOpen) {
-    setDownloadPopoutOpen(true);
-  }
-});
+if (typeof api.on === 'function') {
+  api.on('download-created', function () {
+    if (!state.downloadPopoutOpen) {
+      setDownloadPopoutOpen(true);
+    }
+  });
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Extension Store — UI logic
@@ -4916,7 +4977,10 @@ function renderExtensionCard(ext, isInstalled) {
     if (!ext.enabled) toggleBtn.classList.add('disabled');
     toggleBtn.addEventListener('click', function () {
       toggleBtn.disabled = true;
-      api.toggleExtension(ext.id, !ext.enabled).then(function () {
+      const toggleRequest = typeof api.toggleExtension === 'function'
+        ? api.toggleExtension(ext.id, !ext.enabled)
+        : Promise.reject(new Error('Extension controls are unavailable'));
+      toggleRequest.then(function () {
         renderExtensionStore();
         renderExtensionToolbar();
       }).catch(function (err) {
@@ -4931,7 +4995,10 @@ function renderExtensionCard(ext, isInstalled) {
     removeBtn.addEventListener('click', function () {
       removeBtn.disabled = true;
       removeBtn.textContent = 'Removing…';
-      api.uninstallExtension(ext.id).then(function () {
+      const removeRequest = typeof api.uninstallExtension === 'function'
+        ? api.uninstallExtension(ext.id)
+        : Promise.reject(new Error('Extension controls are unavailable'));
+      removeRequest.then(function () {
         renderExtensionStore();
         renderExtensionToolbar();
       }).catch(function (err) {
@@ -4963,7 +5030,10 @@ function renderExtensionCard(ext, isInstalled) {
         installBtn.classList.add('installing');
         installBtn.disabled = true;
         showExtStoreStatus('Downloading ' + ext.name + '…');
-        api.installExtensionFromStore(ext.id).then(function (result) {
+        const installRequest = typeof api.installExtensionFromStore === 'function'
+          ? api.installExtensionFromStore(ext.id)
+          : Promise.reject(new Error('Extension store is unavailable'));
+        installRequest.then(function (result) {
           state.installingExtensions.delete(ext.id);
           showExtStoreStatus(ext.name + ' installed successfully!');
           renderExtensionStore();
@@ -5119,11 +5189,15 @@ async function renderExtensionStore() {
 }
 
 
+let extensionToolbarRenderToken = 0;
+
 async function renderExtensionToolbar() {
   if (!els.extensionToolbar) return;
+  const renderToken = ++extensionToolbarRenderToken;
   clearNode(els.extensionToolbar);
   try {
     var installed = await api.getInstalledExtensions();
+    if (renderToken !== extensionToolbarRenderToken) return;
     if (!installed || !installed.length) return;
     var hasEnabled = false;
     installed.forEach(function (ext) {
@@ -5245,7 +5319,10 @@ if (els.extStoreSearch) {
 if (els.btnInstallExtFile) {
   els.btnInstallExtFile.addEventListener('click', function () {
     showExtStoreStatus('Opening file picker…');
-    api.installExtensionFromFile().then(function (result) {
+    const installRequest = typeof api.installExtensionFromFile === 'function'
+      ? api.installExtensionFromFile()
+      : Promise.reject(new Error('Extension installer is unavailable'));
+    installRequest.then(function (result) {
       if (result && result.canceled) {
         hideExtStoreStatus();
         return;
@@ -5287,14 +5364,16 @@ if (els.extWebstoreLink) {
 }
 
 
-api.on('extension-installed', function () {
-  renderExtensionStore();
-  renderExtensionToolbar();
-});
+if (typeof api.on === 'function') {
+  api.on('extension-installed', function () {
+    renderExtensionStore();
+    renderExtensionToolbar();
+  });
 
-api.on('extension-status-changed', function () {
-  renderExtensionToolbar();
-});
+  api.on('extension-status-changed', function () {
+    renderExtensionToolbar();
+  });
+}
 
 initialize().catch(function (error) {
   notify('Renderer initialization failed: ' + errorMessage(error), 'error', 8000);

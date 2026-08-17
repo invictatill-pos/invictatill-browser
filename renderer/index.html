@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: http: https: chrome-extension:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
   <title>InvictaTill Browser</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -378,13 +378,13 @@
           <button class="ext-category-pill" data-category="Social" type="button">Social</button>
         </div>
         <div class="ext-store-tabs" id="ext-store-tabs" role="tablist">
-          <button class="ext-store-tab active" data-tab="featured" role="tab" aria-selected="true" type="button">Featured</button>
-          <button class="ext-store-tab" data-tab="installed" role="tab" aria-selected="false" type="button">Installed <span class="ext-installed-badge hidden" id="ext-installed-badge">0</span></button>
+          <button class="ext-store-tab active" data-tab="featured" role="tab" aria-selected="true" aria-controls="ext-store-featured" type="button">Featured</button>
+          <button class="ext-store-tab" data-tab="installed" role="tab" aria-selected="false" aria-controls="ext-store-installed" type="button">Installed <span class="ext-installed-badge hidden" id="ext-installed-badge">0</span></button>
         </div>
       </div>
       <div class="ext-store-body" id="ext-store-body">
-        <div class="ext-store-grid" id="ext-store-featured" role="tabpanel"></div>
-        <div class="ext-store-grid hidden" id="ext-store-installed" role="tabpanel"></div>
+        <div class="ext-store-grid" id="ext-store-featured" role="tabpanel" aria-labelledby="ext-store-tabs" tabindex="0"></div>
+        <div class="ext-store-grid hidden" id="ext-store-installed" role="tabpanel" aria-labelledby="ext-store-tabs" tabindex="0"></div>
       </div>
       <div class="ext-store-status hidden" id="ext-store-status" role="status" aria-live="polite"></div>
     </div>
