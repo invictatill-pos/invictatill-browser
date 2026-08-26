@@ -28,7 +28,8 @@ test('browser uses a supported Chromium baseline and safe release defaults', () 
   assert.ok(packageJson.build.files.includes('focus-controller.js'));
   assert.ok(packageJson.build.files.includes('workspace-state.js'));
   assert.ok(packageJson.build.files.includes('remote-preload.js'));
-  assert.equal(packageJson.overrides['fast-uri'], '3.1.4');
+  assert.equal(packageJson.overrides['fast-uri'], '3.1.5');
+  assert.equal(packageJson.overrides['js-yaml'], '4.3.1');
 });
 
 test('verification scripts are release prerequisites', () => {
@@ -41,5 +42,7 @@ test('verification scripts are release prerequisites', () => {
   assert.doesNotMatch(releaseScript, /SignatureStatus\]::NotSigned/);
   assert.match(releaseScript, /self-signed certificate/);
   assert.match(releaseScript, /TimeStamperCertificate/);
+  assert.match(releaseScript, /Assert-SignedArtifact -Path \$installerPath/);
+  assert.match(releaseScript, /Assert-SignedArtifact -Path \$portablePath/);
   assert.doesNotMatch(releaseScript, /--generate-notes/);
 });

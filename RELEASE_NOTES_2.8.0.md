@@ -21,6 +21,7 @@ A full QA and compatibility pass across the browser shell, Chromium web engine b
 
 ## Fixed
 
+- **Dependency advisories** — Updated the pinned URL parser and YAML parser transitive dependencies to patched releases used by the updater and packaging toolchain.
 - **AI Quick Actions crash** — The 24H WFH Report and Email Task extraction buttons called a function that never existed (`appendChatMessage`), throwing a `ReferenceError` and doing nothing. Both buttons (including the Tasks panel Email Tasks button, which had no handler at all) now render their results in chat reliably.
 - **Zoom popup invisible** — The popup was clipped by the nav row's scroll container, so it could never appear. It now renders fully below the zoom control strip.
 - **Stale address-bar suggestions** — Fast typing could resolve history lookups out of order. Suggestions are now sequenced, guarded against API failures, and keyboard-accessible with proper `listbox`/`option` roles.
