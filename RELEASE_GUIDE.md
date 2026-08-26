@@ -86,6 +86,14 @@ The script:
 
 Without `-CreateDraft`, nothing is uploaded and existing users are unaffected.
 
+The signed path remains the default. If a maintainer has explicitly accepted the Windows trust warning for a particular release, `-AllowUnsigned` bypasses only the Authenticode gate; all tests, artifact checks, update-feed validation, and draft-only safeguards still run:
+
+```powershell
+.\publish-release.ps1 -Version 2.0.0 -CreateDraft -AllowUnsigned
+```
+
+Unsigned releases must disclose that Windows can show **Unknown publisher** or Microsoft Defender SmartScreen warnings. Do not use this override silently or as the routine release path.
+
 ## 5. Create a GitHub draft
 
 After local verification succeeds:

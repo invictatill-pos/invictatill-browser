@@ -4,7 +4,9 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
     [string]$Version,
 
-    [switch]$CreateDraft
+    [switch]$CreateDraft,
+
+    [switch]$AllowUnsigned
 )
 
 Set-StrictMode -Version Latest
@@ -214,8 +216,17 @@ try {
         'scripts/verify-update-feed.js', '--local', '--tag', $tagName
     ) -Description 'Verify complete local auto-update feed'
 
-    Assert-SignedArtifact -Path $installerPath
-    Assert-SignedArtifact -Path $portablePath
+    if ($AllowUnsigned) {
+        Write-Warning 'Unsigned release override enabled. Windows may show Unknown publisher or Microsoft Defender SmartScreen warnings.'
+        foreach ($path in @($installerPath, $portablePath)) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $path
+            Write-Warning "$([System.IO.Path]::GetFileName($path)) Authenticode status: $($signature.Status)"
+        }
+    }
+    else {
+        Assert-SignedArtifact -Path $installerPath
+        Assert-SignedArtifact -Path $portablePath
+    }
 
     Write-Host "`nVerified release artifacts:" -ForegroundColor Green
     foreach ($path in $expectedFiles) {

@@ -4,6 +4,10 @@
 
 A full QA and compatibility pass across the browser shell, Chromium web engine bridge, credential vault, and styling system. Every feature was re-tested end-to-end, Chrome-like site support was expanded, and a batch of long-standing rendering, race, and accessibility bugs were fixed.
 
+## Windows installation notice
+
+This release is distributed without a publicly trusted Authenticode signature. Windows may show **Unknown publisher** or a Microsoft Defender SmartScreen warning during download or installation. Download only from the official InvictaTill Browser GitHub release page.
+
 ## Browsing compatibility
 
 - Normal tabs and login popups now present a supported Chrome-compatible identity instead of exposing Electron, improving compatibility with browser-sniffing sites and OAuth flows.

@@ -44,5 +44,8 @@ test('verification scripts are release prerequisites', () => {
   assert.match(releaseScript, /TimeStamperCertificate/);
   assert.match(releaseScript, /Assert-SignedArtifact -Path \$installerPath/);
   assert.match(releaseScript, /Assert-SignedArtifact -Path \$portablePath/);
+  assert.match(releaseScript, /\[switch\]\$AllowUnsigned/);
+  assert.match(releaseScript, /if \(\$AllowUnsigned\)/);
+  assert.match(releaseScript, /Unsigned release override enabled/);
   assert.doesNotMatch(releaseScript, /--generate-notes/);
 });
