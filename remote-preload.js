@@ -35,8 +35,24 @@ function usableInput(input) {
   );
 }
 
+function querySelectorAllDeep(root, selector) {
+  const matches = [];
+  const pending = [root];
+  const visited = new Set();
+  while (pending.length) {
+    const scope = pending.shift();
+    if (!scope || visited.has(scope) || typeof scope.querySelectorAll !== 'function') continue;
+    visited.add(scope);
+    for (const element of scope.querySelectorAll(selector)) matches.push(element);
+    for (const element of scope.querySelectorAll('*')) {
+      if (element.shadowRoot && element.shadowRoot.mode === 'open') pending.push(element.shadowRoot);
+    }
+  }
+  return matches;
+}
+
 function passwordInputs(root) {
-  return Array.from(root.querySelectorAll('input[type="password"]')).filter(usableInput);
+  return querySelectorAllDeep(root, 'input[type="password"]').filter(usableInput);
 }
 
 function loginPasswordInput(root) {
@@ -58,20 +74,28 @@ function submittedPasswordInput(root) {
     inputs[inputs.length - 1];
 }
 
-function usernameInput(root) {
+function usernameInput(root, strict) {
   const selectors = [
-    'input[autocomplete="username"]',
-    'input[autocomplete="email"]',
+    'input[autocomplete~="username"]',
+    'input[autocomplete~="email"]',
     'input[type="email"]',
     'input[name*="user" i]',
     'input[name*="login" i]',
-    'input[type="text"]',
-    'input[type="tel"]',
+    'input[name*="account" i]',
+    'input[id*="user" i]',
+    'input[id*="login" i]',
+    'input[id*="email" i]',
+    'input[aria-label*="user" i]',
+    'input[aria-label*="email" i]',
   ];
   for (const selector of selectors) {
-    const input = Array.from(root.querySelectorAll(selector)).find(usableInput);
+    const input = querySelectorAllDeep(root, selector).find(usableInput);
     if (input) return input;
   }
+  if (strict) return null;
+  const fallback = querySelectorAllDeep(root, 'input[type="text"], input[type="tel"]')
+    .find(usableInput);
+  if (fallback) return fallback;
   return null;
 }
 
@@ -95,7 +119,11 @@ async function tryAutofill() {
   autofillCheckTimer = null;
   if (!isWebPage()) return;
   const passwordInput = loginPasswordInput(document);
-  if (!passwordInput || passwordInput.value) {
+  const form = passwordInput && passwordInput.form ? passwordInput.form : document;
+  const userInput = usernameInput(form, !passwordInput);
+  if ((!passwordInput && !userInput) ||
+      (passwordInput && passwordInput.value && (!userInput || userInput.value)) ||
+      (!passwordInput && userInput && userInput.value)) {
     autofillLookupStarted = false;
     return;
   }
@@ -112,10 +140,9 @@ async function tryAutofill() {
     const password = typeof credential.password === 'string'
       ? credential.password.slice(0, MAX_PASSWORD_LENGTH)
       : '';
-    if (!password) return;
-    const form = passwordInput.form || document;
-    setInputValue(usernameInput(form), username);
-    setInputValue(passwordInput, password);
+    if (!password && passwordInput) return;
+    setInputValue(userInput, username);
+    if (passwordInput) setInputValue(passwordInput, password);
   } catch (error) {
     // Password storage is optional and may be unavailable on this device.
   }
@@ -148,7 +175,7 @@ function reportCredential(root) {
   if (!passwordInput) return;
   const password = String(passwordInput.value || '').slice(0, MAX_PASSWORD_LENGTH);
   if (!password) return;
-  const userInput = usernameInput(root);
+  const userInput = usernameInput(root, false);
   const username = userInput
     ? String(userInput.value || '').trim().slice(0, MAX_USERNAME_LENGTH)
     : '';
@@ -159,10 +186,25 @@ function reportCredential(root) {
   });
 }
 
+function reportUsername(root) {
+  if (!isWebPage()) return;
+  const input = usernameInput(root, true);
+  const username = input
+    ? String(input.value || '').trim().slice(0, MAX_USERNAME_LENGTH)
+    : '';
+  if (!username) return;
+  ipcRenderer.send('credential-username-observed', {
+    origin: location.origin,
+    username,
+  });
+}
+
 function credentialRoot(target) {
-  return target && typeof target.closest === 'function'
-    ? (target.closest('form') || document)
-    : document;
+  if (!target || typeof target.closest !== 'function') return document;
+  const form = target.closest('form');
+  if (form) return form;
+  const root = typeof target.getRootNode === 'function' ? target.getRootNode() : null;
+  return root && typeof root.querySelectorAll === 'function' ? root : document;
 }
 
 function isLikelySubmitControl(control) {
@@ -173,27 +215,59 @@ function isLikelySubmitControl(control) {
   return /sign\s*in|log\s*in|continue|next|submit|register|create|save|confirm/i.test(label);
 }
 
+function observeCredentialRoots(root, observer, observedRoots) {
+  if (!root || observedRoots.has(root) || typeof root.querySelectorAll !== 'function') return;
+  observedRoots.add(root);
+  observer.observe(root, { childList: true, subtree: true });
+  if (root.shadowRoot && root.shadowRoot.mode === 'open') {
+    observeCredentialRoots(root.shadowRoot, observer, observedRoots);
+  }
+  for (const element of root.querySelectorAll('*')) {
+    if (element.shadowRoot && element.shadowRoot.mode === 'open') {
+      observeCredentialRoots(element.shadowRoot, observer, observedRoots);
+    }
+  }
+}
+
 function startCredentialObserver() {
   if (!isWebPage()) return;
   document.addEventListener('submit', (event) => {
-    reportCredential(credentialRoot(event.target));
+    const root = credentialRoot(event.target);
+    reportUsername(root);
+    reportCredential(root);
   }, true);
   document.addEventListener('click', (event) => {
     if (!event.isTrusted) return;
     const target = event.target instanceof Element ? event.target : null;
     const control = target && target.closest('button, input[type="submit"], [role="button"]');
-    if (isLikelySubmitControl(control)) reportCredential(credentialRoot(control));
+    if (isLikelySubmitControl(control)) {
+      const root = credentialRoot(control);
+      reportUsername(root);
+      reportCredential(root);
+    }
   }, true);
   document.addEventListener('keydown', (event) => {
     if (!event.isTrusted || event.key !== 'Enter') return;
     const target = event.target instanceof Element ? event.target : null;
     if (target && target.closest('input, form, [contenteditable="true"]')) {
-      reportCredential(credentialRoot(target));
+      const root = credentialRoot(target);
+      reportUsername(root);
+      reportCredential(root);
     }
   }, true);
 
-  const observer = new MutationObserver(scheduleAutofillReset);
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  const observedRoots = new WeakSet();
+  const observer = new MutationObserver((records) => {
+    scheduleAutofillReset();
+    for (const record of records) {
+      for (const node of record.addedNodes) {
+        if (node instanceof Element || node instanceof DocumentFragment) {
+          observeCredentialRoots(node, observer, observedRoots);
+        }
+      }
+    }
+  });
+  observeCredentialRoots(document.documentElement, observer, observedRoots);
   scheduleAutofill();
 }
 

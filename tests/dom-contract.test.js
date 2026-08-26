@@ -103,7 +103,7 @@ test('HTTP Basic Auth prompt is clipped to the tab viewport', () => {
   assert.match(renderer, /openModalSurface\(els\.httpAuthBackdrop, els\.httpAuthModal\);/);
   assert.match(renderer, /closeModalSurface\(els\.httpAuthBackdrop\);/);
   assert.match(main, /const requestingTab = tabForRemoteContents\(_webContents\);\s*resizeTabViewToCurrentLayout\(requestingTab\);\s*resizeViews\(\);/s);
-  assert.match(main, /pendingHttpAuthCallbacks\.set\(requestId, \{ callback, timeout, tabId: requestingTab \? requestingTab\.id : null \}\);/);
+  assert.match(main, /pendingHttpAuthCallbacks\.set\(requestId, \{[\s\S]*callback,[\s\S]*timeout,[\s\S]*tabId: requestingTab \? requestingTab\.id : null,[\s\S]*origin,[\s\S]*domain,[\s\S]*\}\);/);
   assert.match(main, /entry\.callback\(username, password\);[\s\S]*resizeTabViewToCurrentLayout\(tabs\.get\(entry\.tabId\)\);[\s\S]*resizeViews\(\);/);
 });
 

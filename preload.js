@@ -157,8 +157,8 @@ const api = {
     ipcRenderer.invoke('resolve-password-save-request', { requestId, decision }),
   deletePassword: (id) => ipcRenderer.invoke('delete-password', id),
   autofillCredentials: (credentials) => ipcRenderer.invoke('autofill-credentials', credentials),
-  respondHttpAuth: (requestId, username, password) =>
-    ipcRenderer.invoke('respond-http-auth', { requestId, username, password }),
+  respondHttpAuth: (requestId, username, password, credentialId) =>
+    ipcRenderer.invoke('respond-http-auth', { requestId, username, password, credentialId }),
   onShowScreenPicker: (callback) => {
     return subscribe('show-screen-picker', callback);
   },

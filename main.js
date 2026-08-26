@@ -85,6 +85,7 @@ const MAX_BOOKMARKS = 1000;
 const MAX_TASKS = 1000;
 const MAX_ACTIVITY_RECORDS = 10000;
 const MAX_URL_LENGTH = 8192;
+const MAX_DATA_URL_LENGTH = 2 * 1024 * 1024;
 const MAX_PAGE_CONTEXT = 50000;
 const MAX_WRITING_TEXT = 20000;
 const DEFAULT_INVICTA_AI_BASE_URL = 'http://127.0.0.1:7860/api/v1';
@@ -130,8 +131,11 @@ const closedTabs = [];
 const liveDownloads = new Map();
 const aiRequests = new Map();
 const pendingCredentialPrompts = new Map();
+const recentCredentialUsernames = new Map();
 const liveWritingRequestTimes = new Map();
 const pendingHttpAuthCallbacks = new Map(); // requestId → { callback, timeout }
+const popupOwnerTabIds = new Map();
+const configuredDeviceSessions = new WeakSet();
 let invictaSessionToken = '';
 let localAiProcess = null;
 let localAiStartAttempted = false;
@@ -302,6 +306,12 @@ function configureScreenSharePicker(targetSession) {
   }
 }
 
+function workspacePartitionName(workspaceId) {
+  const targetId = workspaceId || activeWorkspaceId || 'default';
+  const cleanId = String(targetId).replace(/[^a-zA-Z0-9_-]/g, '');
+  return privateInstance ? 'workspace_priv_' + cleanId : 'persist:workspace_' + cleanId;
+}
+
 function getWorkspaceSession(workspaceId) {
   const targetId = workspaceId || activeWorkspaceId || 'default';
   const cleanId = String(targetId).replace(/[^a-zA-Z0-9_-]/g, '');
@@ -313,16 +323,16 @@ function getWorkspaceSession(workspaceId) {
     return cached;
   }
 
-  let sess;
-  if (privateInstance) {
-    sess = session.fromPartition('workspace_priv_' + cleanId, { inMemory: true });
-  } else {
-    sess = session.fromPartition('persist:workspace_' + cleanId);
-  }
+  const partitionName = workspacePartitionName(targetId);
+  const sess = privateInstance
+    ? session.fromPartition(partitionName, { inMemory: true })
+    : session.fromPartition(partitionName);
 
+  sess.setUserAgent(chromeCompatibilityUserAgent(), 'en-US,en;q=0.9');
   sess.setSpellCheckerEnabled(true);
   sess.setSpellCheckerLanguages(['en-US', 'en-GB']);
   configurePermissions(sess);
+  configureDeviceSelection(sess);
   configureScreenSharePicker(sess);
   configureDownloads(sess);
   if (extensionManager && !privateInstance) {
@@ -438,6 +448,59 @@ function isAllowedExtensionUrl(candidate) {
   return /^chrome-extension:\/\/[a-z]{32}\//i.test(candidate);
 }
 
+function isAllowedFileUrl(candidate) {
+  if (typeof candidate !== 'string' || candidate.length > 32768) return false;
+  try {
+    return new URL(candidate).protocol === 'file:';
+  } catch (error) {
+    return false;
+  }
+}
+
+function isAllowedBlobUrl(candidate) {
+  if (typeof candidate !== 'string' || candidate.length > MAX_URL_LENGTH + 10) return false;
+  if (!/^blob:(?:https?|file):/i.test(candidate)) return false;
+  try {
+    const inner = new URL(candidate.slice(5));
+    return inner.protocol === 'https:' || inner.protocol === 'http:' || inner.protocol === 'file:';
+  } catch (error) {
+    return false;
+  }
+}
+
+function isAllowedDataUrl(candidate) {
+  if (typeof candidate !== 'string' || candidate.length > MAX_DATA_URL_LENGTH) return false;
+  const commaIndex = candidate.indexOf(',');
+  if (commaIndex < 5) return false;
+  const metadata = candidate.slice(5, commaIndex);
+  const mediaType = (metadata.split(';')[0] || 'text/plain').toLowerCase();
+  return /^(?:text\/(?:plain|html|css|csv|xml)|image\/[a-z0-9.+-]+|audio\/[a-z0-9.+-]+|video\/[a-z0-9.+-]+|application\/(?:pdf|json|xml|octet-stream|zip|vnd\.[a-z0-9.+-]+))$/.test(mediaType);
+}
+
+const EXTERNAL_PROTOCOLS = new Set([
+  'mailto:',
+  'tel:',
+  'sms:',
+  'smsto:',
+  'webcal:',
+  'magnet:',
+  'geo:',
+  'spotify:',
+  'zoommtg:',
+  'msteams:',
+  'slack:',
+]);
+
+function safeExternalProtocolUrl(candidate) {
+  if (typeof candidate !== 'string' || candidate.length > MAX_URL_LENGTH) return null;
+  try {
+    const parsed = new URL(candidate);
+    return EXTERNAL_PROTOCOLS.has(parsed.protocol.toLowerCase()) ? parsed.href : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 function isNewTabUrl(url) {
   const value = String(url || '').trim().toLowerCase();
   return !value || value === 'about:blank' || value === 'invicta://newtab' || value === 'invictatill://newtab' || value === 'chrome://newtab';
@@ -445,13 +508,22 @@ function isNewTabUrl(url) {
 
 function normalizeNavigationUrl(input) {
   if (input === undefined || input === null || isNewTabUrl(input)) return 'about:blank';
-  const raw = boundedString(input, 'url', MAX_URL_LENGTH, true);
+  const inputText = String(input).trim();
+  const maxLength = /^data:/i.test(inputText) ? MAX_DATA_URL_LENGTH : 32768;
+  const raw = boundedString(inputText, 'url', maxLength, true);
   if (!raw || isNewTabUrl(raw)) return 'about:blank';
 
-  // Allow view-source: protocol for the Developer Options → View Page Source feature.
-  if (/^view-source:https?:\/\//i.test(raw)) return raw;
+  // Local paths and file URLs are rendered in Chromium just as they are in Chrome.
+  if (/^[a-zA-Z]:[\\/]/.test(raw) || /^\\\\/.test(raw)) {
+    return pathToFileURL(path.resolve(raw)).toString();
+  }
+  if (isAllowedFileUrl(raw)) return new URL(raw).toString();
+  // Allow view-source for normal web pages and local files.
+  if (/^view-source:(?:https?|file):/i.test(raw)) return raw;
   // Allow blob: URLs from valid origins (report generators use these for downloads/previews).
-  if (/^blob:https?:\/\//i.test(raw)) return raw;
+  if (isAllowedBlobUrl(raw)) return raw;
+  // Chromium safely isolates top-level data documents in an opaque origin.
+  if (isAllowedDataUrl(raw)) return raw;
 
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) {
     if (isAllowedRemoteUrl(raw, true)) {
@@ -483,6 +555,42 @@ function safeRemoteUrl(candidate) {
   } catch (error) {
     return null;
   }
+}
+
+function safeBrowsableUrl(candidate, allowBlank) {
+  if (isAllowedRemoteUrl(candidate, Boolean(allowBlank))) {
+    return candidate === 'about:blank' ? candidate : new URL(candidate).toString();
+  }
+  if (isAllowedFileUrl(candidate)) return new URL(candidate).toString();
+  if (isAllowedBlobUrl(candidate) || isAllowedDataUrl(candidate)) return candidate;
+  if (isAllowedExtensionUrl(candidate)) return candidate;
+  if (typeof candidate === 'string' && candidate.length <= 32768 &&
+      /^view-source:(?:https?|file):/i.test(candidate)) {
+    return candidate;
+  }
+  return null;
+}
+
+async function confirmOpenExternalUrl(candidate, sourceWindow) {
+  const target = safeExternalProtocolUrl(candidate);
+  if (!target) return false;
+  const parsed = new URL(target);
+  const options = {
+    type: 'question',
+    title: 'Open external application?',
+    message: 'Allow this site to open a ' + parsed.protocol.slice(0, -1) + ' link?',
+    detail: target.slice(0, 1000),
+    buttons: ['Cancel', 'Open application'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const response = sourceWindow && !sourceWindow.isDestroyed()
+    ? await dialog.showMessageBox(sourceWindow, options)
+    : await dialog.showMessageBox(options);
+  if (response.response !== 1) return false;
+  await shell.openExternal(target, { activate: true });
+  return true;
 }
 
 function isAllowedDownloadUrl(candidate) {
@@ -518,6 +626,8 @@ function tabForRemoteContents(contents) {
   for (const tab of tabs.values()) {
     if (tab.view && tab.view.webContents === contents) return tab;
   }
+  const ownerTabId = contents && popupOwnerTabIds.get(contents.id);
+  if (ownerTabId && tabs.has(ownerTabId)) return tabs.get(ownerTabId);
   return null;
 }
 
@@ -798,6 +908,10 @@ function chromeCompatibilityUserAgent() {
     'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/' + chromeVersion + ' Safari/537.36';
 }
 
+// Child windows begin navigating before `did-create-window` can customize their
+// WebContents, so the application fallback must also be a supported Chrome identity.
+app.userAgentFallback = chromeCompatibilityUserAgent();
+
 function isWhatsAppWebUrl(value) {
   try {
     const parsed = new URL(value);
@@ -1003,23 +1117,39 @@ function setSplitScreen(options) {
 }
 
 function isAllowedNavigationUrl(candidate) {
-  if (isAllowedRemoteUrl(candidate, true)) return true;
-  if (isAllowedExtensionUrl(candidate)) return true;
-  if (/^blob:https?:\/\//i.test(candidate)) return true;
-  if (/^data:application\/(pdf|octet-stream|vnd\.[a-z])/i.test(candidate)) return true;
-  return false;
+  return Boolean(safeBrowsableUrl(candidate, true));
 }
 
 function attachNavigationGuards(contents) {
   contents.on('will-navigate', (event, url) => {
+    const currentUrl = contents.getURL();
+    const remoteToLocal = isAllowedRemoteUrl(currentUrl, false) &&
+      (isAllowedFileUrl(url) || isAllowedDataUrl(url) || /^view-source:file:/i.test(url));
+    if (remoteToLocal) {
+      event.preventDefault();
+      return;
+    }
     if (!isAllowedNavigationUrl(url)) {
       event.preventDefault();
+      if (safeExternalProtocolUrl(url)) {
+        setImmediate(() => confirmOpenExternalUrl(url, mainWindow).catch(() => {}));
+      }
     }
   });
 
   contents.on('will-redirect', (event, url) => {
+    const currentUrl = contents.getURL();
+    const remoteToLocal = isAllowedRemoteUrl(currentUrl, false) &&
+      (isAllowedFileUrl(url) || isAllowedDataUrl(url) || /^view-source:file:/i.test(url));
+    if (remoteToLocal) {
+      event.preventDefault();
+      return;
+    }
     if (!isAllowedNavigationUrl(url)) {
       event.preventDefault();
+      if (safeExternalProtocolUrl(url)) {
+        setImmediate(() => confirmOpenExternalUrl(url, mainWindow).catch(() => {}));
+      }
     }
   });
 
@@ -1345,6 +1475,45 @@ async function rewriteActiveEditor(tab, action) {
   }
 }
 
+function generatedStrongPassword() {
+  return 'A!a1-' + crypto.randomBytes(18).toString('base64url');
+}
+
+function fillGeneratedPassword(frame) {
+  if (!frame || frame.isDestroyed()) return Promise.resolve(false);
+  const password = generatedStrongPassword();
+  const script = `(function () {
+    function deepestActiveElement(root) {
+      var active = root && root.activeElement;
+      while (active && active.shadowRoot && active.shadowRoot.activeElement) {
+        active = active.shadowRoot.activeElement;
+      }
+      return active;
+    }
+    function setValue(input, value) {
+      var descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      if (descriptor && descriptor.set) descriptor.set.call(input, value);
+      else input.value = value;
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    var active = deepestActiveElement(document);
+    if (!(active instanceof HTMLInputElement) || active.type !== 'password') return false;
+    var value = ${JSON.stringify(password)};
+    setValue(active, value);
+    var scope = active.form || active.getRootNode() || document;
+    var fields = scope.querySelectorAll ? scope.querySelectorAll('input[type="password"]') : [];
+    for (var i = 0; i < fields.length; i += 1) {
+      var field = fields[i];
+      if (field === active || field.value || field.disabled || field.readOnly) continue;
+      var metadata = [field.name, field.id, field.autocomplete, field.placeholder].join(' ').toLowerCase();
+      if (/confirm|repeat|retype|new-password/.test(metadata)) setValue(field, value);
+    }
+    return true;
+  })();`;
+  return frame.executeJavaScript(script, true).catch(() => false);
+}
+
 async function showContextMenu(tab, params) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const contents = tab.view.webContents;
@@ -1436,6 +1605,13 @@ async function showContextMenu(tab, params) {
   }
 
   if (params.isEditable) {
+    if (params.formControlType === 'input-password' && writingFrame) {
+      template.push({
+        label: 'Use a generated strong password',
+        click: () => fillGeneratedPassword(writingFrame),
+      });
+      template.push({ type: 'separator' });
+    }
     if (params.misspelledWord && Array.isArray(params.dictionarySuggestions)) {
       for (const suggestion of params.dictionarySuggestions.slice(0, 5)) {
         template.push({
@@ -1723,6 +1899,7 @@ function getWhatsappSession() {
   whatsappSession.setSpellCheckerEnabled(true);
   whatsappSession.setSpellCheckerLanguages(['en-US', 'en-GB']);
   configurePermissions(whatsappSession);
+  configureDeviceSelection(whatsappSession);
   configureScreenSharePicker(whatsappSession);
   configureDownloads(whatsappSession);
 
@@ -1764,6 +1941,11 @@ function ensureWhatsappSurface() {
       nodeIntegration: false,
       webviewTag: false,
       allowRunningInsecureContent: false,
+      webSecurity: true,
+      javascript: true,
+      images: true,
+      webgl: true,
+      plugins: true,
       experimentalFeatures: false,
       spellcheck: true,
       backgroundThrottling: false,
@@ -1910,7 +2092,7 @@ function isDownloadExportUrl(candidate) {
 }
 
 function openUrlInWorkspaceTab(url, sourceTab, options) {
-  const target = safeRemoteUrl(url);
+  const target = safeBrowsableUrl(url, false);
   if (!target) return null;
   return createTab(target, {
     activate: !(options && options.activate === false),
@@ -1918,9 +2100,51 @@ function openUrlInWorkspaceTab(url, sourceTab, options) {
   });
 }
 
+function attachBluetoothPicker(contents) {
+  let selectionPending = false;
+  contents.on('select-bluetooth-device', (event, devices, callback) => {
+    event.preventDefault();
+    if (selectionPending) return;
+    selectionPending = true;
+    chooseBrowserDevice('bluetooth', devices)
+      .then((selected) => callback(selected ? selected.deviceId : ''))
+      .catch(() => callback(''))
+      .finally(() => { selectionPending = false; });
+  });
+}
+
+function configurePagePopup(popupWindow, sourceTab) {
+  if (!popupWindow || popupWindow.isDestroyed() || !sourceTab) return;
+  const contents = popupWindow.webContents;
+  popupOwnerTabIds.set(contents.id, sourceTab.id);
+  contents.setUserAgent(chromeCompatibilityUserAgent());
+  attachNavigationGuards(contents);
+  attachBluetoothPicker(contents);
+  contents.setWindowOpenHandler((details) => handleTabWindowOpen(details, sourceTab, contents));
+  contents.on('before-input-event', (event, input) => handleShortcut(event, input, sourceTab.id));
+  contents.on('will-navigate', (event, url) => {
+    if (!event.defaultPrevented && isAllowedNavigationUrl(url)) {
+      contents.setUserAgent(chromeCompatibilityUserAgent());
+    }
+  });
+  contents.once('destroyed', () => popupOwnerTabIds.delete(contents.id));
+  popupWindow.once('closed', () => popupOwnerTabIds.delete(contents.id));
+}
+
 function handleTabWindowOpen(details, sourceTab, contents) {
-  const url = safeRemoteUrl(details && details.url);
-  if (!url) return { action: 'deny' };
+  const requestedUrl = details && details.url;
+  const url = safeBrowsableUrl(requestedUrl, false);
+  if (!url) {
+    if (safeExternalProtocolUrl(requestedUrl)) {
+      setImmediate(() => confirmOpenExternalUrl(requestedUrl, mainWindow).catch(() => {}));
+    }
+    return { action: 'deny' };
+  }
+  const sourceUrl = contents && !contents.isDestroyed() ? contents.getURL() : '';
+  if (isAllowedRemoteUrl(sourceUrl, false) &&
+      (isAllowedFileUrl(url) || isAllowedDataUrl(url) || /^view-source:file:/i.test(url))) {
+    return { action: 'deny' };
+  }
   const disposition = details && details.disposition;
   const tabDisposition = disposition === 'foreground-tab' || disposition === 'background-tab';
   if (tabDisposition) {
@@ -1952,11 +2176,18 @@ function handleTabWindowOpen(details, sourceTab, contents) {
         autoHideMenuBar: true,
         parent: mainWindow || undefined,
         webPreferences: {
+          partition: workspacePartitionName(sourceTab && sourceTab.workspaceId),
+          preload: REMOTE_PRELOAD_FILE,
           sandbox: true,
           contextIsolation: true,
           nodeIntegration: false,
           webviewTag: false,
           allowRunningInsecureContent: false,
+          webSecurity: true,
+          javascript: true,
+          images: true,
+          webgl: true,
+          plugins: true,
           spellcheck: true,
         },
       },
@@ -1990,6 +2221,8 @@ function attachTabEvents(tab) {
   contents.setWindowOpenHandler((details) => {
     return handleTabWindowOpen(details, tab, contents);
   });
+  contents.on('did-create-window', (popupWindow) => configurePagePopup(popupWindow, tab));
+  attachBluetoothPicker(contents);
 
   contents.on('before-input-event', (event, input) => {
     handleShortcut(event, input, tab.id);
@@ -2134,6 +2367,11 @@ function createTab(url, options) {
       nodeIntegration: false,
       webviewTag: false,
       allowRunningInsecureContent: false,
+      webSecurity: true,
+      javascript: true,
+      images: true,
+      webgl: true,
+      plugins: true,
       experimentalFeatures: false,
       spellcheck: true,
       backgroundThrottling: true,
@@ -2230,6 +2468,12 @@ function closeTab(id) {
   }
 
   tabs.delete(tab.id);
+  for (const key of recentCredentialUsernames.keys()) {
+    if (key.startsWith(tab.id + '|')) recentCredentialUsernames.delete(key);
+  }
+  for (const [contentsId, ownerTabId] of popupOwnerTabIds) {
+    if (ownerTabId === tab.id) popupOwnerTabIds.delete(contentsId);
+  }
   destroyTabView(tab);
 
   if (splitScreen.secondaryTabId === tab.id) {
@@ -2330,8 +2574,13 @@ function reopenClosedTab() {
   });
 }
 
-function navigateTab(id, input) {
+async function navigateTab(id, input) {
   const tab = getTab(id);
+  const externalUrl = safeExternalProtocolUrl(typeof input === 'string' ? input.trim() : '');
+  if (externalUrl) {
+    await confirmOpenExternalUrl(externalUrl, mainWindow);
+    return publicTab(tab);
+  }
   const url = normalizeNavigationUrl(input);
   tab.url = url;
   tab.isLoading = url !== 'about:blank';
@@ -2816,6 +3065,18 @@ const PROMPTABLE_PERMISSIONS = new Set([
   'display-capture',
   'midi',
   'midiSysex',
+  'mediaKeySystem',
+  'idle-detection',
+  'keyboardLock',
+  'speaker-selection',
+  'window-management',
+  'storage-access',
+  'top-level-storage-access',
+  'openExternal',
+  'fileSystem',
+  'hid',
+  'serial',
+  'usb',
 ]);
 
 function permissionKeys(origin, permission, details) {
@@ -2863,6 +3124,18 @@ function permissionLabel(permission, details) {
     pointerLock: 'mouse pointer lock',
     fullscreen: 'full screen',
     'display-capture': 'screen share',
+    mediaKeySystem: 'protected media playback',
+    'idle-detection': 'device activity status',
+    keyboardLock: 'keyboard lock',
+    'speaker-selection': 'audio output devices',
+    'window-management': 'window placement information',
+    'storage-access': 'cross-site cookies',
+    'top-level-storage-access': 'top-level storage access',
+    openExternal: 'external applications',
+    fileSystem: 'files and folders you choose',
+    hid: 'HID devices',
+    serial: 'serial devices',
+    usb: 'USB devices',
   };
   return labels[permission] || permission;
 }
@@ -2968,6 +3241,76 @@ function configurePermissions(targetSession) {
   });
 }
 
+function deviceLabel(item, type) {
+  if (!item || typeof item !== 'object') return type + ' device';
+  if (type === 'serial') {
+    return String(item.displayName || item.portName || item.portId || 'Serial device').slice(0, 100);
+  }
+  if (type === 'passkey') {
+    return String(item.displayName || item.name || 'Passkey account').slice(0, 100);
+  }
+  return String(
+    item.deviceName || item.productName || item.name || item.manufacturerName ||
+    item.serialNumber || (type.toUpperCase() + ' device')
+  ).slice(0, 100);
+}
+
+async function chooseBrowserDevice(type, items) {
+  const available = Array.isArray(items) ? items.filter(Boolean).slice(0, 8) : [];
+  if (!available.length) return null;
+  const title = type === 'passkey' ? 'Choose a passkey' : 'Choose a ' + type.toUpperCase() + ' device';
+  const buttons = available.map((item) => deviceLabel(item, type));
+  buttons.push('Cancel');
+  const options = {
+    type: 'question',
+    title,
+    message: title,
+    detail: available.length < (Array.isArray(items) ? items.length : 0)
+      ? 'Showing the first eight available choices.'
+      : 'Only choose a device or account you trust.',
+    buttons,
+    defaultId: 0,
+    cancelId: buttons.length - 1,
+    noLink: true,
+  };
+  const response = mainWindow && !mainWindow.isDestroyed()
+    ? await dialog.showMessageBox(mainWindow, options)
+    : await dialog.showMessageBox(options);
+  return response.response >= 0 && response.response < available.length
+    ? available[response.response]
+    : null;
+}
+
+function configureDeviceSelection(targetSession) {
+  if (!targetSession || configuredDeviceSessions.has(targetSession)) return;
+  configuredDeviceSessions.add(targetSession);
+
+  targetSession.on('select-hid-device', (event, details, callback) => {
+    event.preventDefault();
+    chooseBrowserDevice('hid', details && details.deviceList)
+      .then((selected) => callback(selected ? selected.deviceId : null))
+      .catch(() => callback(null));
+  });
+  targetSession.on('select-usb-device', (event, details, callback) => {
+    event.preventDefault();
+    chooseBrowserDevice('usb', details && details.deviceList)
+      .then((selected) => callback(selected ? selected.deviceId : undefined))
+      .catch(() => callback());
+  });
+  targetSession.on('select-serial-port', (event, portList, _contents, callback) => {
+    event.preventDefault();
+    chooseBrowserDevice('serial', portList)
+      .then((selected) => callback(selected ? selected.portId : ''))
+      .catch(() => callback(''));
+  });
+  targetSession.on('select-webauthn-account', (event, details, callback) => {
+    event.preventDefault();
+    chooseBrowserDevice('passkey', details && details.accounts)
+      .then((selected) => callback(selected ? selected.credentialId : null))
+      .catch(() => callback(null));
+  });
+}
+
 function sanitizeHistoryRecord(value) {
   if (!isPlainObject(value)) return null;
   if (!isAllowedRemoteUrl(value.url, false)) return null;
@@ -3025,6 +3368,33 @@ function findSavedCredential(domain, username) {
   )) || null;
 }
 
+function latestSavedCredential(domain) {
+  const normalized = normalizeCredentialDomain(domain);
+  return savedPasswords
+    .filter((item) => item.domain.toLowerCase() === normalized)
+    .sort((left, right) => right.updatedAt - left.updatedAt)[0] || null;
+}
+
+function rememberCredentialUsername(tab, origin, username) {
+  if (!tab || !origin || !username) return;
+  recentCredentialUsernames.set(tab.id + '|' + origin, {
+    username: String(username).slice(0, 250),
+    observedAt: Date.now(),
+  });
+}
+
+function recentCredentialUsername(tab, origin) {
+  if (!tab || !origin) return '';
+  const key = tab.id + '|' + origin;
+  const remembered = recentCredentialUsernames.get(key);
+  if (!remembered) return '';
+  if (Date.now() - remembered.observedAt > 10 * 60 * 1000) {
+    recentCredentialUsernames.delete(key);
+    return '';
+  }
+  return remembered.username;
+}
+
 function saveCredential(payload) {
   assertPlainObject(payload, 'password payload');
   if (privateInstance) {
@@ -3057,11 +3427,7 @@ function saveCredential(payload) {
 
 function credentialForOrigin(origin) {
   if (privateInstance || !secureStorageAvailable()) return null;
-  const domain = normalizeCredentialDomain(origin);
-  const matches = savedPasswords
-    .filter((item) => item.domain.toLowerCase() === domain)
-    .sort((left, right) => right.updatedAt - left.updatedAt);
-  const credential = matches[0];
+  const credential = latestSavedCredential(origin);
   if (!credential) return null;
   return {
     username: credential.username,
@@ -3082,7 +3448,11 @@ function queueCredentialSavePrompt(payload, senderDetails) {
   if (privateInstance || !secureStorageAvailable()) return false;
   assertPlainObject(payload, 'submitted credential');
   const domain = normalizeCredentialDomain(senderDetails.origin);
-  const username = boundedString(payload.username || '', 'username', 250, true);
+  const reportedUsername = boundedString(payload.username || '', 'username', 250, true);
+  if (reportedUsername) {
+    rememberCredentialUsername(senderDetails.tab, senderDetails.origin, reportedUsername);
+  }
+  const username = reportedUsername || recentCredentialUsername(senderDetails.tab, senderDetails.origin);
   const password = boundedString(payload.password || '', 'password', 500, false);
   const existing = findSavedCredential(domain, username);
   if (existing && existing.password === password) return false;
@@ -4720,6 +5090,17 @@ function launchPrivateWindow() {
 }
 
 function registerIpcHandlers() {
+  ipcMain.on('credential-username-observed', (event, payload) => {
+    try {
+      if (!isPlainObject(payload)) return;
+      const senderDetails = trustedCredentialSender(event, payload.origin);
+      if (!senderDetails) return;
+      const username = boundedString(payload.username || '', 'username', 250, false);
+      rememberCredentialUsername(senderDetails.tab, senderDetails.origin, username);
+    } catch (error) {
+      // Username-only login steps are best-effort and never block navigation.
+    }
+  });
   ipcMain.on('open-link-from-page', (event, payload) => {
     try {
       if (!isPlainObject(payload)) return;
@@ -5057,9 +5438,27 @@ function registerIpcHandlers() {
     if (!entry) return;
     clearTimeout(entry.timeout);
     pendingHttpAuthCallbacks.delete(payload.requestId);
-    const username = typeof payload.username === 'string' ? payload.username : '';
-    const password = typeof payload.password === 'string' ? payload.password : '';
+    let username = typeof payload.username === 'string' ? payload.username.slice(0, 250) : '';
+    let password = typeof payload.password === 'string' ? payload.password.slice(0, 500) : '';
+    const credentialId = typeof payload.credentialId === 'string' ? payload.credentialId : '';
+    if (!password && credentialId && entry.domain) {
+      const credential = savedPasswords.find((item) => item.id === credentialId);
+      if (credential && credential.domain === entry.domain && (!username || username === credential.username)) {
+        username = credential.username;
+        password = credential.password;
+      }
+    }
     try { entry.callback(username, password); } catch (e) {}
+    if (password && entry.origin && entry.tabId !== null && tabs.has(entry.tabId)) {
+      setImmediate(() => {
+        try {
+          queueCredentialSavePrompt(
+            { username, password },
+            { tab: tabs.get(entry.tabId), origin: entry.origin }
+          );
+        } catch (error) {}
+      });
+    }
     if (entry.tabId !== null && entry.tabId !== undefined) {
       resizeTabViewToCurrentLayout(tabs.get(entry.tabId));
     }
@@ -5556,11 +5955,13 @@ app.whenReady().then(() => {
   browserSession = session.fromPartition(REMOTE_PARTITION, {
     cache: true,
   });
+  browserSession.setUserAgent(chromeCompatibilityUserAgent(), 'en-US,en;q=0.9');
   browserSession.setSpellCheckerEnabled(true);
   browserSession.setSpellCheckerLanguages(['en-US', 'en-GB']);
   configurePermissions(session.defaultSession);
   configureScreenSharePicker(session.defaultSession);
   configurePermissions(browserSession);
+  configureDeviceSelection(browserSession);
   configureScreenSharePicker(browserSession);
   configureDownloads(browserSession);
   loadPersistentBrowserData();
@@ -5659,6 +6060,61 @@ app.on('window-all-closed', () => {
   app.quit();
 });
 
+// Offer the same explicit certificate choices a full browser provides. Invalid
+// certificates are never trusted silently and every bypass lasts for one request.
+app.on('certificate-error', (event, webContents, url, error, certificate, callback, isMainFrame) => {
+  if (!isMainFrame || !tabForRemoteContents(webContents)) return;
+  event.preventDefault();
+  let host = url;
+  try { host = new URL(url).hostname; } catch (parseError) {}
+  const issuer = certificate && certificate.issuerName ? certificate.issuerName : 'Unknown issuer';
+  const options = {
+    type: 'warning',
+    title: 'Your connection is not private',
+    message: 'Chromium could not verify the identity of ' + host + '.',
+    detail: String(error || 'Certificate verification failed') + '\nIssuer: ' + issuer +
+      '\n\nContinue only if you understand the risk.',
+    buttons: ['Go back', 'Continue (unsafe)'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  };
+  const prompt = mainWindow && !mainWindow.isDestroyed()
+    ? dialog.showMessageBox(mainWindow, options)
+    : dialog.showMessageBox(options);
+  prompt.then((response) => callback(response.response === 1)).catch(() => callback(false));
+});
+
+app.on('select-client-certificate', (event, webContents, url, certificateList, callback) => {
+  if (!tabForRemoteContents(webContents)) return;
+  event.preventDefault();
+  const certificates = Array.isArray(certificateList) ? certificateList.slice(0, 8) : [];
+  if (certificates.length <= 1) {
+    callback(certificates[0]);
+    return;
+  }
+  const buttons = certificates.map((certificate) =>
+    String(certificate.subjectName || certificate.issuerName || 'Client certificate').slice(0, 100)
+  );
+  buttons.push('Cancel');
+  const options = {
+    type: 'question',
+    title: 'Choose a client certificate',
+    message: 'Choose a certificate for ' + String(url).slice(0, 300),
+    detail: 'The selected certificate will be shared with this site for authentication.',
+    buttons,
+    defaultId: 0,
+    cancelId: buttons.length - 1,
+    noLink: true,
+  };
+  const prompt = mainWindow && !mainWindow.isDestroyed()
+    ? dialog.showMessageBox(mainWindow, options)
+    : dialog.showMessageBox(options);
+  prompt.then((response) => {
+    callback(response.response < certificates.length ? certificates[response.response] : undefined);
+  }).catch(() => callback());
+});
+
 // ═══════════════════════════════════════════════════════════════════
 // HTTP Basic Authentication — intercept 401 challenges and show a
 // custom in-app credentials dialog instead of letting Electron
@@ -5681,7 +6137,27 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
     try { callback('', ''); } catch (e) {}
   }, 5 * 60 * 1000);
 
-  pendingHttpAuthCallbacks.set(requestId, { callback, timeout, tabId: requestingTab ? requestingTab.id : null });
+  let origin = '';
+  let domain = '';
+  try {
+    const portSuffix = authInfo.port && authInfo.port !== 80 && authInfo.port !== 443
+      ? ':' + authInfo.port
+      : '';
+    const requestUrl = _details && typeof _details.url === 'string' ? _details.url : '';
+    origin = requestUrl ? new URL(requestUrl).origin : 'https://' + authInfo.host + portSuffix;
+    domain = normalizeCredentialDomain(origin);
+  } catch (error) {}
+  const savedCredential = domain && secureStorageAvailable()
+    ? latestSavedCredential(domain)
+    : null;
+
+  pendingHttpAuthCallbacks.set(requestId, {
+    callback,
+    timeout,
+    tabId: requestingTab ? requestingTab.id : null,
+    origin,
+    domain,
+  });
 
   sendToShell('http-auth-request', {
     requestId,
@@ -5690,5 +6166,7 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
     realm: authInfo.realm || '',
     scheme: authInfo.scheme || 'basic',
     isProxy: Boolean(authInfo.isProxy),
+    savedCredentialId: savedCredential ? savedCredential.id : '',
+    savedUsername: savedCredential ? savedCredential.username : '',
   });
 });

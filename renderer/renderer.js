@@ -171,6 +171,7 @@ const els = {
   httpAuthRealm: $('http-auth-realm'),
   httpAuthUsername: $('http-auth-username'),
   httpAuthPassword: $('http-auth-password'),
+  httpAuthSaved: $('http-auth-saved'),
   httpAuthForm: $('http-auth-form'),
   btnHttpAuthCancel: $('btn-http-auth-cancel'),
   // Extension Store elements.
@@ -4600,10 +4601,13 @@ function wireUi() {
         els.httpAuthRealm.textContent = data.realm ? '"' + data.realm + '"' : '';
         setHidden(els.httpAuthRealm, !data.realm);
       }
-      if (els.httpAuthUsername) els.httpAuthUsername.value = '';
+      if (els.httpAuthUsername) els.httpAuthUsername.value = data.savedUsername || '';
       if (els.httpAuthPassword) els.httpAuthPassword.value = '';
+      if (els.httpAuthSaved) setHidden(els.httpAuthSaved, !data.savedCredentialId);
       openModalSurface(els.httpAuthBackdrop, els.httpAuthModal);
-      if (els.httpAuthUsername) {
+      if (data.savedCredentialId && els.httpAuthPassword) {
+        window.setTimeout(function () { els.httpAuthPassword.focus(); }, 0);
+      } else if (els.httpAuthUsername) {
         window.setTimeout(function () { els.httpAuthUsername.focus(); }, 0);
       }
     });
@@ -4630,7 +4634,8 @@ function wireUi() {
       const username = els.httpAuthUsername ? els.httpAuthUsername.value : '';
       const password = els.httpAuthPassword ? els.httpAuthPassword.value : '';
       if (typeof api.respondHttpAuth === 'function') {
-        api.respondHttpAuth(req.requestId, username, password).catch(function () {});
+        const savedCredentialId = !password ? (req.savedCredentialId || '') : '';
+        api.respondHttpAuth(req.requestId, username, password, savedCredentialId).catch(function () {});
       }
     });
   }

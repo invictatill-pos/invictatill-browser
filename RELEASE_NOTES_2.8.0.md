@@ -2,7 +2,22 @@
 
 ## Highlights
 
-A full QA and polish pass across the browser shell, web engine bridge, and styling system. Every feature was re-tested end-to-end and a batch of long-standing rendering, race, and accessibility bugs were fixed.
+A full QA and compatibility pass across the browser shell, Chromium web engine bridge, credential vault, and styling system. Every feature was re-tested end-to-end, Chrome-like site support was expanded, and a batch of long-standing rendering, race, and accessibility bugs were fixed.
+
+## Browsing compatibility
+
+- Normal tabs and login popups now present a supported Chrome-compatible identity instead of exposing Electron, improving compatibility with browser-sniffing sites and OAuth flows.
+- JavaScript, WebAssembly, service workers, WebCrypto, WebGL, PDF/plugin content, local files, data/blob documents, and confirmed external-application links are supported through Chromium.
+- Login popups share their workspace session, cookies, permissions, Chrome identity, and secure credential bridge from the first request.
+- Browser permission and selection flows now cover passkeys, client certificates, protected media, File System Access, Bluetooth, HID, USB, serial devices, storage access, window placement, and audio-output selection.
+- Invalid TLS certificates remain blocked unless the user explicitly accepts a per-request warning; the sandbox, same-origin policy, and web security remain enabled.
+
+## Passwords and authentication
+
+- The OS-encrypted vault now handles conventional forms, multi-step sign-ins, open shadow-DOM forms, login popups, and HTTP authentication.
+- HTTP authentication can save credentials after sign-in and reuse them without exposing the stored password to the browser shell.
+- Right-clicking a new-password field offers a cryptographically generated strong password and fills matching confirmation fields.
+- Private windows continue to neither save nor reuse vault credentials.
 
 ## Fixed
 

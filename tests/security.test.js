@@ -90,6 +90,57 @@ test('automatic password capture uses an isolated origin-checked page bridge', (
   assert.match(main, /autofill payload[\s\S]+credentialId[\s\S]+credential\.domain !== activeDomain/);
 });
 
+test('normal tabs expose modern Chromium compatibility without weakening isolation', () => {
+  const main = read('main.js');
+
+  assert.match(main, /sess\.setUserAgent\(chromeCompatibilityUserAgent\(\)/);
+  assert.match(main, /browserSession\.setUserAgent\(chromeCompatibilityUserAgent\(\)/);
+  assert.match(main, /plugins:\s*true/);
+  assert.match(main, /javascript:\s*true/);
+  assert.match(main, /images:\s*true/);
+  assert.match(main, /webgl:\s*true/);
+  assert.match(main, /webSecurity:\s*true/);
+  assert.match(main, /isAllowedFileUrl/);
+  assert.match(main, /isAllowedDataUrl/);
+  assert.match(main, /isAllowedBlobUrl/);
+  assert.match(main, /confirmOpenExternalUrl/);
+  assert.match(main, /remoteToLocal/);
+});
+
+test('login popups, passkeys, hardware, and certificates have explicit browser flows', () => {
+  const main = read('main.js');
+
+  assert.match(main, /did-create-window/);
+  assert.match(main, /popupOwnerTabIds/);
+  assert.match(main, /overrideBrowserWindowOptions:[\s\S]+preload:\s*REMOTE_PRELOAD_FILE/);
+  assert.match(main, /select-webauthn-account/);
+  assert.match(main, /select-hid-device/);
+  assert.match(main, /select-usb-device/);
+  assert.match(main, /select-serial-port/);
+  assert.match(main, /select-bluetooth-device/);
+  assert.match(main, /select-client-certificate/);
+  assert.match(main, /app\.on\('certificate-error'/);
+  assert.match(main, /Continue \(unsafe\)/);
+  assert.doesNotMatch(main, /ignore-certificate-errors|allow-insecure-localhost/);
+});
+
+test('password handling covers multi-step and shadow-DOM logins plus HTTP auth reuse', () => {
+  const main = read('main.js');
+  const preload = read('preload.js');
+  const remotePreload = read('remote-preload.js');
+
+  assert.match(remotePreload, /querySelectorAllDeep/);
+  assert.match(remotePreload, /shadowRoot\.mode === 'open'/);
+  assert.match(remotePreload, /credential-username-observed/);
+  assert.match(main, /recentCredentialUsernames/);
+  assert.match(main, /savedCredentialId/);
+  assert.match(preload, /credentialId/);
+  assert.match(main, /credential\.domain === entry\.domain/);
+  assert.match(main, /generatedStrongPassword/);
+  assert.match(main, /Use a generated strong password/);
+  assert.match(main, /crypto\.randomBytes/);
+});
+
 test('live writing suggestions stay origin-checked, reviewed, and away from sensitive fields', () => {
   const main = read('main.js');
   const remotePreload = read('remote-preload.js');

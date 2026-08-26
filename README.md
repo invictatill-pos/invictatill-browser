@@ -14,7 +14,9 @@ Regular tabs share the normal persistent browser session. Private windows use an
 - Per-workspace last-active tab restoration, pinned tabs, close-other-tabs, and searchable tabs/commands with `Ctrl+Shift+A`.
 - Searchable browsing history, bookmarks, and recent-page shortcuts.
 - Managed downloads with an automatic compact progress box; dismissing the box keeps transfers running, while Cancel explicitly stops them.
-- Automatic save/update prompts for submitted logins, with OS-encrypted storage and exact-site autofill shared across every normal workspace. Private windows never save or reuse vault passwords.
+- Automatic save/update prompts for submitted logins, with OS-encrypted storage and exact-site autofill shared across every normal workspace. Multi-step forms, open shadow-DOM forms, login popups, HTTP authentication, and generated strong passwords use the same vault; private windows never save or reuse vault passwords.
+- A Chrome-compatible identity for every normal tab and login popup, with JavaScript, WebAssembly, service workers, WebCrypto, WebGL, PDF/plugin content, local files, data/blob documents, and confirmed external-app links enabled through Chromium.
+- Browser permission and selection flows for passkeys, client certificates, protected media, File System Access, Bluetooth, HID, USB, serial devices, storage access, camera, microphone, location, notifications, and screen sharing.
 - An Opera-style WhatsApp side panel with a persistent cross-workspace login, unread badge, reload/full-tab controls, calling permissions, and a WhatsApp-scoped supported Chrome identity.
 - Private windows backed by an isolated, non-persistent session.
 - Per-site permission prompts for capabilities such as camera, microphone, notifications, and location.
@@ -108,4 +110,4 @@ InvictaTill Browser is not a drop-in replacement for every Chrome or Edge capabi
 - Guaranteed Widevine DRM, proprietary codec, or streaming-service compatibility.
 - Enterprise policy parity or the full Chrome DevTools/managed-browser ecosystem.
 
-Some sites may reject embedded Chromium clients, require unsupported DRM, or behave differently from mainstream browsers. Treat compatibility with important work sites as a release-test requirement.
+Some sites may still reject non-Google Chromium clients, require a separately licensed Widevine DRM component, depend on proprietary codecs, or behave differently from mainstream browsers. Chrome account sync, Chrome's built-in credential store, enterprise policies, and exact Chrome Web Store parity are outside Electron's platform boundary. Treat compatibility with important work sites as a release-test requirement.

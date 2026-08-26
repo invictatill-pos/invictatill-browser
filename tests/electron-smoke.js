@@ -24,6 +24,8 @@ async function poll(fn, predicate, timeoutMs = 12_000) {
 async function main() {
   const log = (message) => process.stdout.write(`→ ${message}\n`);
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'invictatill-e2e-'));
+  const localPagePath = path.join(profileDir, 'local-page.html');
+  fs.writeFileSync(localPagePath, '<!doctype html><title>Local file compatibility</title><h1>Local file opened</h1>');
   const screenshotDir = process.env.INVICTA_E2E_SCREENSHOT_DIR
     ? path.resolve(process.env.INVICTA_E2E_SCREENSHOT_DIR)
     : null;
@@ -128,6 +130,16 @@ async function main() {
           </form>
         </main>
         <script>document.getElementById('login-test-form').addEventListener('submit', function (event) { event.preventDefault(); });</script>`);
+      return;
+    }
+    if (request.url === '/popup-login') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html>
+        <title>Popup credential test</title>
+        <form>
+          <input id="popup-user" type="email" name="username" autocomplete="username">
+          <input id="popup-password" type="password" name="password" autocomplete="current-password">
+        </form>`);
       return;
     }
     if (request.url === '/writing-test') {
@@ -356,6 +368,47 @@ async function main() {
     const active = loaded.tabs.find((tab) => tab.id === loaded.activeTabId);
     assert.equal(active.url, pageUrl);
     assert.equal(active.canGoBack, false);
+    const normalTabCompatibility = await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (!target) return null;
+      return target.executeJavaScript(`({
+        userAgent: navigator.userAgent,
+        webAssembly: typeof WebAssembly === 'object',
+        serviceWorker: 'serviceWorker' in navigator,
+        webCrypto: Boolean(globalThis.crypto && globalThis.crypto.subtle),
+        webgl: Boolean(document.createElement('canvas').getContext('webgl'))
+      })`, true);
+    }, pageUrl);
+    assert.match(normalTabCompatibility.userAgent, /Chrome\/\d+/);
+    assert.doesNotMatch(normalTabCompatibility.userAgent, /Electron|InvictaTill/i);
+    assert.equal(normalTabCompatibility.webAssembly, true);
+    assert.equal(normalTabCompatibility.serviceWorker, true);
+    assert.equal(normalTabCompatibility.webCrypto, true);
+    assert.equal(normalTabCompatibility.webgl, true);
+    log('Normal tabs expose a Chrome-compatible Chromium identity and modern script APIs');
+
+    const dataPageUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(
+      '<!doctype html><title>Data URL compatibility</title><h1>Data page opened</h1>'
+    );
+    await window.evaluate((url) => window.electronAPI.navigate(url), dataPageUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === state.activeTabId
+        && tab.title === 'Data URL compatibility' && !tab.isLoading),
+    );
+    await window.evaluate((filePath) => window.electronAPI.navigate(filePath), localPagePath);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === state.activeTabId
+        && tab.title === 'Local file compatibility' && !tab.isLoading),
+    );
+    await window.evaluate((url) => window.electronAPI.navigate(url), pageUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === state.activeTabId
+        && tab.title === 'Invicta smoke page' && !tab.isLoading),
+    );
+    log('Data documents and local file paths open in normal tabs');
 
     await window.evaluate((url) => window.electronAPI.navigate(url), `${pageUrl}basic-auth`);
     const authBackdrop = window.locator('#http-auth-modal-backdrop');
@@ -412,12 +465,36 @@ async function main() {
       () => window.evaluate(() => window.electronAPI.getBrowserState()),
       (state) => state.tabs.some((tab) => tab.id === state.activeTabId && tab.title === 'Basic Auth OK' && !tab.isLoading),
     );
+    const httpPasswordPrompt = window.locator('#password-save-popout');
+    await httpPasswordPrompt.waitFor({ state: 'visible', timeout: 5000 });
+    assert.match(await httpPasswordPrompt.textContent(), /127\.0\.0\.1/);
+    await window.locator('#btn-confirm-password-save').click();
+    await httpPasswordPrompt.waitFor({ state: 'hidden' });
     await window.evaluate((url) => window.electronAPI.navigate(url), pageUrl);
     await poll(
       () => window.evaluate(() => window.electronAPI.getBrowserState()),
       (state) => state.tabs.some((tab) => tab.id === state.activeTabId && tab.title === 'Invicta smoke page' && !tab.isLoading),
     );
-    log('HTTP Basic Auth dialog geometry verified');
+    await electronApp.evaluate(async ({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (target) await target.session.clearAuthCache();
+    }, pageUrl);
+    await window.evaluate((url) => window.electronAPI.navigate(url), `${pageUrl}basic-auth`);
+    await authBackdrop.waitFor({ state: 'visible' });
+    assert.equal(await window.locator('#http-auth-username').inputValue(), 'invicta');
+    await window.locator('#http-auth-saved').waitFor({ state: 'visible' });
+    await window.locator('#http-auth-form').evaluate((form) => form.requestSubmit());
+    await authBackdrop.waitFor({ state: 'hidden' });
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === state.activeTabId && tab.title === 'Basic Auth OK' && !tab.isLoading),
+    );
+    await window.evaluate((url) => window.electronAPI.navigate(url), pageUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === state.activeTabId && tab.title === 'Invicta smoke page' && !tab.isLoading),
+    );
+    log('HTTP Basic Auth geometry, secure saving, and vault reuse verified');
 
     const defaultLastTabId = loaded.activeTabId;
     const initialWorkState = await window.evaluate(() => window.electronAPI.setActiveWorkspace('work'));
@@ -628,7 +705,36 @@ async function main() {
       (values) => values && values.username === loginUsername && values.password === updatedPassword,
     );
     assert.deepEqual(updatedAutofill, { username: loginUsername, password: updatedPassword });
-    log('Encrypted save, update, and cross-workspace password autofill verified');
+    const popupLoginUrl = `${pageUrl}popup-login`;
+    await electronApp.evaluate(async ({ webContents }, details) => {
+      const target = webContents.getAllWebContents()
+        .filter((contents) => contents.getURL() === details.sourceUrl)
+        .sort((left, right) => right.id - left.id)[0];
+      if (!target) throw new Error('Popup source page was not found');
+      await target.executeJavaScript(
+        `window.open(${JSON.stringify(details.popupUrl)}, 'invicta-auth-popup', 'width=520,height=620'); true`,
+        true
+      );
+    }, { sourceUrl: loginUrl, popupUrl: popupLoginUrl });
+    const popupAutofill = await poll(
+      () => electronApp.evaluate(async ({ webContents }, targetUrl) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+        if (!target) return null;
+        return target.executeJavaScript(`({
+          userAgent: navigator.userAgent,
+          username: document.getElementById('popup-user') && document.getElementById('popup-user').value,
+          password: document.getElementById('popup-password') && document.getElementById('popup-password').value
+        })`, true).catch(() => null);
+      }, popupLoginUrl),
+      (values) => values && values.username === loginUsername && values.password === updatedPassword,
+    );
+    assert.match(popupAutofill.userAgent, /Chrome\/\d+/);
+    assert.doesNotMatch(popupAutofill.userAgent, /Electron|InvictaTill/i);
+    await electronApp.evaluate(({ webContents }, targetUrl) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+      if (target) target.close();
+    }, popupLoginUrl);
+    log('Encrypted save, update, cross-workspace autofill, and popup login autofill verified');
 
     await window.evaluate(() => window.electronAPI.setActiveWorkspace('default'));
     await window.evaluate((id) => window.electronAPI.switchTab(id), defaultLastTabId);

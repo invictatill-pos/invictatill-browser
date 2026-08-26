@@ -4842,6 +4842,13 @@ kbd {
   margin-top: 2px;
 }
 
+.http-auth-saved {
+  margin: -2px 0 2px;
+  color: #9cf4dc;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .http-auth-form .visually-hidden {
   position: static !important;
   width: auto !important;
