@@ -394,7 +394,7 @@ function isSafeFavicon(url) {
 
 function displayHostForTab(tab) {
   const crashed = Boolean(tab && (tab.crashed || tab.status === 'crashed' || tab.discardedReason === 'crashed'));
-  const showNewTab = !tab || isNewTabUrl(tab.url);
+  const showNewTab = !tab || (isNewTabUrl(tab.url) && !tab.pageOwned);
   setHidden(els.newTabPage, !showNewTab);
   setHidden(els.pageError, !crashed);
   if (crashed) {
@@ -405,7 +405,7 @@ function displayHostForTab(tab) {
 
 function shouldShowPageView() {
   const tab = activeTab();
-  if (!tab || isNewTabUrl(tab.url)) return false;
+  if (!tab || (isNewTabUrl(tab.url) && !tab.pageOwned)) return false;
   if (tab.crashed || tab.status === 'crashed') return false;
   if (state.modalOpen) return false;
   if (state.menuOpen && window.innerWidth <= 600) return false;
@@ -571,6 +571,7 @@ function normalizeTab(raw) {
     id: tab.id,
     title: String(tab.title || (isNewTabUrl(tab.url) ? 'New tab' : tab.url || 'New tab')),
     url: String(tab.url || 'about:blank'),
+    pageOwned: Boolean(tab.pageOwned),
     favicon: tab.favicon || tab.favIcon || tab.faviconUrl || '',
     loading: Boolean(tab.loading || tab.isLoading),
     audible: Boolean(tab.audible || tab.isAudible),
@@ -2464,7 +2465,10 @@ function downloadMetaText(item) {
     const eta = item.etaSeconds ? formatDuration(item.etaSeconds) + ' left' : '';
     return [prefix, received ? received + (total ? ' of ' + total : '') : '', speed, eta].filter(Boolean).join(' - ');
   }
-  return item.error ? String(item.error) : downloadStateText(item);
+  const stoppedMessage = item.error ? String(item.error) : downloadStateText(item);
+  return item.canRetry === false && item.retryUnavailableReason
+    ? stoppedMessage + '. ' + item.retryUnavailableReason
+    : stoppedMessage;
 }
 
 function downloadSourceText(item) {
@@ -2510,9 +2514,11 @@ function appendDownloadActions(actions, item, compact) {
       })
     );
   } else {
-    actions.appendChild(createDownloadAction('Retry', '', function () {
+    const retryButton = createDownloadAction('Retry', '', function () {
       performDownloadAction(item, 'retry', ['retryDownload']);
-    }));
+    }, item.retryUnavailableReason || 'Retry download');
+    retryButton.disabled = item.canRetry === false;
+    actions.appendChild(retryButton);
   }
   actions.appendChild(createDownloadAction(compact ? 'Link' : 'Copy link', compact ? 'download-mini-secondary' : '', function () {
     copyDownloadLink(item);

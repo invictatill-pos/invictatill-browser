@@ -23,6 +23,10 @@ const files = [
   path.join('tests', 'focus-controller.test.js'),
   path.join('tests', 'workspace-state.test.js'),
   path.join('tests', 'electron-smoke.js'),
+  path.join('tests', 'report-workflows.js'),
+  path.join('tests', 'electron-layout.js'),
+  path.join('tests', 'view-layout.test.js'),
+  path.join('tests', 'download-session.test.js'),
 ];
 
 for (const file of files) {

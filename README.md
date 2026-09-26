@@ -14,6 +14,7 @@ Regular tabs share the normal persistent browser session. Private windows use an
 - Per-workspace last-active tab restoration, pinned tabs, close-other-tabs, and searchable tabs/commands with `Ctrl+Shift+A`.
 - Searchable browsing history, bookmarks, and recent-page shortcuts.
 - Managed downloads with an automatic compact progress box; dismissing the box keeps transfers running, while Cancel explicitly stops them.
+- Report and export tabs preserve submitted forms, the referring page, and opener state. File responses use the download manager and completed handoffs return to the source tab. Download retries retain the original workspace login.
 - Automatic save/update prompts for submitted logins, with OS-encrypted storage and exact-site autofill shared across every normal workspace. Multi-step forms, open shadow-DOM forms, login popups, HTTP authentication, and generated strong passwords use the same vault; private windows never save or reuse vault passwords.
 - A Chrome-compatible identity for every normal tab and login popup, with JavaScript, WebAssembly, service workers, WebCrypto, WebGL, PDF/plugin content, local files, data/blob documents, and confirmed external-app links enabled through Chromium.
 - Browser permission and selection flows for passkeys, client certificates, protected media, File System Access, Bluetooth, HID, USB, serial devices, storage access, camera, microphone, location, notifications, and screen sharing.
@@ -62,6 +63,8 @@ npm ci
 npm run check
 npm test
 npm run test:e2e
+npm run test:reports
+npm run test:layout
 npm start
 ```
 

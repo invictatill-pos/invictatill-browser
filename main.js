@@ -133,6 +133,7 @@ let privateLaunchPending = false;
 const tabs = new Map();
 const closedTabs = [];
 const liveDownloads = new Map();
+const configuredDownloadSessions = new WeakSet();
 const aiRequests = new Map();
 const pendingCredentialPrompts = new Map();
 const recentCredentialUsernames = new Map();
@@ -184,6 +185,9 @@ function rememberWorkspaceTab(tab) {
 function activateWorkspace(workspaceId) {
   const found = workspaceList.find((workspace) => workspace.id === workspaceId);
   if (!found) return getBrowserState();
+  if (activeWorkspaceId !== found.id) {
+    splitScreen = { enabled: false, secondaryTabId: null };
+  }
   activeWorkspaceId = found.id;
   const workspaceTabs = getWorkspaceTabs(activeWorkspaceId);
   const target = chooseRememberedTab(
@@ -338,7 +342,7 @@ function getWorkspaceSession(workspaceId) {
   configurePermissions(sess);
   configureDeviceSelection(sess);
   configureScreenSharePicker(sess);
-  configureDownloads(sess);
+  configureDownloads(sess, { sessionKind: 'workspace', workspaceId: targetId });
   configureSessionClientHints(sess);
   if (extensionManager && !privateInstance) {
     extensionManager.registerSession(sess);
@@ -773,6 +777,7 @@ function publicTab(tab) {
     id: tab.id,
     title: tab.title || 'New Tab',
     url: tab.url || 'about:blank',
+    pageOwned: Boolean(tab.pageOwned),
     favicon: tab.favicon || '',
     isLoading: Boolean(tab.isLoading),
     loading: Boolean(tab.isLoading),
@@ -992,6 +997,15 @@ function safeViewSetVisible(view, visible) {
   }
 }
 
+function splitSecondaryTab(primary) {
+  if (!primary || !splitScreen.enabled) return null;
+  const secondary = tabs.get(splitScreen.secondaryTabId);
+  return secondary && secondary.id !== primary.id &&
+    (secondary.workspaceId || 'default') === (primary.workspaceId || 'default')
+    ? secondary
+    : null;
+}
+
 function resizeTabViewToCurrentLayout(tab) {
   if (!tab || !tab.view || !mainWindow || mainWindow.isDestroyed()) return;
   if (tab.isHtmlFullscreen) {
@@ -1003,19 +1017,17 @@ function resizeTabViewToCurrentLayout(tab) {
   if (!bounds) return;
   viewLayout = bounds.layout;
   const { x, y, width, height } = bounds;
-  if (splitScreen.enabled && splitScreen.secondaryTabId && splitScreen.secondaryTabId !== tab.id) {
-    const primary = getActiveTab();
-    const secondary = tabs.get(splitScreen.secondaryTabId) || null;
-    if (primary && secondary && (tab.id === primary.id || tab.id === secondary.id)) {
-      const leftWidth = Math.max(1, Math.floor(width / 2));
-      const rightWidth = Math.max(1, width - leftWidth);
-      if (tab.id === primary.id) {
-        tab.view.setBounds({ x, y, width: leftWidth, height });
-      } else {
-        tab.view.setBounds({ x: x + leftWidth, y, width: rightWidth, height });
-      }
-      return;
+  const primary = getActiveTab();
+  const secondary = splitSecondaryTab(primary);
+  if (secondary && (tab.id === primary.id || tab.id === secondary.id)) {
+    const leftWidth = Math.max(1, Math.floor(width / 2));
+    const rightWidth = Math.max(1, width - leftWidth);
+    if (tab.id === primary.id) {
+      tab.view.setBounds({ x, y, width: leftWidth, height });
+    } else {
+      tab.view.setBounds({ x: x + leftWidth, y, width: rightWidth, height });
     }
+    return;
   }
   tab.view.setBounds({ x, y, width, height });
 }
@@ -1088,33 +1100,33 @@ function resizeViews() {
   const bounds = viewBoundsForLayout(viewLayout);
   if (!bounds) return;
   viewLayout = bounds.layout;
-  const { x, y, width, height } = bounds;
   const primary = getActiveTab();
-  const secondary = splitScreen.enabled
-    ? tabs.get(splitScreen.secondaryTabId) || null
-    : null;
+  const secondary = splitSecondaryTab(primary);
+  const fullscreenTab = [primary, secondary].find((tab) => tab && tab.isHtmlFullscreen);
 
   for (const tab of tabs.values()) {
     safeViewSetVisible(tab.view, false);
   }
-  resizeWhatsappView();
+  if (fullscreenTab && whatsappSurface) safeViewSetVisible(whatsappSurface.view, false);
+  else resizeWhatsappView();
 
   if (!shellLayoutReady || !tabsVisible || !primary) return;
   if ((primary.workspaceId || 'default') !== activeWorkspaceId) return;
 
-  const primaryCanShow = primary.url !== 'about:blank';
-  const secondaryCanShow = secondary && secondary.url !== 'about:blank';
+  if (fullscreenTab) {
+    resizeTabViewToCurrentLayout(fullscreenTab);
+    safeViewSetVisible(fullscreenTab.view, true);
+    return;
+  }
 
-  if (secondary && secondary.id !== primary.id) {
-    const leftWidth = Math.max(1, Math.floor(width / 2));
-    const rightWidth = Math.max(1, width - leftWidth);
-    primary.view.setBounds({ x, y, width: leftWidth, height });
-    secondary.view.setBounds({ x: x + leftWidth, y, width: rightWidth, height });
-    safeViewSetVisible(primary.view, primaryCanShow);
+  const primaryCanShow = primary.pageOwned || primary.url !== 'about:blank';
+  const secondaryCanShow = secondary && (secondary.pageOwned || secondary.url !== 'about:blank');
+
+  resizeTabViewToCurrentLayout(primary);
+  safeViewSetVisible(primary.view, primaryCanShow);
+  if (secondary) {
+    resizeTabViewToCurrentLayout(secondary);
     safeViewSetVisible(secondary.view, Boolean(secondaryCanShow));
-  } else {
-    primary.view.setBounds({ x, y, width, height });
-    safeViewSetVisible(primary.view, primaryCanShow);
   }
 }
 
@@ -1149,11 +1161,14 @@ function setSplitScreen(options) {
     if (secondaryId !== undefined && secondaryId !== null) {
       secondaryId = getTab(secondaryId).id;
     } else {
-      const alternative = Array.from(tabs.values()).find((tab) => tab.id !== activeTabId);
+      const alternative = getWorkspaceTabs(activeWorkspaceId).find((tab) => tab.id !== activeTabId);
       secondaryId = alternative ? alternative.id : null;
     }
     if (!secondaryId || secondaryId === activeTabId) {
       throw new Error('Split screen requires a different secondary tab');
+    }
+    if ((getTab(secondaryId).workspaceId || 'default') !== activeWorkspaceId) {
+      throw new Error('Split screen tabs must belong to the same workspace');
     }
     splitScreen = { enabled: true, secondaryTabId: secondaryId };
   }
@@ -1947,7 +1962,7 @@ function getWhatsappSession() {
   configurePermissions(whatsappSession);
   configureDeviceSelection(whatsappSession);
   configureScreenSharePicker(whatsappSession);
-  configureDownloads(whatsappSession);
+  configureDownloads(whatsappSession, { sessionKind: 'whatsapp' });
   configureSessionClientHints(whatsappSession);
 
   // Pre-authorize microphone and camera for WhatsApp Web so users don't get
@@ -2123,21 +2138,6 @@ function reloadWhatsappPanel() {
   return publicWhatsappPanelState();
 }
 
-function isDownloadExportUrl(candidate) {
-  if (typeof candidate !== 'string') return false;
-  try {
-    var parsed = new URL(candidate);
-    var pathname = parsed.pathname.toLowerCase();
-    var search = parsed.search.toLowerCase();
-    if (/\/export|export\b|download\b|\/report\b/i.test(pathname)) return true;
-    if (/\.(xlsx|xls|csv|pdf|zip|docx?|pptx?|txt|json)$/i.test(pathname)) return true;
-    if (/export|download|report|generate/i.test(search)) return true;
-    return false;
-  } catch (e) {
-    return false;
-  }
-}
-
 function openUrlInWorkspaceTab(url, sourceTab, options) {
   const target = safeBrowsableUrl(url, true);
   if (!target) return null;
@@ -2196,20 +2196,9 @@ function handleTabWindowOpen(details, sourceTab, contents) {
   }
   const disposition = details && details.disposition;
   const tabDisposition = disposition === 'foreground-tab' || disposition === 'background-tab';
-  if (tabDisposition) {
-    setImmediate(() => {
-      openUrlInWorkspaceTab(url, sourceTab, { activate: disposition !== 'background-tab' });
-    });
-    return { action: 'deny' };
-  }
-  if (isDownloadExportUrl(url)) {
-    setImmediate(() => {
-      if (contents && !contents.isDestroyed()) contents.downloadURL(url);
-    });
-    return { action: 'deny' };
-  }
   const features = typeof details.features === 'string' ? details.features : '';
-  const isLoginPopup = disposition === 'new-window' || (features && /width=|height=|popup/i.test(features));
+  const isLoginPopup = !tabDisposition &&
+    (disposition === 'new-window' || (features && /width=|height=|popup/i.test(features)));
   if (isLoginPopup) {
     var popupWidth = 1024;
     var popupHeight = 768;
@@ -2243,14 +2232,47 @@ function handleTabWindowOpen(details, sourceTab, contents) {
       },
     };
   }
-  setImmediate(() => {
-    openUrlInWorkspaceTab(url, sourceTab, { activate: true });
-  });
-  return { action: 'deny' };
+  if (!mainWindow || mainWindow.isDestroyed() || tabs.size >= MAX_TABS) return { action: 'deny' };
+  return {
+    action: 'allow',
+    outlivesOpener: true,
+    overrideBrowserWindowOptions: {
+      webPreferences: {
+        session: contents.session,
+        preload: REMOTE_PRELOAD_FILE,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        webviewTag: false,
+        allowRunningInsecureContent: false,
+        webSecurity: true,
+      },
+    },
+    createWindow: (windowOptions) => {
+      // Adopt Chromium's child contents: recreating its URL loses POST bodies,
+      // sessionStorage, window.opener and scripts writing into about:blank.
+      const created = createTab(url, {
+        workspaceId: sourceTab.workspaceId || activeWorkspaceId,
+        activate: disposition !== 'background-tab',
+        windowOpenOptions: windowOptions,
+        windowOpenDetails: details,
+        openerTabId: sourceTab.id,
+      });
+      return tabs.get(created.id).view.webContents;
+    },
+  };
 }
 
 function attachTabEvents(tab) {
   const contents = tab.view.webContents;
+
+  contents.once('destroyed', () => {
+    // Native child pages can close themselves (print helpers and OAuth flows).
+    // Remove their shell tab too, unless closeTab already performed the cleanup.
+    if (tabs.get(tab.id) === tab && mainWindow && !mainWindow.isDestroyed()) {
+      closeTab(tab.id);
+    }
+  });
 
   attachNavigationGuards(contents);
   contents.on('will-navigate', (event, url) => {
@@ -2297,7 +2319,8 @@ function attachTabEvents(tab) {
   });
 
   const onNavigate = (event, url) => {
-    if (!isAllowedRemoteUrl(url, true)) return;
+    if (!safeBrowsableUrl(url, true)) return;
+    tab.pendingInitialNavigation = false;
     tab.url = url;
     tab.crashed = false;
     const domainZoom = getZoomForUrl(url);
@@ -2382,13 +2405,11 @@ function attachTabEvents(tab) {
 
   contents.on('enter-html-full-screen', () => {
     tab.isHtmlFullscreen = true;
-    resizeTabViewToCurrentLayout(tab);
-    sendToShell('html-fullscreen-change', true);
+    resizeViews();
   });
   contents.on('leave-html-full-screen', () => {
     tab.isHtmlFullscreen = false;
-    resizeTabViewToCurrentLayout(tab);
-    sendToShell('html-fullscreen-change', false);
+    resizeViews();
   });
 }
 
@@ -2408,10 +2429,14 @@ function createTab(url, options) {
   const id = nextTabId++;
   const targetWorkspaceId = settings.workspaceId || activeWorkspaceId || 'default';
   const targetSession = getWorkspaceSession(targetWorkspaceId);
+  const windowOpenOptions = settings.windowOpenOptions;
 
   const view = new WebContentsView({
+    ...(windowOpenOptions && windowOpenOptions.webContents
+      ? { webContents: windowOpenOptions.webContents } : {}),
     webPreferences: {
-      session: targetSession,
+      ...(windowOpenOptions ? windowOpenOptions.webPreferences : {}),
+      session: windowOpenOptions && windowOpenOptions.webPreferences && windowOpenOptions.webPreferences.session || targetSession,
       preload: REMOTE_PRELOAD_FILE,
       sandbox: true,
       contextIsolation: true,
@@ -2448,6 +2473,10 @@ function createTab(url, options) {
     zoom,
     crashed: false,
     isHtmlFullscreen: false,
+    pageOwned: Boolean(windowOpenOptions),
+    openerTabId: settings.openerTabId || null,
+    pendingInitialNavigation: Boolean(windowOpenOptions),
+    openedWithPost: Boolean(settings.windowOpenDetails && settings.windowOpenDetails.postBody),
     defaultUserAgent: targetSession.getUserAgent(),
   };
 
@@ -2471,12 +2500,29 @@ function createTab(url, options) {
   }
 
   const loadingContents = view.webContents;
-  loadTabContents(tab, normalizedUrl).catch((error) => {
-    if (loadingContents && !loadingContents.isDestroyed() && tabs.get(tab.id) === tab) {
-      tab.isLoading = false;
-      emitTab('tab-update', tab);
-    }
-  });
+  applyTabUserAgent(tab, normalizedUrl);
+  if (!windowOpenOptions || !windowOpenOptions.webContents) {
+    // Chromium already navigates adopted children. Link dispositions without
+    // child contents need one load, including the original referrer and body.
+    const details = settings.windowOpenDetails;
+    const postBody = details && details.postBody;
+    const load = windowOpenOptions
+      ? loadingContents.loadURL(normalizedUrl, {
+        httpReferrer: details.referrer,
+        ...(postBody ? {
+          postData: postBody.data,
+          extraHeaders: 'Content-Type: ' + postBody.contentType +
+            (postBody.boundary ? '; boundary=' + postBody.boundary : ''),
+        } : {}),
+      })
+      : loadTabContents(tab, normalizedUrl);
+    load.catch(() => {
+      if (!loadingContents.isDestroyed() && tabs.get(tab.id) === tab) {
+        tab.isLoading = false;
+        emitTab('tab-update', tab);
+      }
+    });
+  }
   scheduleSessionSave();
   return publicTab(tab);
 }
@@ -2500,14 +2546,14 @@ function destroyTabView(tab) {
   }
 }
 
-function closeTab(id) {
+function closeTab(id, options) {
   const tab = getTab(id);
   const wsId = tab.workspaceId || 'default';
   const workspaceTabsBeforeClose = getWorkspaceTabs(wsId);
   const workspaceIndex = workspaceTabsBeforeClose.findIndex((item) => item.id === tab.id);
   const wasActive = activeTabId === tab.id;
 
-  if (tab.url && tab.url !== 'about:blank') {
+  if (!(options && options.skipHistory) && tab.url && tab.url !== 'about:blank') {
     closedTabs.unshift({
       url: tab.url,
       zoom: tab.zoom,
@@ -2543,7 +2589,9 @@ function closeTab(id) {
       createTab('about:blank', { workspaceId: wsId, activate: true });
     }
   } else if (wasActive) {
-    const nextTab = remainingWsTabs[Math.min(Math.max(workspaceIndex, 0), remainingWsTabs.length - 1)];
+    const opener = tabs.get(tab.openerTabId);
+    const nextTab = opener && opener.workspaceId === wsId ? opener
+      : remainingWsTabs[Math.min(Math.max(workspaceIndex, 0), remainingWsTabs.length - 1)];
     if (nextTab) switchTab(nextTab.id);
   } else {
     if (rememberedWasClosed) {
@@ -2559,6 +2607,11 @@ function closeTab(id) {
 
 function switchTab(id) {
   const tab = getTab(id);
+  const previousTab = getActiveTab();
+  if (activeWorkspaceId !== (tab.workspaceId || 'default') ||
+      (previousTab && (previousTab.workspaceId || 'default') !== (tab.workspaceId || 'default'))) {
+    splitScreen = { enabled: false, secondaryTabId: null };
+  }
   activeWorkspaceId = tab.workspaceId || 'default';
   activeTabId = tab.id;
   rememberWorkspaceTab(tab);
@@ -2634,6 +2687,8 @@ async function navigateTab(id, input) {
     return publicTab(tab);
   }
   const url = normalizeNavigationUrl(input);
+  tab.pendingInitialNavigation = false;
+  tab.pageOwned = false;
   tab.url = url;
   tab.isLoading = url !== 'about:blank';
   tab.crashed = false;
@@ -2879,6 +2934,22 @@ async function extractPageContext(options) {
   };
 }
 
+function cleanupDownloadTab(contents) {
+  const tab = [...tabs.values()].find((entry) => entry.view.webContents === contents);
+  if (!tab || !tab.pageOwned || !tab.pendingInitialNavigation || contents.isDestroyed()) return;
+  // An explicitly opened blank page may contain a report written by its opener.
+  if (tab.url === 'about:blank') return;
+  const currentUrl = contents.getURL();
+  if (currentUrl && currentUrl !== 'about:blank') return;
+  // Wait until Chromium has handed the transfer to DownloadItem. Keep existing
+  // report pages open; only discard a fresh child that never displayed a page.
+  setImmediate(() => {
+    if (tabs.get(tab.id) === tab && tab.pendingInitialNavigation) {
+      closeTab(tab.id, { skipHistory: true });
+    }
+  });
+}
+
 function sanitizeFilename(value) {
   const text = String(value || 'download')
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
@@ -2908,6 +2979,16 @@ function publicDownload(record) {
     : 0;
   const remainingBytes = totalBytes > receivedBytes ? totalBytes - receivedBytes : 0;
   const extension = path.extname(record.filename || '').replace(/^\./, '').toLowerCase();
+  let retryUnavailableReason = '';
+  if (record.requestMethod === 'POST') {
+    retryUnavailableReason = 'Return to the original page and export again. This download requires the original form submission.';
+  } else if (!safeRemoteUrl(record.url)) {
+    retryUnavailableReason = 'Return to the original page and download this file again.';
+  } else if (record.sessionKind === 'workspace' && !workspaceList.some((workspace) => workspace.id === record.workspaceId)) {
+    retryUnavailableReason = 'The original workspace was removed. Open the source page in a workspace and download again.';
+  } else if (!['workspace', 'whatsapp', 'browser'].includes(record.sessionKind)) {
+    retryUnavailableReason = 'Return to the original page and download again. This saved download has no session information.';
+  }
   return {
     id: record.id,
     url: record.url,
@@ -2915,6 +2996,11 @@ function publicDownload(record) {
     extension,
     mimeType: record.mimeType,
     sourceHost: record.sourceHost || '',
+    sessionKind: record.sessionKind || null,
+    workspaceId: record.workspaceId || null,
+    requestMethod: record.requestMethod || null,
+    canRetry: !retryUnavailableReason,
+    retryUnavailableReason,
     totalBytes,
     receivedBytes,
     percent: totalBytes > 0 ? Math.round((receivedBytes / totalBytes) * 100) : 0,
@@ -2945,8 +3031,10 @@ function updateDownloadRecord(record) {
   return snapshot;
 }
 
-function configureDownloads(targetSession) {
-  targetSession.on('will-download', (event, item) => {
+function configureDownloads(targetSession, source = { sessionKind: 'browser' }) {
+  if (configuredDownloadSessions.has(targetSession)) return;
+  configuredDownloadSessions.add(targetSession);
+  targetSession.on('will-download', (event, item, contents) => {
     const rawUrl = item.getURL() || '';
     const url = isAllowedDownloadUrl(rawUrl) || safeRemoteUrl(rawUrl);
     if (!url) {
@@ -2964,12 +3052,16 @@ function configureDownloads(targetSession) {
       sourceHost = '';
     }
 
+    const sourceTab = contents ? tabForRemoteContents(contents) : null;
     const record = {
       id,
       url,
       filename,
       mimeType: item.getMimeType() || '',
       sourceHost,
+      sessionKind: source.sessionKind,
+      workspaceId: source.sessionKind === 'workspace' ? source.workspaceId : null,
+      requestMethod: sourceTab && sourceTab.pendingInitialNavigation && sourceTab.openedWithPost ? 'POST' : null,
       totalBytes: item.getTotalBytes() || 0,
       receivedBytes: item.getReceivedBytes() || 0,
       state: 'progressing',
@@ -3006,6 +3098,7 @@ function configureDownloads(targetSession) {
       sendToShell('download-updated', snapshot);
       liveDownloads.delete(id);
     });
+    cleanupDownloadTab(contents);
   });
 }
 
@@ -3026,10 +3119,14 @@ function downloadAction(id, action) {
 
   if (command === 'retry') {
     const existing = downloadRecords.find((item) => item.id === downloadId);
-    if (!existing || !safeRemoteUrl(existing.url)) {
-      throw new Error('Download cannot be retried');
-    }
-    browserSession.downloadURL(existing.url);
+    if (!existing) throw new Error('Download not found');
+    const snapshot = publicDownload(existing);
+    if (!snapshot.canRetry) throw new Error(snapshot.retryUnavailableReason);
+    const targetSession = existing.sessionKind === 'workspace'
+      ? getWorkspaceSession(existing.workspaceId)
+      : existing.sessionKind === 'whatsapp' ? getWhatsappSession() : browserSession;
+    if (!targetSession) throw new Error('The original download session is unavailable. Download again from the source page.');
+    targetSession.downloadURL(existing.url);
     return { success: true };
   }
 
@@ -3409,21 +3506,25 @@ function sanitizeHistoryRecord(value) {
 
 function sanitizeDownloadRecord(value) {
   if (!isPlainObject(value) || !isAllowedRemoteUrl(value.url, false)) return null;
+  const wasActive = value.state === 'progressing' || value.state === 'downloading';
   return {
     id: typeof value.id === 'string' ? value.id.slice(0, 200) : 'download-' + Date.now(),
     url: value.url.slice(0, MAX_URL_LENGTH),
     filename: sanitizeFilename(value.filename || 'download'),
     sourceHost: typeof value.sourceHost === 'string' ? value.sourceHost.slice(0, 250) : '',
+    sessionKind: ['workspace', 'whatsapp', 'browser'].includes(value.sessionKind) ? value.sessionKind : null,
+    workspaceId: typeof value.workspaceId === 'string' ? value.workspaceId.slice(0, 100) : null,
+    requestMethod: value.requestMethod === 'POST' ? 'POST' : null,
     mimeType: typeof value.mimeType === 'string' ? value.mimeType.slice(0, 200) : '',
     totalBytes: Number.isFinite(value.totalBytes) ? value.totalBytes : 0,
     receivedBytes: Number.isFinite(value.receivedBytes) ? value.receivedBytes : 0,
-    state: typeof value.state === 'string' ? value.state.slice(0, 50) : 'interrupted',
+    state: wasActive ? 'interrupted' : typeof value.state === 'string' ? value.state.slice(0, 50) : 'interrupted',
     paused: false,
     canResume: false,
     savePath: typeof value.savePath === 'string' ? value.savePath.slice(0, 32768) : '',
     startedAt: Number.isFinite(value.startedAt) ? value.startedAt : Date.now(),
     completedAt: Number.isFinite(value.completedAt) ? value.completedAt : null,
-    error: typeof value.error === 'string' ? value.error.slice(0, 500) : null,
+    error: wasActive ? 'Download interrupted when the browser closed' : typeof value.error === 'string' ? value.error.slice(0, 500) : null,
   };
 }
 
@@ -3838,33 +3939,21 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-08-17',
-    title: 'InvictaTill Browser ' + app.getVersion(),
+    releaseDate: '2026-09-26',
+    title: 'Reliable reports, downloads, and split view',
+    intro: 'Report tabs keep the original form submission and page context. Downloads and split view recover more reliably.',
     features: [
-      'Polished & Faster UI: Smooth hover transitions, consistent design tokens, selectable chrome styling, and a fully working zoom popup panel.',
-      'Smarter Address Bar: History suggestions are race-free, keyboard-navigable, and screen-reader friendly with proper listbox roles.',
-      'Reliable Workspace Renaming: Inline rename no longer switches workspaces mid-edit, and icon pickers announce their selection.',
-      'Working AI Quick Actions: The 24H WFH report and Email Task extraction buttons now render their results reliably in chat.',
-      'Everywhere Shortcuts: Ctrl+D bookmark, Ctrl+M mute, and Ctrl+Shift+S screenshot now work from inside web pages.',
-      'Accurate Zoom Handling: Per-tab zoom now flows through the tab state so the toolbar always shows the correct level.',
-      'Extension Toolbar: Startup races can no longer duplicate extension icons, and the toolbar scrolls cleanly when crowded.',
-      'Permission Pills: Address-bar permission indicators now refresh on startup, workspace switches, and tab activation.',
-      'Reliable Screen Picker: Late source updates no longer wipe out your selection, and stale picker UI references were removed.',
-      'Safer Auth Flows: Overlapping HTTP auth prompts are resolved instead of hanging, and extension actions fail gracefully.',
+      'Report exports preserve submitted fields, cookies, referrers, and opener state when opening a new tab.',
+      'Generated report documents, reusable named tabs, and nested report previews work through native Chromium window handling.',
+      'Download retries use the original workspace login. Exports needing a fresh form submission explain how to retry.',
     ],
     bugFixes: [
-      'Fixed a crash that made the AI Daily Work Report and Email Task extraction buttons fail with an undefined function error.',
-      'Fixed the zoom popup being clipped and invisible below the navigation bar.',
-      'Fixed missing amber styling for paused and missing downloads by defining the missing color token.',
-      'Fixed workspace rename inputs bubbling clicks that unexpectedly switched the active workspace.',
-      'Fixed address-bar suggestion races that could show stale results while typing quickly.',
-      'Fixed the Tasks panel Email Tasks button that had no wired handler.',
-      'Fixed unguarded API calls that could break the renderer when extension services were unavailable.',
-      'Fixed tab-switch events racing ahead of workspace state and leaving controls disabled.',
-      'Fixed screen-picker audio remnants and selection resets from late desktop-source updates.',
-      'Fixed HTTP Basic Auth prompts overwriting a pending request without resolving it.',
-      'Removed dead CSS rules and unused JavaScript so the shell stays lean and consistent.',
-      'Fixed duplicate extension toolbar rendering at startup and unguarded startup event subscriptions.',
+      'Fixed report forms being recreated as GET requests, which could return to a report list or lose filters.',
+      'Fixed HTML report and export pages being mistaken for file downloads based on their URL.',
+      'Temporary download tabs close after the file handoff and return to the source page.',
+      'Interrupted downloads now restore as stopped instead of appearing to run forever.',
+      'Fullscreen fills the window from either split pane and restores both panes on exit.',
+      'Switching workspaces clears split view and keeps tabs from other workspaces hidden.',
     ],
   };
 }
