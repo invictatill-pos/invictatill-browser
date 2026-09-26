@@ -95,6 +95,11 @@ test('normal tabs expose modern Chromium compatibility without weakening isolati
 
   assert.match(main, /sess\.setUserAgent\(chromeCompatibilityUserAgent\(\)/);
   assert.match(main, /browserSession\.setUserAgent\(chromeCompatibilityUserAgent\(\)/);
+  assert.match(main, /configureSessionClientHints/);
+  assert.match(main, /"Google Chrome";v=/);
+  assert.match(main, /autoplay-policy/);
+  assert.match(main, /enable-gpu-rasterization/);
+  assert.match(main, /isHtmlFullscreen/);
   assert.match(main, /plugins:\s*true/);
   assert.match(main, /javascript:\s*true/);
   assert.match(main, /images:\s*true/);
@@ -113,6 +118,8 @@ test('login popups, passkeys, hardware, and certificates have explicit browser f
   assert.match(main, /did-create-window/);
   assert.match(main, /popupOwnerTabIds/);
   assert.match(main, /overrideBrowserWindowOptions:[\s\S]+preload:\s*REMOTE_PRELOAD_FILE/);
+  assert.match(main, /candidateUrl = \(!requestedUrl \|\| requestedUrl === 'about:blank'\)/);
+  assert.match(main, /nestedPopup/);
   assert.match(main, /select-webauthn-account/);
   assert.match(main, /select-hid-device/);
   assert.match(main, /select-usb-device/);

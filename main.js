@@ -33,9 +33,13 @@ const { createExtensionManager } = require('./extension-manager');
 
 // Enforce Chromium's renderer sandbox before app.ready.
 app.enableSandbox();
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+app.commandLine.appendSwitch('enable-webgl');
+app.commandLine.appendSwitch('enable-accelerated-2d-canvas');
+app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-usermedia-screen-capturing');
 app.commandLine.appendSwitch('allow-http-screen-capture');
-app.commandLine.appendSwitch('enable-features', 'ScreenCapture,WebRTCPipeWireCapturer');
+app.commandLine.appendSwitch('enable-features', 'ScreenCapture,WebRTCPipeWireCapturer,OverlayScrollbar,CanvasOopRasterization');
 app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
@@ -85,7 +89,7 @@ const MAX_BOOKMARKS = 1000;
 const MAX_TASKS = 1000;
 const MAX_ACTIVITY_RECORDS = 10000;
 const MAX_URL_LENGTH = 8192;
-const MAX_DATA_URL_LENGTH = 2 * 1024 * 1024;
+const MAX_DATA_URL_LENGTH = 64 * 1024 * 1024;
 const MAX_PAGE_CONTEXT = 50000;
 const MAX_WRITING_TEXT = 20000;
 const DEFAULT_INVICTA_AI_BASE_URL = 'http://127.0.0.1:7860/api/v1';
@@ -335,6 +339,7 @@ function getWorkspaceSession(workspaceId) {
   configureDeviceSelection(sess);
   configureScreenSharePicker(sess);
   configureDownloads(sess);
+  configureSessionClientHints(sess);
   if (extensionManager && !privateInstance) {
     extensionManager.registerSession(sess);
   }
@@ -489,6 +494,15 @@ const EXTERNAL_PROTOCOLS = new Set([
   'zoommtg:',
   'msteams:',
   'slack:',
+  'tg:',
+  'discord:',
+  'skype:',
+  'whatsapp:',
+  'vscode:',
+  'vscode-insiders:',
+  'steam:',
+  'notion:',
+  'figma:',
 ]);
 
 function safeExternalProtocolUrl(candidate) {
@@ -912,6 +926,33 @@ function chromeCompatibilityUserAgent() {
 // WebContents, so the application fallback must also be a supported Chrome identity.
 app.userAgentFallback = chromeCompatibilityUserAgent();
 
+const configuredClientHintSessions = new WeakSet();
+function configureSessionClientHints(targetSession) {
+  if (!targetSession || !targetSession.webRequest || configuredClientHintSessions.has(targetSession)) return;
+  configuredClientHintSessions.add(targetSession);
+  const chromeVer = /^\d+(?:\.\d+){3}$/.test(String(process.versions.chrome || ''))
+    ? process.versions.chrome
+    : '136.0.0.0';
+  const major = chromeVer.split('.')[0];
+  const chromeUA = chromeCompatibilityUserAgent();
+  const brandHeader = '"Chromium";v="' + major + '", "Google Chrome";v="' + major + '", "Not?A_Brand";v="99"';
+
+  try {
+    targetSession.webRequest.onBeforeSendHeaders((details, callback) => {
+      const headers = { ...details.requestHeaders };
+      headers['User-Agent'] = chromeUA;
+      if (headers['Sec-CH-UA'] || headers['sec-ch-ua'] || (details.url && /^https?:\/\//i.test(details.url))) {
+        headers['Sec-CH-UA'] = brandHeader;
+        headers['Sec-CH-UA-Mobile'] = '?0';
+        headers['Sec-CH-UA-Platform'] = '"Windows"';
+      }
+      callback({ requestHeaders: headers });
+    });
+  } catch (error) {
+    // webRequest listener already registered or unavailable
+  }
+}
+
 function isWhatsAppWebUrl(value) {
   try {
     const parsed = new URL(value);
@@ -953,6 +994,11 @@ function safeViewSetVisible(view, visible) {
 
 function resizeTabViewToCurrentLayout(tab) {
   if (!tab || !tab.view || !mainWindow || mainWindow.isDestroyed()) return;
+  if (tab.isHtmlFullscreen) {
+    const [fullWidth, fullHeight] = mainWindow.getContentSize();
+    tab.view.setBounds({ x: 0, y: 0, width: Math.max(1, fullWidth), height: Math.max(1, fullHeight) });
+    return;
+  }
   const bounds = viewBoundsForLayout(viewLayout);
   if (!bounds) return;
   viewLayout = bounds.layout;
@@ -1902,6 +1948,7 @@ function getWhatsappSession() {
   configureDeviceSelection(whatsappSession);
   configureScreenSharePicker(whatsappSession);
   configureDownloads(whatsappSession);
+  configureSessionClientHints(whatsappSession);
 
   // Pre-authorize microphone and camera for WhatsApp Web so users don't get
   // a native system dialog — identical to selecting "Always allow" once.
@@ -2092,7 +2139,7 @@ function isDownloadExportUrl(candidate) {
 }
 
 function openUrlInWorkspaceTab(url, sourceTab, options) {
-  const target = safeBrowsableUrl(url, false);
+  const target = safeBrowsableUrl(url, true);
   if (!target) return null;
   return createTab(target, {
     activate: !(options && options.activate === false),
@@ -2121,6 +2168,7 @@ function configurePagePopup(popupWindow, sourceTab) {
   attachNavigationGuards(contents);
   attachBluetoothPicker(contents);
   contents.setWindowOpenHandler((details) => handleTabWindowOpen(details, sourceTab, contents));
+  contents.on('did-create-window', (nestedPopup) => configurePagePopup(nestedPopup, sourceTab));
   contents.on('before-input-event', (event, input) => handleShortcut(event, input, sourceTab.id));
   contents.on('will-navigate', (event, url) => {
     if (!event.defaultPrevented && isAllowedNavigationUrl(url)) {
@@ -2133,7 +2181,8 @@ function configurePagePopup(popupWindow, sourceTab) {
 
 function handleTabWindowOpen(details, sourceTab, contents) {
   const requestedUrl = details && details.url;
-  const url = safeBrowsableUrl(requestedUrl, false);
+  const candidateUrl = (!requestedUrl || requestedUrl === 'about:blank') ? 'about:blank' : requestedUrl;
+  const url = safeBrowsableUrl(candidateUrl, true);
   if (!url) {
     if (safeExternalProtocolUrl(requestedUrl)) {
       setImmediate(() => confirmOpenExternalUrl(requestedUrl, mainWindow).catch(() => {}));
@@ -2160,7 +2209,7 @@ function handleTabWindowOpen(details, sourceTab, contents) {
     return { action: 'deny' };
   }
   const features = typeof details.features === 'string' ? details.features : '';
-  const isLoginPopup = disposition === 'new-window' || (features && /width=|height=/i.test(features));
+  const isLoginPopup = disposition === 'new-window' || (features && /width=|height=|popup/i.test(features));
   if (isLoginPopup) {
     var popupWidth = 1024;
     var popupHeight = 768;
@@ -2189,6 +2238,7 @@ function handleTabWindowOpen(details, sourceTab, contents) {
           webgl: true,
           plugins: true,
           spellcheck: true,
+          backgroundThrottling: false,
         },
       },
     };
@@ -2331,12 +2381,13 @@ function attachTabEvents(tab) {
   });
 
   contents.on('enter-html-full-screen', () => {
-    // Do NOT call mainWindow.setFullScreen(true) here.
-    // That would hide the entire browser chrome (top bar + sidebar).
-    // The page content already fills the tab view area — no OS-level fullscreen needed.
+    tab.isHtmlFullscreen = true;
+    resizeTabViewToCurrentLayout(tab);
     sendToShell('html-fullscreen-change', true);
   });
   contents.on('leave-html-full-screen', () => {
+    tab.isHtmlFullscreen = false;
+    resizeTabViewToCurrentLayout(tab);
     sendToShell('html-fullscreen-change', false);
   });
 }
@@ -2374,7 +2425,7 @@ function createTab(url, options) {
       plugins: true,
       experimentalFeatures: false,
       spellcheck: true,
-      backgroundThrottling: true,
+      backgroundThrottling: false,
     },
   });
   const restored = isPlainObject(settings.restored) ? settings.restored : {};
@@ -2396,6 +2447,7 @@ function createTab(url, options) {
     audible: false,
     zoom,
     crashed: false,
+    isHtmlFullscreen: false,
     defaultUserAgent: targetSession.getUserAgent(),
   };
 
@@ -3077,6 +3129,12 @@ const PROMPTABLE_PERMISSIONS = new Set([
   'hid',
   'serial',
   'usb',
+  'local-fonts',
+  'screen-wake-lock',
+  'persistent-storage',
+  'background-sync',
+  'sensors',
+  'accessibility-events',
 ]);
 
 function permissionKeys(origin, permission, details) {
@@ -3136,6 +3194,10 @@ function permissionLabel(permission, details) {
     hid: 'HID devices',
     serial: 'serial devices',
     usb: 'USB devices',
+    'local-fonts': 'local fonts',
+    'screen-wake-lock': 'screen wake lock',
+    'persistent-storage': 'persistent storage',
+    'background-sync': 'background synchronization',
   };
   return labels[permission] || permission;
 }
@@ -3156,6 +3218,16 @@ function configurePermissions(targetSession) {
     }
     // Source selection is the per-request consent prompt for display capture.
     if (permission === 'display-capture') return true;
+
+    // Standard non-invasive web capabilities allowed by default in modern Chromium browsers
+    // unless explicitly denied by the user.
+    if (permission === 'pointerLock' || permission === 'keyboardLock' ||
+        permission === 'fullscreen' || permission === 'screen-wake-lock' ||
+        permission === 'mediaKeySystem' || permission === 'persistent-storage' ||
+        permission === 'local-fonts' || permission === 'background-sync') {
+      return true;
+    }
+
     return keys.every((key) => permissionGrants[key] === true);
   });
 
@@ -3199,6 +3271,19 @@ function configurePermissions(targetSession) {
       if (isDisplayMediaPipeline) {
         // The source picker is the per-request permission prompt. Avoid a second
         // native dialog that can open behind the frameless browser window.
+        finish(true);
+        return;
+      }
+      // Standard non-invasive web capabilities are granted immediately without a
+      // blocking dialog that disrupts 3D games, video playback, or fonts.
+      if (permission === 'pointerLock' || permission === 'keyboardLock' ||
+          permission === 'fullscreen' || permission === 'screen-wake-lock' ||
+          permission === 'mediaKeySystem' || permission === 'persistent-storage' ||
+          permission === 'local-fonts' || permission === 'background-sync') {
+        if (keys.some((key) => permissionGrants[key] === false)) {
+          finish(false);
+          return;
+        }
         finish(true);
         return;
       }
@@ -5960,10 +6045,12 @@ app.whenReady().then(() => {
   browserSession.setSpellCheckerLanguages(['en-US', 'en-GB']);
   configurePermissions(session.defaultSession);
   configureScreenSharePicker(session.defaultSession);
+  configureSessionClientHints(session.defaultSession);
   configurePermissions(browserSession);
   configureDeviceSelection(browserSession);
   configureScreenSharePicker(browserSession);
   configureDownloads(browserSession);
+  configureSessionClientHints(browserSession);
   loadPersistentBrowserData();
   setupFocusController();
   registerIpcHandlers();
