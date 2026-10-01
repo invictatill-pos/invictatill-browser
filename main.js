@@ -1011,7 +1011,11 @@ function completeHttpAuthRequest(requestId, username, password, reason) {
   pendingHttpAuthCallbacks.delete(requestId);
   clearTimeout(entry.timeout);
   sendToShell('http-auth-closed', { requestId, tabId: entry.tabId, reason });
-  try { entry.callback(username || '', password || ''); } catch (error) {}
+  try {
+    // Empty credentials are another login attempt; no arguments cancel it.
+    if (username || password) entry.callback(username || '', password || '');
+    else entry.callback();
+  } catch (error) {}
   resizeTabViewToCurrentLayout(tabs.get(entry.tabId));
   resizeViews();
   return entry;
@@ -4006,6 +4010,7 @@ function getReleaseDetails() {
       'The address bar updates correctly when switching away from a password prompt with the keyboard.',
       'Password prompts stay within their split pane and leave the other pane usable.',
       'Closing or navigating away from a requesting tab clears its pending password prompt.',
+      'Cancel dismisses a password prompt without retrying sign-in or reopening it.',
       'Updated the bundled browser runtime and supporting dependencies with security fixes.',
     ],
   };
@@ -6347,7 +6352,7 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
 
   const requestingTab = tabForRemoteContents(_webContents);
   if (!requestingTab) {
-    try { callback('', ''); } catch (error) {}
+    try { callback(); } catch (error) {}
     return;
   }
   resizeTabViewToCurrentLayout(requestingTab);

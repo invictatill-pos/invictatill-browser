@@ -226,12 +226,12 @@ test('auth lifecycle cancels only superseded requests and resolves each callback
   first.emit('did-start-navigation', {}, 'https://example.test/other', false, true);
   assert.equal(state.pendingHttpAuthCallbacks.has('auth-1'), false);
   assert.equal(state.pendingHttpAuthCallbacks.has('auth-2'), true);
-  assert.deepEqual(callbacks, [['auth-1', '', '']]);
+  assert.deepEqual(callbacks, [['auth-1']]);
   state.completeHttpAuthRequest('auth-1', 'late-user', 'late-password', 'responded');
   assert.equal(callbacks.length, 1);
   second.emit('destroyed');
   assert.equal(state.pendingHttpAuthCallbacks.size, 0);
-  assert.deepEqual(callbacks, [['auth-1', '', ''], ['auth-2', '', '']]);
+  assert.deepEqual(callbacks, [['auth-1'], ['auth-2']]);
   assert.deepEqual(timers, [1, 2]);
   assert.deepEqual(closed.map((item) => [item.channel, item.tabId, item.reason]), [
     ['http-auth-closed', 1, 'navigation'], ['http-auth-closed', 2, 'destroyed'],

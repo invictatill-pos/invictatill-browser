@@ -643,7 +643,24 @@ async function main() {
       (state) => state.tabs.some((tab) => tab.id === state.activeTabId && tab.title === 'Invicta smoke page' && !tab.isLoading),
     );
     await window.evaluate((id) => window.electronAPI.closeTab(id), otherAuthTab.id);
-    log('HTTP Basic Auth tab switching, draft preservation, secure saving, and vault reuse verified');
+    const cancelledAuthTab = await window.evaluate((url) => window.electronAPI.newTab(url), `${pageUrl}basic-auth-close`);
+    await authBackdrop.waitFor({ state: 'visible' });
+    await window.locator('#btn-http-auth-cancel').click();
+    await authBackdrop.waitFor({ state: 'hidden' });
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === cancelledAuthTab.id && !tab.isLoading),
+    );
+    // Give a rejected credential retry time to reopen the prompt if cancellation is incorrect.
+    await window.waitForTimeout(350);
+    assert.equal(await authBackdrop.isHidden(), true, 'Cancel retried authentication and reopened the prompt');
+    await window.locator(`.tab-item[data-tab-id="${cancelledAuthTab.id}"] .tab-close-button`).click();
+    await window.locator(`.tab-select[data-tab-id="${active.id}"]`).click();
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.activeTabId === active.id && !state.tabs.some((tab) => tab.id === cancelledAuthTab.id),
+    );
+    log('HTTP Basic Auth tab switching, draft preservation, cancellation, secure saving, and vault reuse verified');
 
     const defaultLastTabId = loaded.activeTabId;
     const initialWorkState = await window.evaluate(() => window.electronAPI.setActiveWorkspace('work'));
