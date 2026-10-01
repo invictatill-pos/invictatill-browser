@@ -7,6 +7,7 @@ Lookup and other website password prompts now stay in the tab that requested the
 - Keep separate sign-in prompts in their own tabs when several sites ask for credentials at once.
 - Keep the other split pane usable, with the password prompt confined to the requesting pane even when the browser menu is open.
 - Clear pending prompts when their tab closes or navigates away, without interrupting another tab's sign-in request.
+- Update the bundled Electron runtime and supporting dependencies with security fixes.
 
 Validation passed syntax checks, all 51 automated tests, and the Electron end-to-end smoke suite. The smoke suite checks mouse and keyboard tab switching, address-bar updates, preserved credentials, concurrent prompts, tab closure, split-pane bounds, and existing secure password saving and reuse.
 

@@ -4006,6 +4006,7 @@ function getReleaseDetails() {
       'The address bar updates correctly when switching away from a password prompt with the keyboard.',
       'Password prompts stay within their split pane and leave the other pane usable.',
       'Closing or navigating away from a requesting tab clears its pending password prompt.',
+      'Updated the bundled browser runtime and supporting dependencies with security fixes.',
     ],
   };
 }

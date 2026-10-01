@@ -28,8 +28,8 @@ test('browser uses a supported Chromium baseline and safe release defaults', () 
   assert.ok(packageJson.build.files.includes('focus-controller.js'));
   assert.ok(packageJson.build.files.includes('workspace-state.js'));
   assert.ok(packageJson.build.files.includes('remote-preload.js'));
-  assert.equal(packageJson.overrides['fast-uri'], '3.1.5');
-  assert.equal(packageJson.overrides['js-yaml'], '4.3.1');
+  assert.equal(packageJson.overrides['fast-uri'], '3.1.8');
+  assert.equal(packageJson.overrides['js-yaml'], '4.3.2');
 });
 
 test('verification scripts are release prerequisites', () => {
