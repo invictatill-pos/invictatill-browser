@@ -38,6 +38,7 @@ const allowedEvents = new Set([
   'extension-status-changed',
   'permission-state-changed',
   'http-auth-request',
+  'http-auth-closed',
 ]);
 
 const eventWrappers = new Map();

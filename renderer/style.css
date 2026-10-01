@@ -4775,6 +4775,12 @@ kbd {
 .http-auth-backdrop {
   position: absolute;
   inset: 0;
+  top: var(--http-auth-top, 0);
+  left: var(--http-auth-left, 0);
+  right: auto;
+  bottom: auto;
+  width: var(--http-auth-width, 100%);
+  height: var(--http-auth-height, 100%);
   z-index: 50;
   display: flex;
   align-items: flex-start;

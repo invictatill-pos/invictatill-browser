@@ -100,7 +100,15 @@ async function main() {
     }
     if (request.url === '/second') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      response.end('<!doctype html><title>Second test page</title><h1>Second page</h1>');
+      response.end('<!doctype html><title>Second test page</title><h1>Second page</h1><button id="tab-usability" onclick="this.textContent = \'Other tab remains usable\'">Test tab interaction</button>');
+      return;
+    }
+    if (request.url === '/basic-auth-close') {
+      response.writeHead(401, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'WWW-Authenticate': 'Basic realm="Invicta Close"',
+      });
+      response.end('<!doctype html><title>Auth required</title><h1>Authentication required</h1>');
       return;
     }
     if (request.url === '/basic-auth') {
@@ -410,6 +418,19 @@ async function main() {
     );
     log('Data documents and local file paths open in normal tabs');
 
+    const otherAuthTab = await window.evaluate((url) => window.electronAPI.newTab(url), `${pageUrl}second`);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.tabs.some((tab) => tab.id === otherAuthTab.id && tab.title === 'Second test page' && !tab.isLoading),
+    );
+    await window.locator(`.tab-select[data-tab-id="${active.id}"]`).click();
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.activeTabId === active.id,
+    );
+    const authContentsId = await electronApp.evaluate(({ webContents }, targetUrl) =>
+      webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl).id,
+    pageUrl);
     await window.evaluate((url) => window.electronAPI.navigate(url), `${pageUrl}basic-auth`);
     const authBackdrop = window.locator('#http-auth-modal-backdrop');
     await authBackdrop.waitFor({ state: 'visible' });
@@ -457,8 +478,135 @@ async function main() {
         authGeometry.modal.right <= authGeometry.backdrop.right + 1 &&
         authGeometry.modal.bottom <= authGeometry.backdrop.bottom + 1,
       `Auth modal escaped the tab viewport: ${JSON.stringify(authGeometry)}`);
+    await capture('01c-http-auth.png');
     await window.locator('#http-auth-username').fill('invicta');
     await window.locator('#http-auth-password').fill('secret');
+    assert.equal(await authBackdrop.getAttribute('aria-modal'), 'false',
+      'HTTP auth should not trap interaction with browser tabs');
+    await window.locator('#http-auth-password').focus();
+    await window.keyboard.press('Control+Tab');
+    await authBackdrop.waitFor({ state: 'hidden' });
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.activeTabId === otherAuthTab.id &&
+        state.tabs.some((tab) => tab.id === state.activeTabId && tab.url === `${pageUrl}second`),
+    );
+    assert.equal(await window.locator('#address-bar').inputValue(), `${pageUrl}second`,
+      'Keyboard tab switching left the pending auth URL in the address bar');
+    await window.keyboard.press('Control+Shift+Tab');
+    await authBackdrop.waitFor({ state: 'visible' });
+    assert.equal(await window.locator('#http-auth-username').inputValue(), 'invicta',
+      'Keyboard tab switching lost the pending auth username');
+    assert.equal(await window.locator('#http-auth-password').inputValue(), 'secret',
+      'Keyboard tab switching lost the pending auth password');
+
+    const readAuthSplitGeometry = async () => {
+      const [backdrop, surfaces] = await Promise.all([
+        authBackdrop.evaluate((element) => {
+          const bounds = element.getBoundingClientRect();
+          return { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height, right: bounds.right };
+        }),
+        electronApp.evaluate(({ BrowserWindow }, details) => {
+          const shell = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+          const views = shell.contentView.children.filter((candidate) => candidate.webContents);
+          const primary = views.find((view) => view.webContents.id === details.primaryId);
+          const secondary = views.find((view) => view.webContents.getURL() === details.secondaryUrl);
+          const surface = (view) => view ? { visible: view.getVisible(), ...view.getBounds() } : null;
+          return { primary: surface(primary), secondary: surface(secondary) };
+        }, { primaryId: authContentsId, secondaryUrl: `${pageUrl}second` }),
+      ]);
+      return { backdrop, ...surfaces };
+    };
+    const authSplitGeometryMatches = (geometry) => geometry.primary && geometry.secondary &&
+      !geometry.primary.visible && geometry.secondary.visible &&
+      ['x', 'y', 'width', 'height'].every((key) => Math.abs(geometry.backdrop[key] - geometry.primary[key]) <= 1) &&
+      geometry.secondary.x >= geometry.backdrop.right - 1;
+    await window.locator('#btn-split-screen').click();
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.splitScreen && state.secondaryTabId === otherAuthTab.id,
+    );
+    const splitAuthGeometry = await poll(readAuthSplitGeometry, authSplitGeometryMatches);
+    assert.ok(splitAuthGeometry.backdrop.width < authGeometry.backdrop.width,
+      `Auth prompt did not stay within the primary split pane: ${JSON.stringify(splitAuthGeometry)}`);
+    await capture('01d-http-auth-split.png');
+    await window.locator('#btn-menu').click();
+    await browserMenu.waitFor({ state: 'visible' });
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.viewLayout.right >= 304,
+    );
+    const menuAuthGeometry = await poll(readAuthSplitGeometry, (geometry) =>
+      authSplitGeometryMatches(geometry) && geometry.backdrop.width < splitAuthGeometry.backdrop.width);
+    assert.ok(menuAuthGeometry.secondary.x >= menuAuthGeometry.backdrop.right - 1,
+      `Auth prompt overlapped the secondary split pane with the menu open: ${JSON.stringify(menuAuthGeometry)}`);
+    await capture('01e-http-auth-split-menu.png');
+    await window.keyboard.press('Escape');
+    await browserMenu.waitFor({ state: 'hidden' });
+    await window.locator('#btn-split-screen').click();
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => !state.splitScreen,
+    );
+    await window.locator(`.tab-select[data-tab-id="${otherAuthTab.id}"]`).click();
+    await authBackdrop.waitFor({ state: 'hidden' });
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => state.activeTabId === otherAuthTab.id,
+    );
+    const otherTabSurface = await electronApp.evaluate(async ({ BrowserWindow }, targetUrl) => {
+      const shell = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+      const view = shell.contentView.children.find((candidate) => candidate.webContents &&
+        candidate.webContents.getURL() === targetUrl);
+      if (!view) return null;
+      const contents = view.webContents;
+      const point = await contents.executeJavaScript(`(() => {
+        const bounds = document.getElementById('tab-usability').getBoundingClientRect();
+        return { x: Math.round((bounds.left + bounds.right) / 2), y: Math.round((bounds.top + bounds.bottom) / 2) };
+      })()`);
+      const click = { ...point, button: 'left', clickCount: 1 };
+      contents.sendInputEvent({ type: 'mouseDown', ...click });
+      contents.sendInputEvent({ type: 'mouseUp', ...click });
+      return { visible: view.getVisible(), bounds: view.getBounds() };
+    }, `${pageUrl}second`);
+    assert.ok(otherTabSurface && otherTabSurface.visible &&
+      otherTabSurface.bounds.width > 0 && otherTabSurface.bounds.height > 0,
+      `Other tab's native page remained hidden during HTTP auth: ${JSON.stringify(otherTabSurface)}`);
+    await poll(
+      () => electronApp.evaluate(async ({ webContents }, targetUrl) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
+        return target ? target.executeJavaScript('document.getElementById("tab-usability").textContent') : '';
+      }, `${pageUrl}second`),
+      (value) => value === 'Other tab remains usable',
+    );
+    await capture('01f-auth-other-tab.png');
+    const closingAuthTab = await window.evaluate((url) => window.electronAPI.newTab(url), `${pageUrl}basic-auth-close`);
+    await authBackdrop.waitFor({ state: 'visible' });
+    await poll(
+      () => window.locator('#http-auth-realm').textContent(),
+      (value) => value.includes('Invicta Close'),
+    );
+    await window.locator('#http-auth-username').fill('separate-user');
+    await window.locator('#http-auth-password').fill('separate-password');
+    await window.locator(`.tab-select[data-tab-id="${otherAuthTab.id}"]`).click();
+    await authBackdrop.waitFor({ state: 'hidden' });
+    await window.locator(`.tab-select[data-tab-id="${active.id}"]`).click();
+    await authBackdrop.waitFor({ state: 'visible' });
+    assert.match(await window.locator('#http-auth-realm').textContent(), /Invicta Smoke/,
+      'A simultaneous auth request replaced the original tab prompt');
+    assert.equal(await window.locator('#http-auth-username').inputValue(), 'invicta',
+      'Switching tabs lost the pending auth username');
+    assert.equal(await window.locator('#http-auth-password').inputValue(), 'secret',
+      'Switching tabs lost the pending auth password');
+    await window.locator(`.tab-item[data-tab-id="${closingAuthTab.id}"] .tab-close-button`).click();
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (state) => !state.tabs.some((tab) => tab.id === closingAuthTab.id),
+    );
+    assert.equal(await authBackdrop.isVisible(), true,
+      'Closing another auth tab hid the active tab prompt');
+    assert.equal(await window.locator('#http-auth-password').inputValue(), 'secret',
+      'Closing another auth tab changed the active auth draft');
     await window.locator('#http-auth-form').evaluate((form) => form.requestSubmit());
     await authBackdrop.waitFor({ state: 'hidden' });
     await poll(
@@ -494,7 +642,8 @@ async function main() {
       () => window.evaluate(() => window.electronAPI.getBrowserState()),
       (state) => state.tabs.some((tab) => tab.id === state.activeTabId && tab.title === 'Invicta smoke page' && !tab.isLoading),
     );
-    log('HTTP Basic Auth geometry, secure saving, and vault reuse verified');
+    await window.evaluate((id) => window.electronAPI.closeTab(id), otherAuthTab.id);
+    log('HTTP Basic Auth tab switching, draft preservation, secure saving, and vault reuse verified');
 
     const defaultLastTabId = loaded.activeTabId;
     const initialWorkState = await window.evaluate(() => window.electronAPI.setActiveWorkspace('work'));

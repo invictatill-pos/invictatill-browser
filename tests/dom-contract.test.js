@@ -94,17 +94,22 @@ test('native tab surface stays below browser chrome and app rail', () => {
   assert.match(main, /prepareRemoteContentView\(view\);\s*mainWindow\.contentView\.addChildView\(view\);\s*prepareRemoteContentView\(view\);/s);
 });
 
-test('HTTP Basic Auth prompt is clipped to the tab viewport', () => {
+test('HTTP Basic Auth prompts belong to their tab and leave browser controls usable', () => {
   assert.match(html, /id=["']http-auth-modal-backdrop["'][^>]*role=["']dialog["']/);
+  assert.match(html, /id=["']http-auth-modal-backdrop["'][^>]*aria-modal=["']false["']/);
   assert.match(html, /<main class=["']browser-stage["'] id=["']browser-stage["'][^>]*>[\s\S]*id=["']http-auth-modal-backdrop["'][\s\S]*<\/main>/);
   assert.match(css, /\.http-auth-backdrop\s*{[^}]*\bposition:\s*absolute;[^}]*\binset:\s*0;[^}]*\bz-index:\s*50;[^}]*\boverflow:\s*hidden;/s);
   assert.doesNotMatch(css, /body\.(?:whatsapp-panel-open|ai-panel-open|fullscreen) \.http-auth-backdrop/);
-  assert.match(renderer, /\[els\.httpAuthBackdrop, els\.httpAuthModal\]/);
-  assert.match(renderer, /openModalSurface\(els\.httpAuthBackdrop, els\.httpAuthModal\);/);
-  assert.match(renderer, /closeModalSurface\(els\.httpAuthBackdrop\);/);
-  assert.match(main, /const requestingTab = tabForRemoteContents\(_webContents\);\s*resizeTabViewToCurrentLayout\(requestingTab\);\s*resizeViews\(\);/s);
-  assert.match(main, /pendingHttpAuthCallbacks\.set\(requestId, \{[\s\S]*callback,[\s\S]*timeout,[\s\S]*tabId: requestingTab \? requestingTab\.id : null,[\s\S]*origin,[\s\S]*domain,[\s\S]*\}\);/);
-  assert.match(main, /entry\.callback\(username, password\);[\s\S]*resizeTabViewToCurrentLayout\(tabs\.get\(entry\.tabId\)\);[\s\S]*resizeViews\(\);/);
+  assert.doesNotMatch(renderer, /\[els\.httpAuthBackdrop, els\.httpAuthModal\]/,
+    'Tab auth prompts must stay outside the global modal focus trap');
+  assert.doesNotMatch(renderer, /(?:open|close)ModalSurface\(els\.httpAuthBackdrop/);
+  assert.match(renderer, /httpAuthRequests:\s*new Map\(/);
+  assert.match(renderer, /function syncHttpAuthPrompt\(/);
+  assert.match(renderer, /api\.on\('http-auth-closed'/);
+  assert.match(main, /sendToShell\('http-auth-request',\s*\{\s*requestId,\s*tabId:\s*requestingTab\.id,/);
+  assert.match(main, /function hasPendingHttpAuthForTab\(/);
+  assert.match(main, /function cancelHttpAuthRequestsForTab\(/);
+  assert.match(main, /sendToShell\('http-auth-closed',\s*\{[^}]*requestId[^}]*tabId:\s*entry\.tabId/);
 });
 
 test('InvictaTill AI is the only user-selectable AI agent', () => {

@@ -5,6 +5,7 @@ const $ = function (id) { return document.getElementById(id); };
 
 const els = {
   browserChrome: $('browser-chrome'),
+  browserStage: $('browser-stage'),
   tabsContainer: $('tabs-container'),
   addressBar: $('address-bar'),
   addressSuggestions: $('address-suggestions'),
@@ -233,7 +234,8 @@ const state = {
   whatsappPanelStatus: 'idle',
   lastWhatsappLayoutKey: '',
   passwordSaveRequest: null,
-  httpAuthRequest: null,  // { requestId, host, realm, isProxy }
+  httpAuthRequests: new Map(),
+  httpAuthRequest: null, // The request displayed in the active tab.
   historyRange: 'day',
   historyQuery: '',
   settings: {
@@ -287,7 +289,6 @@ function visibleModalSurface() {
     [els.passwordsModalBackdrop, els.passwordsModal],
     [els.updateModalBackdrop, els.updateModal],
     [els.commandBackdrop, els.commandPalette],
-    [els.httpAuthBackdrop, els.httpAuthModal],
   ];
   for (const surface of surfaces) {
     if (surface[0] && !surface[0].classList.contains('hidden')) return surface;
@@ -313,6 +314,68 @@ function closeModalSurface(backdrop) {
     state.previousModalFocus.focus();
   }
   if (!state.modalOpen) state.previousModalFocus = null;
+}
+
+function rememberHttpAuthDraft() {
+  const request = state.httpAuthRequest;
+  if (!request) return;
+  request.username = els.httpAuthUsername ? els.httpAuthUsername.value : '';
+  request.password = els.httpAuthPassword ? els.httpAuthPassword.value : '';
+}
+
+function syncHttpAuthPrompt() {
+  if (!els.httpAuthBackdrop) return;
+  const request = Array.from(state.httpAuthRequests.values()).find(function (item) {
+    return sameId(item.tabId, state.activeTabId);
+  }) || null;
+  // A tab prompt leaves the browser chrome and other native panes usable.
+  if (request === state.httpAuthRequest) return;
+  rememberHttpAuthDraft();
+  const hadFocus = els.httpAuthBackdrop.contains(document.activeElement);
+  state.httpAuthRequest = request;
+  setHidden(els.httpAuthBackdrop, !request);
+  if (els.httpAuthUsername) els.httpAuthUsername.value = request ? request.username : '';
+  if (els.httpAuthPassword) els.httpAuthPassword.value = request ? request.password : '';
+  if (!request) {
+    const tabButton = els.tabsContainer && els.tabsContainer.querySelector('.tab-item.active .tab-select');
+    if (hadFocus && tabButton) tabButton.focus();
+    return;
+  }
+  if (els.httpAuthHost) {
+    const portSuffix = request.port && request.port !== 80 && request.port !== 443 ? ':' + request.port : '';
+    els.httpAuthHost.textContent = (request.isProxy ? 'Proxy: ' : '') + request.host + portSuffix;
+  }
+  if (els.httpAuthRealm) {
+    els.httpAuthRealm.textContent = request.realm ? '"' + request.realm + '"' : '';
+    setHidden(els.httpAuthRealm, !request.realm);
+  }
+  if (els.httpAuthSaved) setHidden(els.httpAuthSaved, !request.savedCredentialId);
+  window.setTimeout(function () {
+    if (state.httpAuthRequest !== request || !sameId(request.tabId, state.activeTabId) || visibleModalSurface()) return;
+    const input = request.username ? els.httpAuthPassword : els.httpAuthUsername;
+    if (input) input.focus();
+  }, 0);
+}
+
+function closeHttpAuthRequest(requestId) {
+  const request = state.httpAuthRequests.get(requestId);
+  if (!request) return;
+  state.httpAuthRequests.delete(requestId);
+  syncHttpAuthPrompt();
+  request.username = '';
+  request.password = '';
+}
+
+function respondToHttpAuth(cancel) {
+  const request = state.httpAuthRequest;
+  if (!request) return;
+  const username = !cancel && els.httpAuthUsername ? els.httpAuthUsername.value : '';
+  const password = !cancel && els.httpAuthPassword ? els.httpAuthPassword.value : '';
+  const credentialId = !cancel && !password ? (request.savedCredentialId || '') : '';
+  closeHttpAuthRequest(request.requestId);
+  if (typeof api.respondHttpAuth === 'function') {
+    api.respondHttpAuth(request.requestId, username, password, credentialId).catch(function () {});
+  }
 }
 
 function clamp(value, min, max) {
@@ -458,6 +521,16 @@ function updateViewLayout() {
     right: Math.max(0, right),
     bottom: Math.max(0, bottom)
   };
+  if (els.httpAuthBackdrop && els.browserStage) {
+    const stageRect = els.browserStage.getBoundingClientRect();
+    const contentWidth = Math.max(1, window.innerWidth - layout.left - layout.right);
+    const promptWidth = state.splitScreen && state.secondaryTabId
+      ? Math.max(1, Math.floor(contentWidth / 2)) : contentWidth;
+    els.httpAuthBackdrop.style.setProperty('--http-auth-left', Math.max(0, layout.left - stageRect.left) + 'px');
+    els.httpAuthBackdrop.style.setProperty('--http-auth-top', Math.max(0, layout.top - stageRect.top) + 'px');
+    els.httpAuthBackdrop.style.setProperty('--http-auth-width', promptWidth + 'px');
+    els.httpAuthBackdrop.style.setProperty('--http-auth-height', Math.max(1, window.innerHeight - layout.top - layout.bottom) + 'px');
+  }
   const layoutKey = layout.top + ':' + layout.left + ':' + layout.right + ':' + layout.bottom;
   if (layoutKey !== state.lastLayoutKey) {
     state.lastLayoutKey = layoutKey;
@@ -837,6 +910,7 @@ function renderTabs() {
 }
 
 function renderBrowserControls() {
+  syncHttpAuthPrompt();
   const tab = activeTab();
   const hasPage = Boolean(tab && !isNewTabUrl(tab.url));
   displayHostForTab(tab);
@@ -3753,7 +3827,7 @@ function closeUpdateModal() {
 }
 
 function trapModalFocus(event) {
-  if (!state.modalOpen || event.key !== 'Tab') return;
+  if (!state.modalOpen || event.key !== 'Tab' || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
   const surface = visibleModalSurface();
   const dialog = surface && surface[1];
   if (!dialog) return;
@@ -4591,58 +4665,29 @@ function wireUi() {
   // — HTTP Basic Auth dialog —
   if (typeof api.on === 'function') {
     api.on('http-auth-request', function (data) {
-      if (!data || !data.requestId) return;
-      const previous = state.httpAuthRequest;
-      if (previous && previous.requestId !== data.requestId) {
-        if (typeof api.respondHttpAuth === 'function') {
-          api.respondHttpAuth(previous.requestId, '', '').catch(function () {});
-        }
-      }
-      state.httpAuthRequest = data;
-      if (els.httpAuthHost) {
-        const portSuffix = data.port && data.port !== 80 && data.port !== 443 ? ':' + data.port : '';
-        els.httpAuthHost.textContent = (data.isProxy ? 'Proxy: ' : '') + data.host + portSuffix;
-      }
-      if (els.httpAuthRealm) {
-        els.httpAuthRealm.textContent = data.realm ? '"' + data.realm + '"' : '';
-        setHidden(els.httpAuthRealm, !data.realm);
-      }
-      if (els.httpAuthUsername) els.httpAuthUsername.value = data.savedUsername || '';
-      if (els.httpAuthPassword) els.httpAuthPassword.value = '';
-      if (els.httpAuthSaved) setHidden(els.httpAuthSaved, !data.savedCredentialId);
-      openModalSurface(els.httpAuthBackdrop, els.httpAuthModal);
-      if (data.savedCredentialId && els.httpAuthPassword) {
-        window.setTimeout(function () { els.httpAuthPassword.focus(); }, 0);
-      } else if (els.httpAuthUsername) {
-        window.setTimeout(function () { els.httpAuthUsername.focus(); }, 0);
-      }
+      if (!data || !data.requestId || data.tabId === undefined || data.tabId === null) return;
+      if (state.httpAuthRequests.has(data.requestId)) return;
+      state.httpAuthRequests.set(data.requestId, Object.assign({}, data, {
+        username: data.savedUsername || '',
+        password: ''
+      }));
+      syncHttpAuthPrompt();
+    });
+    api.on('http-auth-closed', function (data) {
+      if (data && data.requestId) closeHttpAuthRequest(data.requestId);
     });
   }
 
   if (els.btnHttpAuthCancel) {
     els.btnHttpAuthCancel.addEventListener('click', function () {
-      const req = state.httpAuthRequest;
-      state.httpAuthRequest = null;
-      closeModalSurface(els.httpAuthBackdrop);
-      if (req && typeof api.respondHttpAuth === 'function') {
-        api.respondHttpAuth(req.requestId, '', '').catch(function () {});
-      }
+      respondToHttpAuth(true);
     });
   }
 
   if (els.httpAuthForm) {
     els.httpAuthForm.addEventListener('submit', function (e) {
       e.preventDefault();
-      const req = state.httpAuthRequest;
-      if (!req) return;
-      state.httpAuthRequest = null;
-      closeModalSurface(els.httpAuthBackdrop);
-      const username = els.httpAuthUsername ? els.httpAuthUsername.value : '';
-      const password = els.httpAuthPassword ? els.httpAuthPassword.value : '';
-      if (typeof api.respondHttpAuth === 'function') {
-        const savedCredentialId = !password ? (req.savedCredentialId || '') : '';
-        api.respondHttpAuth(req.requestId, username, password, savedCredentialId).catch(function () {});
-      }
+      respondToHttpAuth(false);
     });
   }
 

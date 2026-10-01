@@ -138,7 +138,7 @@ const aiRequests = new Map();
 const pendingCredentialPrompts = new Map();
 const recentCredentialUsernames = new Map();
 const liveWritingRequestTimes = new Map();
-const pendingHttpAuthCallbacks = new Map(); // requestId → { callback, timeout }
+const pendingHttpAuthCallbacks = new Map(); // requestId → { callback, timeout, tabId, contentsId }
 const popupOwnerTabIds = new Map();
 const configuredDeviceSessions = new WeakSet();
 let invictaSessionToken = '';
@@ -997,6 +997,51 @@ function safeViewSetVisible(view, visible) {
   }
 }
 
+function hasPendingHttpAuthForTab(tab) {
+  if (!tab) return false;
+  for (const entry of pendingHttpAuthCallbacks.values()) {
+    if (entry.tabId === tab.id) return true;
+  }
+  return false;
+}
+
+function completeHttpAuthRequest(requestId, username, password, reason) {
+  const entry = pendingHttpAuthCallbacks.get(requestId);
+  if (!entry) return null;
+  pendingHttpAuthCallbacks.delete(requestId);
+  clearTimeout(entry.timeout);
+  sendToShell('http-auth-closed', { requestId, tabId: entry.tabId, reason });
+  try { entry.callback(username || '', password || ''); } catch (error) {}
+  resizeTabViewToCurrentLayout(tabs.get(entry.tabId));
+  resizeViews();
+  return entry;
+}
+
+function cancelHttpAuthRequestsForTab(tabId, reason) {
+  for (const [requestId, entry] of Array.from(pendingHttpAuthCallbacks)) {
+    if (entry.tabId === tabId) completeHttpAuthRequest(requestId, '', '', reason);
+  }
+}
+
+function cancelHttpAuthRequestsForContents(contentsId, reason) {
+  for (const [requestId, entry] of Array.from(pendingHttpAuthCallbacks)) {
+    if (entry.contentsId === contentsId) completeHttpAuthRequest(requestId, '', '', reason);
+  }
+}
+
+function attachHttpAuthLifecycle(contents) {
+  contents.on('did-start-navigation', (event, url, isInPlace, isMainFrame) => {
+    // The challenged navigation starts before login is emitted. A later main
+    // frame navigation supersedes its pending prompt; hash changes do not.
+    if (isMainFrame && !isInPlace) {
+      cancelHttpAuthRequestsForContents(contents.id, 'navigation');
+    }
+  });
+  contents.once('destroyed', () => {
+    cancelHttpAuthRequestsForContents(contents.id, 'destroyed');
+  });
+}
+
 function splitSecondaryTab(primary) {
   if (!primary || !splitScreen.enabled) return null;
   const secondary = tabs.get(splitScreen.secondaryTabId);
@@ -1102,7 +1147,8 @@ function resizeViews() {
   viewLayout = bounds.layout;
   const primary = getActiveTab();
   const secondary = splitSecondaryTab(primary);
-  const fullscreenTab = [primary, secondary].find((tab) => tab && tab.isHtmlFullscreen);
+  const fullscreenTab = [primary, secondary].find((tab) =>
+    tab && tab.isHtmlFullscreen && !hasPendingHttpAuthForTab(tab));
 
   for (const tab of tabs.values()) {
     safeViewSetVisible(tab.view, false);
@@ -1119,8 +1165,10 @@ function resizeViews() {
     return;
   }
 
-  const primaryCanShow = primary.pageOwned || primary.url !== 'about:blank';
-  const secondaryCanShow = secondary && (secondary.pageOwned || secondary.url !== 'about:blank');
+  const primaryCanShow = !hasPendingHttpAuthForTab(primary) &&
+    (primary.pageOwned || primary.url !== 'about:blank');
+  const secondaryCanShow = secondary && !hasPendingHttpAuthForTab(secondary) &&
+    (secondary.pageOwned || secondary.url !== 'about:blank');
 
   resizeTabViewToCurrentLayout(primary);
   safeViewSetVisible(primary.view, primaryCanShow);
@@ -2164,6 +2212,7 @@ function configurePagePopup(popupWindow, sourceTab) {
   if (!popupWindow || popupWindow.isDestroyed() || !sourceTab) return;
   const contents = popupWindow.webContents;
   popupOwnerTabIds.set(contents.id, sourceTab.id);
+  attachHttpAuthLifecycle(contents);
   contents.setUserAgent(chromeCompatibilityUserAgent());
   attachNavigationGuards(contents);
   attachBluetoothPicker(contents);
@@ -2265,6 +2314,7 @@ function handleTabWindowOpen(details, sourceTab, contents) {
 
 function attachTabEvents(tab) {
   const contents = tab.view.webContents;
+  attachHttpAuthLifecycle(contents);
 
   contents.once('destroyed', () => {
     // Native child pages can close themselves (print helpers and OAuth flows).
@@ -2566,6 +2616,7 @@ function closeTab(id, options) {
   }
 
   tabs.delete(tab.id);
+  cancelHttpAuthRequestsForTab(tab.id, 'tab-closed');
   for (const key of recentCredentialUsernames.keys()) {
     if (key.startsWith(tab.id + '|')) recentCredentialUsernames.delete(key);
   }
@@ -2742,7 +2793,10 @@ function reloadActive(ignoreCache) {
 
 function stopActive() {
   const tab = getActiveTab();
-  if (tab) tab.view.webContents.stop();
+  if (tab) {
+    cancelHttpAuthRequestsForTab(tab.id, 'stopped');
+    tab.view.webContents.stop();
+  }
   return tab ? publicTab(tab) : null;
 }
 
@@ -3939,21 +3993,19 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-09-26',
-    title: 'Reliable reports, downloads, and split view',
-    intro: 'Report tabs keep the original form submission and page context. Downloads and split view recover more reliably.',
+    releaseDate: '2026-10-01',
+    title: 'Keep browsing while Lookup asks for a password',
+    intro: 'Lookup and other website password prompts stay in their own tab, so you can keep using the rest of the browser.',
     features: [
-      'Report exports preserve submitted fields, cookies, referrers, and opener state when opening a new tab.',
-      'Generated report documents, reusable named tabs, and nested report previews work through native Chromium window handling.',
-      'Download retries use the original workspace login. Exports needing a fresh form submission explain how to retry.',
+      'Switch tabs with a click or Ctrl+Tab while a website password prompt is open.',
+      'Return to the requesting tab to continue with the username and password you already typed.',
+      'Separate password prompts remain attached to their own tabs, including when several sites ask at once.',
     ],
     bugFixes: [
-      'Fixed report forms being recreated as GET requests, which could return to a report list or lose filters.',
-      'Fixed HTML report and export pages being mistaken for file downloads based on their URL.',
-      'Temporary download tabs close after the file handoff and return to the source page.',
-      'Interrupted downloads now restore as stopped instead of appearing to run forever.',
-      'Fullscreen fills the window from either split pane and restores both panes on exit.',
-      'Switching workspaces clears split view and keeps tabs from other workspaces hidden.',
+      'Fixed Lookup password prompts blocking other tabs or hiding their page content.',
+      'The address bar updates correctly when switching away from a password prompt with the keyboard.',
+      'Password prompts stay within their split pane and leave the other pane usable.',
+      'Closing or navigating away from a requesting tab clears its pending password prompt.',
     ],
   };
 }
@@ -5610,8 +5662,6 @@ function registerIpcHandlers() {
     assertPlainObject(payload, 'http auth response');
     const entry = pendingHttpAuthCallbacks.get(payload.requestId);
     if (!entry) return;
-    clearTimeout(entry.timeout);
-    pendingHttpAuthCallbacks.delete(payload.requestId);
     let username = typeof payload.username === 'string' ? payload.username.slice(0, 250) : '';
     let password = typeof payload.password === 'string' ? payload.password.slice(0, 500) : '';
     const credentialId = typeof payload.credentialId === 'string' ? payload.credentialId : '';
@@ -5622,7 +5672,7 @@ function registerIpcHandlers() {
         password = credential.password;
       }
     }
-    try { entry.callback(username, password); } catch (e) {}
+    completeHttpAuthRequest(payload.requestId, username, password, 'responded');
     if (password && entry.origin && entry.tabId !== null && tabs.has(entry.tabId)) {
       setImmediate(() => {
         try {
@@ -5633,10 +5683,6 @@ function registerIpcHandlers() {
         } catch (error) {}
       });
     }
-    if (entry.tabId !== null && entry.tabId !== undefined) {
-      resizeTabViewToCurrentLayout(tabs.get(entry.tabId));
-    }
-    resizeViews();
   });
 
   registerHandler('delete-password', (event, id) => {
@@ -6193,11 +6239,9 @@ app.on('before-quit', () => {
   for (const pending of pendingCredentialPrompts.values()) clearTimeout(pending.timeout);
   pendingCredentialPrompts.clear();
   // Cancel any in-flight HTTP Auth requests so their responses don't hang.
-  for (const { callback, timeout } of pendingHttpAuthCallbacks.values()) {
-    clearTimeout(timeout);
-    try { callback('', ''); } catch (e) {}
+  for (const requestId of Array.from(pendingHttpAuthCallbacks.keys())) {
+    completeHttpAuthRequest(requestId, '', '', 'shutdown');
   }
-  pendingHttpAuthCallbacks.clear();
   liveWritingRequestTimes.clear();
   flushSessionState();
   for (const sess of workspaceSessionsMap.values()) {
@@ -6301,16 +6345,17 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
   event.preventDefault();
 
   const requestingTab = tabForRemoteContents(_webContents);
+  if (!requestingTab) {
+    try { callback('', ''); } catch (error) {}
+    return;
+  }
   resizeTabViewToCurrentLayout(requestingTab);
-  resizeViews();
 
   const requestId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 
   // Safety net: auto-cancel after 5 minutes so the callback is never left dangling.
   const timeout = setTimeout(() => {
-    if (!pendingHttpAuthCallbacks.has(requestId)) return;
-    pendingHttpAuthCallbacks.delete(requestId);
-    try { callback('', ''); } catch (e) {}
+    completeHttpAuthRequest(requestId, '', '', 'timeout');
   }, 5 * 60 * 1000);
 
   let origin = '';
@@ -6330,13 +6375,15 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
   pendingHttpAuthCallbacks.set(requestId, {
     callback,
     timeout,
-    tabId: requestingTab ? requestingTab.id : null,
+    tabId: requestingTab.id,
+    contentsId: _webContents.id,
     origin,
     domain,
   });
 
   sendToShell('http-auth-request', {
     requestId,
+    tabId: requestingTab.id,
     host: authInfo.host || '',
     port: authInfo.port || 0,
     realm: authInfo.realm || '',
@@ -6345,4 +6392,5 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
     savedCredentialId: savedCredential ? savedCredential.id : '',
     savedUsername: savedCredential ? savedCredential.username : '',
   });
+  resizeViews();
 });

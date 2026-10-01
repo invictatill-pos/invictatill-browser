@@ -16,6 +16,8 @@ const functionNames = [
   'safeViewSetVisible', 'splitSecondaryTab', 'resizeTabViewToCurrentLayout',
   'minimumViewLayout', 'normalizeViewLayout', 'viewBoundsForLayout', 'resizeViews',
   'setViewLayout', 'setViewVisible', 'setSplitScreen', 'switchTab', 'attachTabEvents',
+  'hasPendingHttpAuthForTab', 'completeHttpAuthRequest', 'cancelHttpAuthRequestsForTab',
+  'cancelHttpAuthRequestsForContents', 'attachHttpAuthLifecycle',
 ];
 const implementations = functionNames.map((name) => {
   const start = source.indexOf('function ' + name + '(');
@@ -54,6 +56,7 @@ function fixture() {
     tabs: new Map(), activeTabId: 1, activeWorkspaceId: 'default',
     splitScreen: { enabled: false, secondaryTabId: null },
     shellLayoutReady: true, tabsVisible: true,
+    pendingHttpAuthCallbacks: new Map(), clearTimeout,
     whatsappSurface: { view: nativeView() },
     workspaceList: [{ id: 'default' }, { id: 'work' }],
     lastActiveTabByWorkspace: new Map(),
@@ -172,4 +175,65 @@ test('page-owned about:blank documents remain visible in either split pane', () 
   state.resizeViews();
   assert.equal(state.tabs.get(1).view.visible, false);
   assert.equal(state.tabs.get(2).view.visible, true);
+});
+
+test('pending authentication hides only its native tab across split and workspace switches', () => {
+  const state = fixture();
+  state.pendingHttpAuthCallbacks.set('auth-1', { tabId: 1 });
+  state.setSplitScreen({ enabled: true, secondaryTabId: 2 });
+  assert.equal(state.tabs.get(1).view.visible, false);
+  assert.equal(state.tabs.get(2).view.visible, true);
+  assert.equal(state.whatsappSurface.view.visible, true);
+  state.switchTab(2);
+  assert.equal(state.tabs.get(2).view.visible, true);
+  assert.equal(state.tabs.get(1).view.visible, false);
+  state.activateWorkspace('work');
+  assert.equal(state.tabs.get(3).view.visible, true);
+  assert.equal(state.pendingHttpAuthCallbacks.has('auth-1'), true);
+  state.activateWorkspace('default');
+  state.switchTab(1);
+  assert.equal(state.tabs.get(1).view.visible, false);
+  state.pendingHttpAuthCallbacks.delete('auth-1');
+  state.resizeViews();
+  assert.equal(state.tabs.get(1).view.visible, true);
+});
+
+test('auth lifecycle cancels only superseded requests and resolves each callback once', () => {
+  const state = fixture();
+  const first = state.tabs.get(1).view.webContents;
+  const second = state.tabs.get(2).view.webContents;
+  first.id = 11;
+  second.id = 12;
+  state.attachHttpAuthLifecycle(first);
+  state.attachHttpAuthLifecycle(second);
+  const callbacks = [];
+  const closed = [];
+  const timers = [];
+  state.clearTimeout = (timeout) => timers.push(timeout);
+  state.sendToShell = (channel, data) => closed.push({ channel, ...data });
+  first.emit('did-start-navigation', {}, 'https://example.test/auth', false, true);
+  state.pendingHttpAuthCallbacks.set('auth-1', {
+    tabId: 1, contentsId: 11, timeout: 1,
+    callback: (...args) => callbacks.push(['auth-1', ...args]),
+  });
+  state.pendingHttpAuthCallbacks.set('auth-2', {
+    tabId: 2, contentsId: 12, timeout: 2,
+    callback: (...args) => callbacks.push(['auth-2', ...args]),
+  });
+  first.emit('did-start-navigation', {}, 'https://example.test/auth#hash', true, true);
+  first.emit('did-start-navigation', {}, 'https://example.test/frame', false, false);
+  assert.equal(state.pendingHttpAuthCallbacks.size, 2);
+  first.emit('did-start-navigation', {}, 'https://example.test/other', false, true);
+  assert.equal(state.pendingHttpAuthCallbacks.has('auth-1'), false);
+  assert.equal(state.pendingHttpAuthCallbacks.has('auth-2'), true);
+  assert.deepEqual(callbacks, [['auth-1', '', '']]);
+  state.completeHttpAuthRequest('auth-1', 'late-user', 'late-password', 'responded');
+  assert.equal(callbacks.length, 1);
+  second.emit('destroyed');
+  assert.equal(state.pendingHttpAuthCallbacks.size, 0);
+  assert.deepEqual(callbacks, [['auth-1', '', ''], ['auth-2', '', '']]);
+  assert.deepEqual(timers, [1, 2]);
+  assert.deepEqual(closed.map((item) => [item.channel, item.tabId, item.reason]), [
+    ['http-auth-closed', 1, 'navigation'], ['http-auth-closed', 2, 'destroyed'],
+  ]);
 });
