@@ -1313,9 +1313,6 @@ function handleShortcut(event, input, tabId) {
   } else if (command && key === 'tab') {
     cycleTabs(shift ? -1 : 1);
     handled = true;
-  } else if (command && key === 'f') {
-    sendToShell('show-find-bar', null);
-    handled = true;
   } else if (command && key === 'p') {
     printActivePage().catch(() => {});
     handled = true;
@@ -2016,23 +2013,6 @@ function getWhatsappSession() {
   configureScreenSharePicker(whatsappSession);
   configureDownloads(whatsappSession, { sessionKind: 'whatsapp' });
   configureSessionClientHints(whatsappSession);
-
-  // Pre-authorize microphone and camera for WhatsApp Web so users don't get
-  // a native system dialog — identical to selecting "Always allow" once.
-  // This mirrors what Chrome does when users previously granted permission.
-  const waOrigin = new URL(WHATSAPP_WEB_URL).origin;
-  const waPreGrant = [
-    waOrigin + '|microphone',
-    waOrigin + '|media:audio',
-    waOrigin + '|camera',
-    waOrigin + '|media:video',
-  ];
-  for (const key of waPreGrant) {
-    if (permissionGrants[key] === undefined) {
-      permissionGrants[key] = true;
-    }
-  }
-  savePermissionGrants();
 
   return whatsappSession;
 }
@@ -2893,13 +2873,26 @@ function setActiveZoom(factor) {
   return publicTab(tab);
 }
 
+function showFindForFocusedPage() {
+  const primary = getActiveTab();
+  const target = [primary, splitSecondaryTab(primary)].find((tab) =>
+    tab && !tab.view.webContents.isDestroyed() && tab.view.webContents.isFocused());
+  if (target) sendToShell('show-find-bar', { tabId: target.id });
+  else if (primary && mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.isFocused()) {
+    sendToShell('show-find-bar', { tabId: primary.id });
+  }
+}
+
 function findInActivePage(text, options) {
   const query = boundedString(text, 'find text', 1000, false);
-  const tab = getActiveTab();
-  if (!tab) return null;
   const input = options === undefined || options === null
     ? {}
     : assertPlainObject(options, 'find options');
+  const primary = getActiveTab();
+  const secondary = splitSecondaryTab(primary);
+  const tab = input.tabId === undefined || input.tabId === null ? primary :
+    [primary, secondary].find((candidate) => candidate && candidate.id === input.tabId);
+  if (!tab) return null;
   return tab.view.webContents.findInPage(query, {
     forward: input.forward !== false,
     findNext: Boolean(input.findNext),
@@ -2907,8 +2900,8 @@ function findInActivePage(text, options) {
   });
 }
 
-function stopFindActive() {
-  const tab = getActiveTab();
+function stopFindActive(tabId) {
+  const tab = tabId === undefined || tabId === null ? getActiveTab() : tabs.get(tabId);
   if (tab) tab.view.webContents.stopFindInPage('clearSelection');
   return true;
 }
@@ -3592,30 +3585,35 @@ function secureStorageAvailable() {
   return Boolean(safeStorage && safeStorage.isEncryptionAvailable());
 }
 
-function normalizeCredentialDomain(value) {
-  const text = boundedString(value, 'credential domain', 500, false);
+function normalizeCredentialOrigin(value) {
+  const text = boundedString(value, 'credential origin', 32768, false);
   try {
     const parsed = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : 'https://' + text);
     if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
       throw new TypeError('Unsupported credential origin');
     }
-    return parsed.host.toLowerCase().replace(/^www\./, '').slice(0, 250);
+    return parsed.origin;
   } catch (error) {
-    throw new TypeError('Invalid credential domain');
+    throw new TypeError('Invalid credential origin');
   }
 }
 
-function findSavedCredential(domain, username) {
-  const normalized = normalizeCredentialDomain(domain);
+function normalizeCredentialDomain(value) {
+  const parsed = new URL(normalizeCredentialOrigin(value));
+  return parsed.host.toLowerCase().replace(/^www\./, '').slice(0, 250);
+}
+
+function findSavedCredential(origin, username) {
+  const normalized = normalizeCredentialOrigin(origin);
   return savedPasswords.find((item) => (
-    item.domain.toLowerCase() === normalized && item.username === username
+    item.origin === normalized && item.username === username
   )) || null;
 }
 
-function latestSavedCredential(domain) {
-  const normalized = normalizeCredentialDomain(domain);
+function latestSavedCredential(origin) {
+  const normalized = normalizeCredentialOrigin(origin);
   return savedPasswords
-    .filter((item) => item.domain.toLowerCase() === normalized)
+    .filter((item) => item.origin === normalized)
     .sort((left, right) => right.updatedAt - left.updatedAt)[0] || null;
 }
 
@@ -3647,10 +3645,11 @@ function saveCredential(payload) {
   if (!secureStorageAvailable()) {
     throw new Error('Secure OS key storage is not available; passwords cannot be saved safely');
   }
-  const domain = normalizeCredentialDomain(payload.domain);
+  const origin = normalizeCredentialOrigin(payload.origin || payload.domain);
+  const domain = normalizeCredentialDomain(origin);
   const username = boundedString(payload.username || '', 'username', 250, true);
   const password = boundedString(payload.password || '', 'password', 500, false);
-  const existing = findSavedCredential(domain, username);
+  const existing = findSavedCredential(origin, username);
   const mode = existing ? 'updated' : 'saved';
 
   if (existing) {
@@ -3659,6 +3658,7 @@ function saveCredential(payload) {
   } else {
     savedPasswords.push({
       id: 'pwd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+      origin,
       domain,
       username,
       password,
@@ -3666,7 +3666,7 @@ function saveCredential(payload) {
     });
   }
   savePasswordsToStore();
-  return { mode, domain, username };
+  return { mode, origin, domain, username };
 }
 
 function credentialForOrigin(origin) {
@@ -3682,6 +3682,7 @@ function credentialForOrigin(origin) {
 function publicSavedPasswords() {
   return savedPasswords.map((item) => ({
     id: item.id,
+    origin: item.origin,
     domain: item.domain,
     username: item.username,
     updatedAt: item.updatedAt,
@@ -3691,18 +3692,19 @@ function publicSavedPasswords() {
 function queueCredentialSavePrompt(payload, senderDetails) {
   if (privateInstance || !secureStorageAvailable()) return false;
   assertPlainObject(payload, 'submitted credential');
-  const domain = normalizeCredentialDomain(senderDetails.origin);
+  const origin = normalizeCredentialOrigin(senderDetails.origin);
+  const domain = normalizeCredentialDomain(origin);
   const reportedUsername = boundedString(payload.username || '', 'username', 250, true);
   if (reportedUsername) {
     rememberCredentialUsername(senderDetails.tab, senderDetails.origin, reportedUsername);
   }
   const username = reportedUsername || recentCredentialUsername(senderDetails.tab, senderDetails.origin);
   const password = boundedString(payload.password || '', 'password', 500, false);
-  const existing = findSavedCredential(domain, username);
+  const existing = findSavedCredential(origin, username);
   if (existing && existing.password === password) return false;
 
   for (const pending of pendingCredentialPrompts.values()) {
-    if (pending.domain === domain && pending.username === username && pending.password === password) {
+    if (pending.origin === origin && pending.username === username && pending.password === password) {
       return false;
     }
   }
@@ -3712,6 +3714,7 @@ function queueCredentialSavePrompt(payload, senderDetails) {
   if (typeof timeout.unref === 'function') timeout.unref();
   pendingCredentialPrompts.set(requestId, {
     requestId,
+    origin,
     domain,
     username,
     password,
@@ -3721,6 +3724,7 @@ function queueCredentialSavePrompt(payload, senderDetails) {
   });
   sendToShell('password-save-request', {
     requestId,
+    origin,
     domain,
     username,
     mode: existing ? 'update' : 'save',
@@ -3766,15 +3770,22 @@ function loadSavedPasswords() {
         pass = item.password;
         needsMigration = true;
       }
+      let origin = '';
       let domain = '';
       try {
-        domain = normalizeCredentialDomain(item.domain);
-        if (domain !== item.domain) needsMigration = true;
+        // Older entries discarded the scheme and www prefix. Bind those
+        // ambiguous hosts to HTTPS only; a different origin must be saved again.
+        origin = item.origin
+          ? normalizeCredentialOrigin(item.origin)
+          : normalizeCredentialOrigin(normalizeCredentialDomain(item.domain));
+        domain = normalizeCredentialDomain(origin);
+        if (origin !== item.origin || domain !== item.domain) needsMigration = true;
       } catch (error) {
         return null;
       }
       return {
         id: typeof item.id === 'string' ? item.id : 'pwd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        origin,
         domain,
         username: typeof item.username === 'string' ? item.username.slice(0, 250) : '',
         password: typeof pass === 'string' ? pass.slice(0, 500) : '',
@@ -3794,6 +3805,7 @@ function savePasswordsToStore() {
     const encrypted = safeStorage.encryptString(item.password).toString('hex');
     return {
       id: item.id,
+      origin: item.origin,
       domain: item.domain,
       username: item.username,
       encrypted,
@@ -3997,21 +4009,21 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-10-01',
-    title: 'Keep browsing while Lookup asks for a password',
-    intro: 'Lookup and other website password prompts stay in their own tab, so you can keep using the rest of the browser.',
+    releaseDate: '2026-10-16',
+    title: 'Reliable editor search and stronger browser security',
+    intro: 'Search inside web editors with Ctrl+F, find text reliably on ordinary pages, and keep saved logins bound to the exact site.',
     features: [
-      'Switch tabs with a click or Ctrl+Tab while a website password prompt is open.',
-      'Return to the requesting tab to continue with the username and password you already typed.',
-      'Separate password prompts remain attached to their own tabs, including when several sites ask at once.',
+      'Web editors can open their own search with Ctrl+F; Find in page is also available from the browser menu.',
+      'Saved login prompts and the password manager show the full site origin, including HTTP or HTTPS.',
+      'WhatsApp asks before using your camera or microphone and respects remembered permission choices.',
     ],
     bugFixes: [
-      'Fixed Lookup password prompts blocking other tabs or hiding their page content.',
-      'The address bar updates correctly when switching away from a password prompt with the keyboard.',
-      'Password prompts stay within their split pane and leave the other pane usable.',
-      'Closing or navigating away from a requesting tab clears its pending password prompt.',
-      'Cancel dismisses a password prompt without retrying sign-in or reopening it.',
-      'Updated the bundled browser runtime and supporting dependencies with security fixes.',
+      'Fixed browser search initialization leaving the result counter at 0/0.',
+      'Find results stay with the tab or split pane being searched.',
+      'Passwords saved for HTTPS are never automatically reused on HTTP or a different hostname or port.',
+      'Proxy authentication cannot reuse or overwrite a website login.',
+      'Extension installation validates archive paths, checksums, expansion limits, and download redirects, and restores the previous version if an update fails.',
+      'Updated Electron to 43.8.0 and patched vulnerable supporting dependencies.',
     ],
   };
 }
@@ -5433,7 +5445,7 @@ function registerIpcHandlers() {
   registerHandler('open-whatsapp-tab', () => createTab(WHATSAPP_WEB_URL, { activate: true }));
   registerHandler('set-split-screen', (event, options) => setSplitScreen(options));
   registerHandler('find-in-page', (event, text, options) => findInActivePage(text, options));
-  registerHandler('stop-find', () => stopFindActive());
+  registerHandler('stop-find', (event, tabId) => stopFindActive(tabId));
   registerHandler('mute-tab', (event, muted) => {
     const tab = getActiveTab();
     if (!tab) return null;
@@ -5671,15 +5683,16 @@ function registerIpcHandlers() {
     let username = typeof payload.username === 'string' ? payload.username.slice(0, 250) : '';
     let password = typeof payload.password === 'string' ? payload.password.slice(0, 500) : '';
     const credentialId = typeof payload.credentialId === 'string' ? payload.credentialId : '';
-    if (!password && credentialId && entry.domain) {
+    if (!password && credentialId && entry.domain && entry.origin && !entry.isProxy) {
       const credential = savedPasswords.find((item) => item.id === credentialId);
-      if (credential && credential.domain === entry.domain && (!username || username === credential.username)) {
+      if (credential && credential.origin === entry.origin && credential.domain === entry.domain &&
+          (!username || username === credential.username)) {
         username = credential.username;
         password = credential.password;
       }
     }
     completeHttpAuthRequest(payload.requestId, username, password, 'responded');
-    if (password && entry.origin && entry.tabId !== null && tabs.has(entry.tabId)) {
+    if (password && !entry.isProxy && entry.origin && entry.tabId !== null && tabs.has(entry.tabId)) {
       setImmediate(() => {
         try {
           queueCredentialSavePrompt(
@@ -5705,15 +5718,19 @@ function registerIpcHandlers() {
     const credential = savedPasswords.find((item) => item.id === credentialId);
     if (!credential) return false;
     let activeDomain;
+    let activeOrigin;
     try {
-      activeDomain = normalizeCredentialDomain(tab.view.webContents.getURL());
+      activeOrigin = normalizeCredentialOrigin(tab.view.webContents.getURL());
+      activeDomain = normalizeCredentialDomain(activeOrigin);
     } catch (error) {
       return false;
     }
     if (credential.domain !== activeDomain) return false;
+    if (credential.origin !== activeOrigin) return false;
     const username = credential.username;
     const password = credential.password;
     const code = `(function() {
+      if (location.origin !== ${JSON.stringify(activeOrigin)}) return false;
       const userInputs = document.querySelectorAll('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"]');
       const passInputs = document.querySelectorAll('input[type="password"]');
       if (userInputs.length > 0 && ${JSON.stringify(username)}) {
@@ -6126,7 +6143,14 @@ function createMainWindow() {
     },
   });
 
-  Menu.setApplicationMenu(null);
+  // Native accelerators run after the focused frame can preventDefault(), so
+  // web editors (including those in iframes) retain their own Ctrl+F search.
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{
+    label: 'Find in page',
+    visible: false,
+    accelerator: 'CommandOrControl+F',
+    click: showFindForFocusedPage,
+  }]));
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isShellUrl(url)) event.preventDefault();
   });
@@ -6367,15 +6391,16 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
   let origin = '';
   let domain = '';
   try {
-    const portSuffix = authInfo.port && authInfo.port !== 80 && authInfo.port !== 443
-      ? ':' + authInfo.port
-      : '';
     const requestUrl = _details && typeof _details.url === 'string' ? _details.url : '';
-    origin = requestUrl ? new URL(requestUrl).origin : 'https://' + authInfo.host + portSuffix;
-    domain = normalizeCredentialDomain(origin);
+    // A proxy challenge authenticates to the proxy, never to the requested
+    // website. Missing request URLs also cannot establish a credential origin.
+    if (!authInfo.isProxy && requestUrl) {
+      origin = normalizeCredentialOrigin(requestUrl);
+      domain = normalizeCredentialDomain(origin);
+    }
   } catch (error) {}
-  const savedCredential = domain && secureStorageAvailable()
-    ? latestSavedCredential(domain)
+  const savedCredential = origin && secureStorageAvailable()
+    ? latestSavedCredential(origin)
     : null;
 
   pendingHttpAuthCallbacks.set(requestId, {
@@ -6385,6 +6410,7 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
     contentsId: _webContents.id,
     origin,
     domain,
+    isProxy: Boolean(authInfo.isProxy),
   });
 
   sendToShell('http-auth-request', {

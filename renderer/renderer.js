@@ -220,6 +220,7 @@ const state = {
   commandFiltered: [],
   commandSelection: 0,
   findOpen: false,
+  findTabId: null,
   modalOpen: false,
   lastViewVisible: null,
   lastLayoutKey: '',
@@ -910,6 +911,10 @@ function renderTabs() {
 }
 
 function renderBrowserControls() {
+  if (state.findOpen && !sameId(state.findTabId, state.activeTabId) &&
+      !(state.splitScreen && sameId(state.findTabId, state.secondaryTabId))) {
+    closeFindBar();
+  }
   syncHttpAuthPrompt();
   const tab = activeTab();
   const hasPage = Boolean(tab && !isNewTabUrl(tab.url));
@@ -969,6 +974,7 @@ function renderBrowserControls() {
   $('menu-copy-link').disabled = !hasPage;
   $('menu-close-other-tabs').disabled = state.tabs.length < 2;
   $('menu-print').disabled = !hasPage;
+  $('menu-find').disabled = !hasPage;
   $('menu-save-pdf').disabled = !hasPage;
   $('menu-devtools').disabled = !hasPage;
   $('btn-print-page').disabled = !hasPage;
@@ -1363,7 +1369,7 @@ async function renderPasswordsList() {
     list.forEach(function (item) {
       const row = createElement('div', 'pwd-item');
       const info = createElement('div', 'pwd-info');
-      const domainSpan = createElement('span', 'pwd-domain', item.domain);
+      const domainSpan = createElement('span', 'pwd-domain', item.origin || item.domain);
       const userSpan = createElement('span', 'pwd-username', item.username || 'No username');
       info.append(domainSpan, userSpan);
 
@@ -1445,6 +1451,7 @@ function showPasswordSaveRequest(payload) {
   state.passwordSaveRequest = {
     requestId: String(payload.requestId),
     domain: String(payload.domain),
+    origin: typeof payload.origin === 'string' ? payload.origin : String(payload.domain),
     username: typeof payload.username === 'string' ? payload.username : '',
     mode,
   };
@@ -1456,7 +1463,7 @@ function showPasswordSaveRequest(payload) {
       ? 'Use this new password the next time you sign in.'
       : 'Keep this login for the next time you visit.';
   }
-  if (els.passwordSaveDomain) els.passwordSaveDomain.textContent = state.passwordSaveRequest.domain;
+  if (els.passwordSaveDomain) els.passwordSaveDomain.textContent = state.passwordSaveRequest.origin;
   if (els.passwordSaveUsername) {
     els.passwordSaveUsername.textContent = state.passwordSaveRequest.username || 'No username detected';
   }
@@ -2075,9 +2082,15 @@ async function setZoom(factor) {
   }
 }
 
-function openFindBar() {
-  const tab = activeTab();
+function openFindBar(details) {
+  const targetId = details && details.tabId !== undefined ? details.tabId : state.activeTabId;
+  const tab = state.tabs.find(function (item) { return sameId(item.id, targetId); });
   if (!tab || isNewTabUrl(tab.url)) return;
+  if (state.findOpen && !sameId(state.findTabId, tab.id)) {
+    invokeOptional('stopFind', state.findTabId).catch(function () {});
+    els.findResults.textContent = '0/0';
+  }
+  state.findTabId = tab.id;
   state.findOpen = true;
   document.body.classList.add('find-open');
   setHidden(els.findBar, false);
@@ -2087,26 +2100,30 @@ function openFindBar() {
 }
 
 async function closeFindBar() {
+  const targetId = state.findTabId;
   state.findOpen = false;
+  state.findTabId = null;
   document.body.classList.remove('find-open');
   setHidden(els.findBar, true);
   els.findResults.textContent = '0/0';
   els.findInput.value = '';
-  try { await invokeOptional('stopFind'); } catch (error) {}
+  try { await invokeOptional('stopFind', targetId); } catch (error) {}
   scheduleLayout();
 }
 
-async function findInPage(forward, findNext) {
+async function findInPage(forward, continueSearch) {
   const query = els.findInput.value.trim();
   if (!query) {
     els.findResults.textContent = '0/0';
-    try { await invokeOptional('stopFind'); } catch (error) {}
+    try { await invokeOptional('stopFind', state.findTabId); } catch (error) {}
     return;
   }
   try {
     await invoke('findInPage', query, {
+      tabId: state.findTabId,
       forward: forward !== false,
-      findNext: findNext !== false,
+      // Electron calls a new search session "findNext"; Enter continues it.
+      findNext: continueSearch === false,
       matchCase: false
     });
   } catch (error) {
@@ -2116,6 +2133,7 @@ async function findInPage(forward, findNext) {
 
 function handleFindResult(result) {
   const details = result || {};
+  if (!state.findOpen || (details.tabId !== undefined && !sameId(details.tabId, state.findTabId))) return;
   const matches = Number(details.matches || details.totalMatches || 0);
   const active = Number(details.activeMatchOrdinal || details.activeMatch || 0);
   els.findResults.textContent = matches ? active + '/' + matches : 'No results';
@@ -4445,6 +4463,7 @@ function wireUi() {
   });
   bindClick('menu-reopen-tab', reopenClosedTab);
   bindClick('menu-print', printPage);
+  bindClick('menu-find', function () { closeMenu(); openFindBar(); });
   bindClick('menu-save-pdf', savePagePdf);
   bindClick('menu-devtools', async function () {
     try { await invoke('openDevTools'); } catch (error) { notify(errorMessage(error), 'error'); }

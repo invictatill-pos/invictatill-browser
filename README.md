@@ -22,7 +22,7 @@ Regular tabs share the normal persistent browser session. Private windows use an
 - Private windows backed by an isolated, non-persistent session.
 - Per-site permission prompts for capabilities such as camera, microphone, notifications, and location.
 - In-app tab, window, and entire-screen sharing with optional requested audio for WebRTC meeting sites.
-- Find in page, per-tab mute, page zoom, screenshots, printing, and save-to-PDF.
+- Find in page, per-tab mute, page zoom, screenshots, printing, and save-to-PDF. Ctrl+F gives web editors their own search first; **Menu > Find in page** explicitly opens browser search.
 - Split view for working with two tabs side by side.
 - Clear-browsing-data controls and visible update status.
 - Persistent focus sessions with pause/resume, completion notifications, daily focused-time statistics, recovery breaks, and one-click remote-work launchers.
@@ -47,6 +47,12 @@ Activity tracking is a separate opt-in setting and is off by default. When enabl
 The InvictaTill service may use plain HTTP only on a loopback address such as `127.0.0.1` or `localhost`; all remote API endpoints must use HTTPS.
 
 Configure the service only through in-app Settings. Saved keys and continuity tokens are encrypted by the main process and are never read back into a web page.
+
+### Saved login security
+
+Saved passwords match the exact site origin: scheme, hostname, and port. A login saved for `https://example.com` will not autofill on `http://example.com`, `https://www.example.com`, or a different port. The password manager displays this origin. Credentials remain available across normal workspaces for the same origin, and proxy authentication never uses the website vault.
+
+Older saved entries did not retain their complete origin. Version 2.8.4 conservatively migrates them to the HTTPS address for the stored hostname. Save a login again on its correct address if an older HTTP or `www` login no longer autofills.
 
 ## Development
 

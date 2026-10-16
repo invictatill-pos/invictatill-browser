@@ -115,7 +115,7 @@ const api = {
 
   // Active-page operations.
   findInPage: (text, options) => ipcRenderer.invoke('find-in-page', text, options),
-  stopFind: () => ipcRenderer.invoke('stop-find'),
+  stopFind: (tabId) => ipcRenderer.invoke('stop-find', tabId),
   muteTab: (muted) => ipcRenderer.invoke('mute-tab', muted),
   muteTabById: (id, muted) => ipcRenderer.invoke('mute-tab-by-id', { id, muted }),
   setZoom: (factor) => ipcRenderer.invoke('set-zoom', factor),

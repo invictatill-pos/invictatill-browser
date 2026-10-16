@@ -103,6 +103,32 @@ async function main() {
       response.end('<!doctype html><title>Second test page</title><h1>Second page</h1><button id="tab-usability" onclick="this.textContent = \'Other tab remains usable\'">Test tab interaction</button>');
       return;
     }
+    if (request.url === '/editor-find') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html><title>Editor shortcut compatibility</title>
+        <h1>Searchable browser text</h1>
+        <button id="plain-focus">Searchable browser text</button>
+        <textarea id="editor" aria-label="Code editor">Editor search text</textarea>
+        <input id="editor-find" aria-label="Editor search" hidden>
+        <script>
+          document.getElementById('editor').addEventListener('keydown', (event) => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+              event.preventDefault();
+              event.stopPropagation();
+              const search = document.getElementById('editor-find');
+              search.hidden = false;
+              search.focus();
+            }
+          });
+        </script>`);
+      return;
+    }
+    if (request.url === '/iframe-find') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html><title>Embedded editor compatibility</title>
+        <h1>Embedded editor</h1><iframe title="Editor" src="http://localhost:${server.address().port}/editor-find"></iframe>`);
+      return;
+    }
     if (request.url === '/basic-auth-close') {
       response.writeHead(401, {
         'Content-Type': 'text/html; charset=utf-8',
@@ -417,6 +443,130 @@ async function main() {
         && tab.title === 'Invicta smoke page' && !tab.isLoading),
     );
     log('Data documents and local file paths open in normal tabs');
+
+    const editorFindUrl = `${pageUrl}editor-find`;
+    await window.evaluate((url) => window.electronAPI.navigate(url), editorFindUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.tabs.some((tab) => tab.id === active.id
+        && tab.title === 'Editor shortcut compatibility' && !tab.isLoading),
+    );
+    const sendFindShortcut = async (targetUrl, selector, frameUrl, nativeMenu = false) => {
+      await electronApp.evaluate(async ({ webContents, BrowserWindow }, details) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === details.url);
+        BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed()).focus();
+        target.focus();
+        const frame = details.frameUrl
+          ? target.mainFrame.framesInSubtree.find((candidate) => candidate.url === details.frameUrl)
+          : target.mainFrame;
+        await frame.executeJavaScript(`document.querySelector(${JSON.stringify(details.selector)}).focus()`, true);
+        if (details.frameUrl && !details.nativeMenu) {
+          // sendInputEvent targets the main renderer widget, bypassing an
+          // out-of-process iframe. CDP routes trusted keys to its focused frame.
+          target.debugger.attach('1.3');
+          try {
+            for (const type of ['keyDown', 'keyUp']) {
+              await target.debugger.sendCommand('Input.dispatchKeyEvent', {
+                type, key: 'f', code: 'KeyF', windowsVirtualKeyCode: 70, modifiers: 2,
+              });
+            }
+          } finally {
+            target.debugger.detach();
+          }
+        } else {
+          // Native input exercises menu accelerators, which CDP bypasses.
+          target.sendInputEvent({ type: 'keyDown', keyCode: 'f', modifiers: ['control'] });
+          target.sendInputEvent({ type: 'keyUp', keyCode: 'f', modifiers: ['control'] });
+        }
+      }, { url: targetUrl, selector, frameUrl, nativeMenu });
+    };
+    await sendFindShortcut(editorFindUrl, '#editor');
+    await poll(
+      () => electronApp.evaluate(async ({ webContents }, url) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === url);
+        return target.executeJavaScript(`!document.getElementById('editor-find').hidden && document.activeElement.id === 'editor-find'`);
+      }, editorFindUrl),
+      Boolean,
+    );
+    assert.equal(await window.locator('#find-bar').isVisible(), false,
+      'Browser find intercepted the editor search shortcut from the recording');
+    await window.locator('#btn-menu').click();
+    await window.locator('#menu-find').click();
+    await window.locator('#find-bar').waitFor({ state: 'visible' });
+    await window.locator('#find-input').fill('Searchable browser text');
+    await poll(() => window.locator('#find-results').textContent(), (value) => /1\/2/.test(value));
+    await window.locator('#find-input').press('Enter');
+    await poll(() => window.locator('#find-results').textContent(), (value) => /2\/2/.test(value));
+    await window.locator('#find-input').press('Shift+Enter');
+    await poll(() => window.locator('#find-results').textContent(), (value) => /1\/2/.test(value));
+    await window.locator('#find-input').fill('missing-search-text');
+    await poll(() => window.locator('#find-results').textContent(), (value) => value === 'No results');
+    await window.locator('#find-close').click();
+    await window.locator('#find-bar').waitFor({ state: 'hidden' });
+    await capture('01-editor-find-compatible.png');
+    const iframeFindUrl = `${pageUrl}iframe-find`;
+    const childFindUrl = `http://localhost:${address.port}/editor-find`;
+    await window.evaluate((url) => window.electronAPI.navigate(url), iframeFindUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.tabs.some((tab) => tab.id === active.id
+        && tab.title === 'Embedded editor compatibility' && !tab.isLoading),
+    );
+    await sendFindShortcut(iframeFindUrl, '#editor', childFindUrl);
+    await poll(
+      () => electronApp.evaluate(async ({ webContents }, details) => {
+        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === details.url);
+        const frame = target.mainFrame.framesInSubtree.find((candidate) => candidate.url === details.childUrl);
+        return frame.executeJavaScript(`!document.getElementById('editor-find').hidden`);
+      }, { url: iframeFindUrl, childUrl: childFindUrl }),
+      Boolean,
+    );
+    assert.equal(await window.locator('#find-bar').isVisible(), false);
+    await sendFindShortcut(iframeFindUrl, '#plain-focus', childFindUrl, true);
+    await window.locator('#find-bar').waitFor({ state: 'visible' });
+    await window.locator('#find-input').fill('Searchable browser text');
+    await poll(() => window.locator('#find-results').textContent(), (value) => /1\/2/.test(value));
+    await window.locator('#find-close').click();
+    await window.locator('#find-bar').waitFor({ state: 'hidden' });
+    log('Cross-origin iframe editor shortcuts and ordinary iframe search verified');
+    const findSecondary = await window.evaluate((url) => window.electronAPI.newTab(url), editorFindUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.tabs.some((tab) => tab.id === findSecondary.id
+        && tab.title === 'Editor shortcut compatibility' && !tab.isLoading),
+    );
+    await window.evaluate(async (details) => {
+      await window.electronAPI.switchTab(details.primaryId);
+      await window.electronAPI.setSplitScreen({ enabled: true, secondaryTabId: details.secondaryId });
+    }, { primaryId: active.id, secondaryId: findSecondary.id });
+    await sendFindShortcut(editorFindUrl, '#plain-focus');
+    await window.locator('#find-bar').waitFor({ state: 'visible' });
+    await window.locator('#find-input').fill('Searchable browser text');
+    await poll(() => window.locator('#find-results').textContent(), (value) => /1\/2/.test(value));
+    await electronApp.evaluate(({ webContents }, url) => {
+      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === url);
+      target.emit('found-in-page', {}, { requestId: 99999, matches: 99, activeMatchOrdinal: 1, finalUpdate: true });
+    }, iframeFindUrl);
+    assert.equal(await window.locator('#find-results').textContent(), '1/2',
+      'The other split pane overwrote the search results');
+    await window.locator('#find-close').click();
+    await window.locator('#find-bar').waitFor({ state: 'hidden' });
+    await window.evaluate(async (id) => {
+      await window.electronAPI.setSplitScreen({ enabled: false });
+      await window.electronAPI.closeTab(id);
+    }, findSecondary.id);
+    log('Search targets the focused split pane and ignores another pane\'s results');
+    await window.evaluate((url) => window.electronAPI.navigate(url), pageUrl);
+    await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.tabs.some((tab) => tab.id === active.id
+        && tab.title === 'Invicta smoke page' && !tab.isLoading),
+    );
+    await sendFindShortcut(pageUrl, 'h1');
+    await window.locator('#find-bar').waitFor({ state: 'visible' });
+    await window.locator('#find-close').click();
+    await window.locator('#find-bar').waitFor({ state: 'hidden' });
+    log('Ctrl+F respects editor search, ordinary page fallback, and explicit browser-menu search');
 
     const otherAuthTab = await window.evaluate((url) => window.electronAPI.newTab(url), `${pageUrl}second`);
     await poll(
