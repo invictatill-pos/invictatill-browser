@@ -965,7 +965,9 @@ function renderBrowserControls() {
   els.muteButton.setAttribute('aria-pressed', muted ? 'true' : 'false');
   els.muteButton.setAttribute('aria-label', muted ? 'Unmute current tab' : 'Mute current tab');
   els.muteIcon.textContent = muted ? '🔇' : '🔊';
+  $('mute-action-label').textContent = muted ? 'Unmute tab' : 'Mute tab';
   els.splitButton.setAttribute('aria-pressed', state.splitScreen ? 'true' : 'false');
+  $('split-action-label').textContent = state.splitScreen ? 'Close split view' : 'Open split view';
   els.splitButton.disabled = !state.splitScreen && state.tabs.filter(function (item) { return !isNewTabUrl(item.url); }).length < 2;
   $('btn-screenshot').disabled = !hasPage;
   $('menu-duplicate-tab').disabled = !tab;
@@ -1415,6 +1417,7 @@ async function renderPasswordsList() {
 
 function openPasswordsModal() {
   if (!els.passwordsModalBackdrop) return;
+  closeMenu(true);
   const tab = activeTab();
   if (tab && tab.url && tab.url !== 'about:blank' && els.pwdInputDomain) {
     try {
@@ -2009,6 +2012,8 @@ async function toggleMute(tabId, desiredMuted) {
 }
 
 async function toggleSplitScreen() {
+  closeMenu(true);
+  updateViewLayout();
   if (state.splitScreen) {
     try {
       await invoke('setSplitScreen', { enabled: false, secondaryTabId: null });
@@ -2040,6 +2045,8 @@ async function toggleSplitScreen() {
 }
 
 async function takeScreenshot() {
+  closeMenu(true);
+  updateViewLayout();
   try {
     const result = await invoke('screenshot');
     if (result && result.success === false) throw new Error(result.error || 'Screenshot failed');
@@ -3052,11 +3059,16 @@ function openMenu() {
 
 function closeMenu(restoreFocus) {
   if (!state.menuOpen) return;
+  const hadMenuFocus = els.menu.contains(document.activeElement);
   state.menuOpen = false;
   setHidden(els.menu, true);
   els.menuButton.setAttribute('aria-expanded', 'false');
+  els.menu.querySelectorAll('.menu-disclosure').forEach(function (disclosure) {
+    disclosure.open = false;
+    disclosure.querySelector('summary').setAttribute('aria-expanded', 'false');
+  });
   scheduleLayout();
-  if (restoreFocus) els.menuButton.focus();
+  if (restoreFocus || hadMenuFocus) els.menuButton.focus();
 }
 
 function toggleMenu() {
@@ -3075,6 +3087,9 @@ function browserCommandItems() {
     { kind: 'command', id: 'history', title: 'Search browsing history', meta: 'Browser', keywords: 'recent pages', run: function () { openDrawer('history'); } },
     { kind: 'command', id: 'downloads', title: 'Open downloads', meta: 'Browser', keywords: 'files download', run: function () { openDrawer('downloads'); } },
     { kind: 'command', id: 'settings', title: 'Open settings', meta: 'Browser', keywords: 'preferences update', run: function () { openDrawer('settings'); } },
+    { kind: 'command', id: 'passwords', title: 'Passwords & autofill', meta: 'Browser', keywords: 'credentials logins saved passwords', run: openPasswordsModal },
+    { kind: 'command', id: 'extensions', title: 'Manage extensions', meta: 'Browser', keywords: 'addons store plugins', run: openExtensionStore },
+    { kind: 'command', id: 'split-view', title: state.splitScreen ? 'Close split view' : 'Open split view', meta: 'Page', keywords: 'side by side panes', disabled: !state.splitScreen && state.tabs.filter(function (item) { return !isNewTabUrl(item.url); }).length < 2, run: toggleSplitScreen },
     { kind: 'command', id: 'copy-link', title: 'Copy current page link', meta: 'Page', keywords: 'url clipboard share', disabled: !tab || isNewTabUrl(tab.url), run: copyCurrentLink },
     { kind: 'command', id: 'pin-tab', title: tab && tab.pinned ? 'Unpin current tab' : 'Pin current tab', meta: 'Tabs', keywords: 'keep fixed favorite', disabled: !tab, run: function () { if (tab) return togglePinnedTab(tab.id, !tab.pinned); } },
     { kind: 'command', id: 'screenshot', title: 'Capture page screenshot', meta: 'Page', shortcut: 'Ctrl+Shift+S', keywords: 'image capture', disabled: !tab || isNewTabUrl(tab.url), run: takeScreenshot },
@@ -3190,6 +3205,8 @@ function handleCommandPaletteKeydown(event) {
 }
 
 function createMessage(content, sender, options) {
+  setHidden($('ai-welcome-card'), true);
+  if (sender === 'user') $('ai-tools-disclosure').open = false;
   const message = createElement('div', 'chat-message ' + sender);
   const avatar = createElement('span', 'message-avatar', sender === 'user' ? 'You' : '✦');
   avatar.setAttribute('aria-hidden', 'true');
@@ -3325,8 +3342,8 @@ function stopAiRequest() {
 
 function updateAiContextNote() {
   els.aiContextNote.textContent = els.aiContext.checked
-    ? 'This message may include text from the active page. Turn this off before sending if the page is sensitive.'
-    : 'Page context is off. InvictaTill AI receives only what you type.';
+    ? 'Your next message can include text from the current page.'
+    : 'Only what you type is shared. Page access is off.';
 }
 
 function updateAiProviderBadge() {
@@ -3997,6 +4014,7 @@ function wireUi() {
   bindClick('btn-home', function () { navigate(state.settings.homepage || 'about:blank'); });
   bindClick('btn-bookmark-star', toggleBookmark);
   bindClick('btn-mute', function () {
+    closeMenu(true);
     const tab = activeTab();
     if (tab) toggleMute(tab.id, !tab.muted);
   });
@@ -4445,6 +4463,10 @@ function wireUi() {
   bindClick('btn-clear-browsing-data', clearBrowsingData);
 
   bindClick('menu-new-tab', function () { newTab(); closeMenu(); });
+  bindClick('menu-command-center', function () { closeMenu(); openCommandPalette(); });
+  bindClick('menu-history', function () { closeMenu(); openDrawer('history'); });
+  bindClick('menu-focus', function () { closeMenu(); openDrawer('focus'); });
+  bindClick('menu-tasks', function () { closeMenu(); openDrawer('tasks'); });
   bindClick('menu-duplicate-tab', function () {
     const tab = activeTab();
     if (tab) duplicateTab(tab.id);
@@ -4729,8 +4751,23 @@ function wireUi() {
     }
   });
   els.menu.addEventListener('keydown', function (event) {
+    const disclosure = event.target.closest('.menu-disclosure');
+    if (disclosure && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) {
+      event.preventDefault();
+      if (event.key === 'ArrowRight') {
+        disclosure.open = true;
+        const first = disclosure.querySelector('button:not(:disabled)');
+        if (first) first.focus();
+      } else {
+        disclosure.open = false;
+        disclosure.querySelector('summary').focus();
+      }
+      return;
+    }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-    const items = Array.from(els.menu.querySelectorAll('button:not(:disabled)'));
+    const items = Array.from(els.menu.querySelectorAll('summary, button:not(:disabled)')).filter(function (item) {
+      return item.getClientRects().length > 0;
+    });
     if (!items.length) return;
     event.preventDefault();
     const current = items.indexOf(document.activeElement);
@@ -4740,6 +4777,11 @@ function wireUi() {
     else if (event.key === 'ArrowDown') nextIndex = (current + 1 + items.length) % items.length;
     else nextIndex = (current - 1 + items.length) % items.length;
     items[nextIndex].focus();
+  });
+  els.menu.querySelectorAll('.menu-disclosure').forEach(function (disclosure) {
+    disclosure.addEventListener('toggle', function () {
+      disclosure.querySelector('summary').setAttribute('aria-expanded', disclosure.open ? 'true' : 'false');
+    });
   });
   document.addEventListener('keydown', handleGlobalShortcuts, true);
   document.addEventListener('keydown', trapModalFocus);
@@ -4948,6 +4990,7 @@ if (typeof api.on === 'function') {
 // Extension Store — UI logic
 // ═══════════════════════════════════════════════════════════════════
 function openExtensionStore() {
+  closeMenu(true);
   state.extensionStoreOpen = true;
   state.extensionStoreTab = 'featured';
   state.extensionStoreCategory = 'All';

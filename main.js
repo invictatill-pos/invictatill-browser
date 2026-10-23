@@ -4009,21 +4009,19 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-10-16',
-    title: 'Reliable editor search and stronger browser security',
-    intro: 'Search inside web editors with Ctrl+F, find text reliably on ordinary pages, and keep saved logins bound to the exact site.',
+    releaseDate: '2026-10-23',
+    title: 'A calmer space to browse and work',
+    intro: 'A soft light theme, sage accents, and simpler layouts give your work more breathing room.',
     features: [
-      'Web editors can open their own search with Ctrl+F; Find in page is also available from the browser menu.',
-      'Saved login prompts and the password manager show the full site origin, including HTTP or HTTPS.',
-      'WhatsApp asks before using your camera or microphone and respects remembered permission choices.',
+      'A spacious new tab centers search and shortcuts, with bookmarks and recent pages available when you expand them.',
+      'A quieter toolbar keeps screenshot, split view, mute, passwords, and extensions together in the browser menu.',
+      'The AI panel has a shorter welcome and expandable page and writing tools, with page access still off by default.',
+      'Workspaces, focus sessions, tasks, history, downloads, and keyboard shortcuts remain available.',
     ],
     bugFixes: [
-      'Fixed browser search initialization leaving the result counter at 0/0.',
-      'Find results stay with the tab or split pane being searched.',
-      'Passwords saved for HTTPS are never automatically reused on HTTP or a different hostname or port.',
-      'Proxy authentication cannot reuse or overwrite a website login.',
-      'Extension installation validates archive paths, checksums, expansion limits, and download redirects, and restores the previous version if an update fails.',
-      'Updated Electron to 43.8.0 and patched vulnerable supporting dependencies.',
+      'Menu keyboard navigation skips collapsed controls and restores focus when the menu closes.',
+      'Menus close before screenshot, split view, password manager, and extension actions open.',
+      'Mute and split-view labels describe the current action.',
     ],
   };
 }
@@ -6125,7 +6123,7 @@ function createMainWindow() {
     minHeight: 600,
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#05050a',
+    backgroundColor: '#f7f8f5',
     autoHideMenuBar: true,
     show: false,
     icon: path.join(__dirname, 'assets', 'icon.ico'),

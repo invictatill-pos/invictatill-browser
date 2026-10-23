@@ -331,6 +331,37 @@ async function main() {
       'Expected a usable desktop new-tab content width');
     await capture('01-new-tab.png');
 
+    const library = window.locator('#ntp-library');
+    const librarySummary = library.locator('summary');
+    const libraryContents = library.locator('.ntp-columns');
+    assert.equal(await libraryContents.isVisible(), false,
+      'Bookmarks and recent browsing should start tucked away on a new tab');
+    await librarySummary.focus();
+    await librarySummary.press('Enter');
+    await libraryContents.waitFor({ state: 'visible' });
+    assert.equal(await window.locator('#bookmarks-heading').isVisible(), true);
+    assert.equal(await window.locator('#recent-heading').isVisible(), true);
+    await librarySummary.press('Space');
+    await libraryContents.waitFor({ state: 'hidden' });
+    await librarySummary.click();
+    await libraryContents.waitFor({ state: 'visible' });
+    await assertViewportContained(['#ntp-library', '.ntp-columns'], 'Expanded new-tab library');
+    await capture('01-new-tab-library.png');
+    await librarySummary.click();
+    await libraryContents.waitFor({ state: 'hidden' });
+    log('New-tab library stays quiet by default and opens by keyboard or click');
+
+    const browserMenu = window.locator('#browser-menu');
+    const browserTools = browserMenu.locator('#menu-browser-tools');
+    const browserToolsSummary = browserTools.locator('summary');
+    const openBrowserTool = async (selector) => {
+      if (await browserMenu.isHidden()) await window.locator('#btn-menu').click();
+      await browserMenu.waitFor({ state: 'visible' });
+      if (!await browserTools.evaluate((details) => details.open)) await browserToolsSummary.click();
+      await window.locator(selector).click();
+      await browserMenu.waitFor({ state: 'hidden' });
+    };
+
     await window.locator('#btn-add-workspace-open').click();
     const workspaceModal = window.locator('#add-workspace-modal-backdrop');
     await workspaceModal.waitFor({ state: 'visible' });
@@ -349,7 +380,24 @@ async function main() {
     await window.locator('#btn-close-add-ws').click();
     await workspaceModal.waitFor({ state: 'hidden' });
 
-    await window.locator('#btn-passwords').click();
+    await window.locator('#btn-menu').click();
+    await browserMenu.waitFor({ state: 'visible' });
+    assert.equal(await window.locator('#btn-passwords').isVisible(), false,
+      'Secondary browser tools should stay tucked away until requested');
+    await browserToolsSummary.focus();
+    await browserToolsSummary.press('Enter');
+    for (const selector of ['#btn-mute', '#btn-split-screen', '#btn-screenshot', '#btn-passwords', '#btn-extensions']) {
+      assert.equal(await window.locator(selector).isVisible(), true,
+        `Browser menu did not expose ${selector}`);
+    }
+    await assertViewportContained(['#browser-menu', '#btn-passwords', '#btn-extensions'], 'Expanded browser tools');
+    await browserToolsSummary.press('Space');
+    assert.equal(await window.locator('#btn-passwords').isVisible(), false);
+    await window.keyboard.press('Escape');
+    await browserMenu.waitFor({ state: 'hidden' });
+    log('Secondary browser tools remain accessible through keyboard disclosure');
+
+    await openBrowserTool('#btn-passwords');
     const passwordsModal = window.locator('#passwords-modal-backdrop');
     await passwordsModal.waitFor({ state: 'visible' });
     await assertViewportContained([
@@ -362,7 +410,6 @@ async function main() {
     await passwordsModal.waitFor({ state: 'hidden' });
 
     await window.locator('#btn-menu').click();
-    const browserMenu = window.locator('#browser-menu');
     await browserMenu.waitFor({ state: 'visible' });
     await assertViewportContained(['#browser-menu'], 'Browser menu');
     await window.keyboard.press('Escape');
@@ -490,8 +537,7 @@ async function main() {
     );
     assert.equal(await window.locator('#find-bar').isVisible(), false,
       'Browser find intercepted the editor search shortcut from the recording');
-    await window.locator('#btn-menu').click();
-    await window.locator('#menu-find').click();
+    await openBrowserTool('#menu-find');
     await window.locator('#find-bar').waitFor({ state: 'visible' });
     await window.locator('#find-input').fill('Searchable browser text');
     await poll(() => window.locator('#find-results').textContent(), (value) => /1\/2/.test(value));
@@ -671,7 +717,7 @@ async function main() {
       !geometry.primary.visible && geometry.secondary.visible &&
       ['x', 'y', 'width', 'height'].every((key) => Math.abs(geometry.backdrop[key] - geometry.primary[key]) <= 1) &&
       geometry.secondary.x >= geometry.backdrop.right - 1;
-    await window.locator('#btn-split-screen').click();
+    await openBrowserTool('#btn-split-screen');
     await poll(
       () => window.evaluate(() => window.electronAPI.getBrowserState()),
       (state) => state.splitScreen && state.secondaryTabId === otherAuthTab.id,
@@ -693,7 +739,7 @@ async function main() {
     await capture('01e-http-auth-split-menu.png');
     await window.keyboard.press('Escape');
     await browserMenu.waitFor({ state: 'hidden' });
-    await window.locator('#btn-split-screen').click();
+    await openBrowserTool('#btn-split-screen');
     await poll(
       () => window.evaluate(() => window.electronAPI.getBrowserState()),
       (state) => !state.splitScreen,
@@ -1337,9 +1383,26 @@ async function main() {
         `Browser page did not make room for InvictaTill AI: ${JSON.stringify(aiPanelGeometry)}`);
     }
     assert.equal((await window.locator('#ai-provider-badge').textContent()).trim(), 'InvictaTill AI · Cloud');
-    assert.match(await drawer.textContent(), /Page access stays private/);
+    assert.equal(await window.locator('#ai-context-toggle').isChecked(), false,
+      'Page access should remain off until explicitly enabled');
+    assert.match(await window.locator('#ai-context-note').textContent(), /Page (?:access|context) is off/);
     assert.equal(await window.locator('#setting-ai-provider option[value="invicta"]').count(), 1);
     await capture('05a-invicta-ai-chat.png');
+    const aiTools = window.locator('#ai-tools-disclosure');
+    const aiToolsSummary = aiTools.locator('summary');
+    const aiQuickActions = aiTools.locator('.quick-actions');
+    assert.equal(await aiQuickActions.isVisible(), false,
+      'AI page and writing tools should remain tucked away until requested');
+    assert.equal(await window.locator('#ai-chat-input').isVisible(), true,
+      'The AI composer must be available without opening optional tools');
+    await aiToolsSummary.focus();
+    await aiToolsSummary.press('Enter');
+    await aiQuickActions.waitFor({ state: 'visible' });
+    assert.equal(await window.locator('#btn-ai-gmail-tasks').isVisible(), true);
+    assert.equal(await window.locator('#btn-ai-24h-report').isVisible(), true);
+    await aiToolsSummary.click();
+    await aiQuickActions.waitFor({ state: 'hidden' });
+    log('AI optional tools open on demand while the composer stays available');
 
     await window.locator('#drawer-tab-settings').click();
     await window.locator('#drawer-panel-settings').waitFor({ state: 'visible' });
@@ -1496,6 +1559,9 @@ async function main() {
     await window.locator('#btn-new-tab').click();
     await window.locator('#new-tab-page').waitFor({ state: 'visible' });
     assert.equal(await window.locator('#ntp-search').inputValue(), '', 'New-tab search retained an old query');
+    assert.equal(await libraryContents.isVisible(), false, 'New-tab library should remain collapsed until opened');
+    await librarySummary.click();
+    await libraryContents.waitFor({ state: 'visible' });
     const compactLayout = await assertViewportContained([
       '#titlebar', '.title-logo', '#workspace-tabs-strip', '#btn-add-workspace-open', '.window-controls', '#tabs-bar', '#nav-bar',
       '.omnibox-shell', '.nav-actions', '#new-tab-page', '.ntp-content', '#quick-links', '.ntp-columns',
@@ -1507,6 +1573,9 @@ async function main() {
     assert.equal(compactQuickLinks, 2, 'Expected the six compact quick links to form two rows');
     assert.ok(compactLayout.elements.find((item) => item.selector === '.omnibox-shell').width >= 300,
       'Compact omnibox became too narrow');
+    await capture('04-compact-library-900.png');
+    await librarySummary.click();
+    await libraryContents.waitFor({ state: 'hidden' });
     const tabCountBeforeDensityCheck = await window.locator('#tabs-container .tab-item').count();
     for (let index = 0; index < 10; index += 1) {
       await window.evaluate(() => window.electronAPI.newTab());
