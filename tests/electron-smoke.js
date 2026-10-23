@@ -258,6 +258,21 @@ async function main() {
       30_000,
     ).then((pages) => pages.find((page) => /renderer[\\/]index\.html/i.test(decodeURIComponent(page.url()))));
     await window.waitForLoadState('domcontentloaded');
+    let settledWindowSamples = 0;
+    await poll(async () => {
+      const native = await electronApp.evaluate(({ BrowserWindow }) => {
+        const shell = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+        return { maximized: shell.isMaximized(), contentSize: shell.getContentSize() };
+      });
+      const renderer = await window.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+      return { native, renderer };
+    }, ({ native, renderer }) => {
+      const settled = native.maximized &&
+        Math.abs(renderer.width - native.contentSize[0]) <= 1 &&
+        Math.abs(renderer.height - native.contentSize[1]) <= 1;
+      settledWindowSamples = settled ? settledWindowSamples + 1 : 0;
+      return settledWindowSamples >= 2;
+    });
     const capture = async (fileName) => {
       if (!screenshotDir) return;
       const screenshotPath = path.join(screenshotDir, fileName);
@@ -697,7 +712,7 @@ async function main() {
       'Keyboard tab switching lost the pending auth password');
 
     const readAuthSplitGeometry = async () => {
-      const [backdrop, surfaces] = await Promise.all([
+      const [backdrop, surfaces, renderer] = await Promise.all([
         authBackdrop.evaluate((element) => {
           const bounds = element.getBoundingClientRect();
           return { x: bounds.left, y: bounds.top, width: bounds.width, height: bounds.height, right: bounds.right };
@@ -708,10 +723,24 @@ async function main() {
           const primary = views.find((view) => view.webContents.id === details.primaryId);
           const secondary = views.find((view) => view.webContents.getURL() === details.secondaryUrl);
           const surface = (view) => view ? { visible: view.getVisible(), ...view.getBounds() } : null;
-          return { primary: surface(primary), secondary: surface(secondary) };
+          return {
+            primary: surface(primary), secondary: surface(secondary),
+            nativeContentBounds: shell.getContentBounds(),
+            nativeContentSize: shell.getContentSize(),
+            nativeContentViewBounds: shell.contentView.getBounds(),
+            maximized: shell.isMaximized(),
+          };
         }, { primaryId: authContentsId, secondaryUrl: `${pageUrl}second` }),
+        window.evaluate(() => ({
+          width: innerWidth, height: innerHeight,
+          clientWidth: document.documentElement.clientWidth,
+          clientHeight: document.documentElement.clientHeight,
+          devicePixelRatio,
+          authWidth: getComputedStyle(document.getElementById('http-auth-modal-backdrop'))
+            .getPropertyValue('--http-auth-width').trim(),
+        })),
       ]);
-      return { backdrop, ...surfaces };
+      return { backdrop, ...surfaces, renderer };
     };
     const authSplitGeometryMatches = (geometry) => geometry.primary && geometry.secondary &&
       !geometry.primary.visible && geometry.secondary.visible &&
