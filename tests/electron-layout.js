@@ -20,6 +20,10 @@ async function poll(read, ready, label) {
 
 async function main() {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'invictatill-layout-'));
+  const passwordsCsv = path.join(profile, 'import-test.csv');
+  fs.writeFileSync(passwordsCsv, 'url,username,password\nhttps://layout.test,layout-test,fixture-secret\n');
+  const localHtml = path.join(profile, 'local page.html');
+  fs.writeFileSync(localHtml, '<!doctype html><title>Local path fixture</title><main>Local path fixture</main>');
   const server = http.createServer((request, response) => {
     response.writeHead(200, { 'Content-Type': 'text/html' });
     response.end('<!doctype html><title>Layout fixture</title><main>Fullscreen layout fixture</main>');
@@ -42,10 +46,7 @@ async function main() {
     await shell.waitForFunction(() => window.electronAPI && document.getElementById('tabs-container'));
     const first = await shell.evaluate((url) => window.electronAPI.newTab(url), baseUrl + '/first');
     const second = await shell.evaluate((url) => window.electronAPI.newTab(url), baseUrl + '/second');
-    await shell.evaluate(async ({ primary, secondary }) => {
-      await window.electronAPI.switchTab(primary);
-      await window.electronAPI.setSplitScreen({ enabled: true, secondaryTabId: secondary });
-    }, { primary: first.id, secondary: second.id });
+    await shell.evaluate((id) => window.electronAPI.switchTab(id), first.id);
 
     const geometry = () => app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
@@ -56,6 +57,101 @@ async function main() {
         })),
       };
     });
+
+    await shell.locator('#btn-menu').click();
+    await shell.locator('#menu-settings').click();
+    await shell.locator('label[for="setting-compact-nav"]').click();
+    await shell.locator('#btn-close-drawer').click();
+    const railTop = await shell.locator('#app-rail').evaluate((element) => element.getBoundingClientRect().top);
+    const compact = await poll(geometry, (state) => state.views.some((view) =>
+      view.visible && view.url === baseUrl + '/first' && view.bounds.y < 128),
+    'Compact navigation should put the native tab directly under the toolbar');
+    assert.ok(Math.abs(railTop - compact.views.find((view) => view.visible).bounds.y) <= 1);
+
+    await shell.locator('#btn-zoom-reset').click();
+    const zoomLeft = await shell.locator('#zoom-popup').evaluate((element) =>
+      element.getBoundingClientRect().right - element.offsetWidth);
+    await poll(geometry, (state) => state.views.some((view) =>
+      view.visible && view.url === baseUrl + '/first' && view.bounds.x + view.bounds.width <= zoomLeft),
+    'The native tab should not cover the zoom controls');
+    await shell.keyboard.press('Escape');
+    await shell.locator('#zoom-popup').waitFor({ state: 'hidden' });
+    await poll(geometry, (state) => state.views.some((view) =>
+      view.visible && view.url === baseUrl + '/first' && view.bounds.x + view.bounds.width === state.size[0]),
+    'Closing zoom should restore the native tab width');
+
+    await shell.locator('#btn-menu').click();
+    await shell.locator('#menu-settings').click();
+    await shell.locator('label[for="setting-compact-nav"]').click();
+    await shell.locator('#btn-close-drawer').click();
+    process.stdout.write('✓ Compact navigation and zoom popup keep native bounds aligned with the shell\n');
+
+    await shell.locator('#btn-reading-mode').click();
+    await shell.waitForFunction(() => document.getElementById('btn-reading-mode').getAttribute('aria-pressed') === 'true');
+    const readerWidth = await app.evaluate(async ({ webContents }, url) => {
+      const contents = webContents.getAllWebContents().find((item) => item.getURL() === url);
+      return contents.executeJavaScript('getComputedStyle(document.body).maxWidth');
+    }, baseUrl + '/first');
+    assert.equal(readerWidth, '780px');
+    await shell.evaluate((id) => window.electronAPI.switchTab(id), second.id);
+    await shell.waitForFunction(() => document.getElementById('btn-reading-mode').getAttribute('aria-pressed') === 'false');
+    await shell.evaluate((id) => window.electronAPI.switchTab(id), first.id);
+    await shell.waitForFunction(() => document.getElementById('btn-reading-mode').getAttribute('aria-pressed') === 'true');
+    process.stdout.write('✓ Reading mode follows the active page and applies its stylesheet inside Chromium\n');
+
+    const secondTab = shell.locator('[role="tab"][data-tab-id="' + second.id + '"]');
+    await secondTab.focus();
+    await shell.evaluate(() => refreshBrowserState());
+    assert.equal(await shell.evaluate(() => document.activeElement.dataset.tabId), String(second.id));
+
+    const nativeThrottling = (url) => app.evaluate(({ webContents }, targetUrl) =>
+      webContents.getAllWebContents().find((item) => item.getURL() === targetUrl)?.backgroundThrottling, url);
+    const toggleThrottling = () => shell.locator('label[for="setting-background-throttling"]').click();
+    await shell.locator('#btn-menu').click();
+    await shell.locator('#menu-settings').click();
+    await toggleThrottling();
+    await poll(() => shell.evaluate(() => window.electronAPI.getMemoryStats()),
+      (stats) => stats.backgroundTabThrottling === false, 'The disabled preference should be saved');
+    assert.equal(await nativeThrottling(baseUrl + '/second'), false);
+    const thirdTab = await shell.evaluate((url) => window.electronAPI.newTab(url), baseUrl + '/third');
+    await poll(() => nativeThrottling(baseUrl + '/third'), (enabled) => enabled === false,
+      'New native tabs should inherit the preference');
+    await toggleThrottling();
+    await poll(() => nativeThrottling(baseUrl + '/second'), (enabled) => enabled === true,
+      'Turning throttling on should update existing native tabs');
+    await shell.evaluate((id) => window.electronAPI.closeTab(id), thirdTab.id);
+    await shell.evaluate((id) => window.electronAPI.switchTab(id), first.id);
+    await shell.locator('#btn-close-drawer').click();
+    process.stdout.write('✓ Tabs retain keyboard focus across refresh and existing and new tabs honor the throttling preference\n');
+
+    await shell.locator('#btn-menu').click();
+    await shell.locator('#menu-settings').click();
+    await shell.locator('#btn-open-import-modal').click();
+    await poll(geometry, (state) => state.views.every((view) => !view.visible),
+      'The native tab should be hidden behind the import dialog');
+    await shell.waitForFunction(() => document.activeElement?.id === 'import-modal');
+    await shell.keyboard.press('Shift+Tab');
+    assert.equal(await shell.evaluate(() => document.activeElement.id), 'btn-close-import-done');
+    await app.evaluate(({ dialog }, filePath) => {
+      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [filePath] });
+    }, passwordsCsv);
+    await shell.locator('#btn-import-passwords-csv').click();
+    await shell.waitForFunction(() => /imported 1 saved password/i.test(document.getElementById('import-result-message').textContent));
+    const passwords = await shell.evaluate(() => window.electronAPI.getSavedPasswords());
+    assert.equal(passwords[0].username, 'layout-test');
+    await shell.keyboard.press('Escape');
+    await shell.locator('#import-modal-backdrop').waitFor({ state: 'hidden' });
+    assert.equal(await shell.evaluate(() => document.activeElement.id), 'btn-open-import-modal');
+    await shell.locator('#btn-close-drawer').click();
+    process.stdout.write('✓ Password import stays above native content, saves CSV entries, and restores keyboard focus\n');
+
+    await shell.locator('#address-bar').fill(localHtml);
+    await shell.locator('#address-bar').press('Enter');
+    await poll(geometry, (state) => state.views.some((view) => view.visible && view.url.endsWith('/local%20page.html')),
+      'The address bar should load Windows paths containing spaces as local files');
+    await shell.evaluate((url) => window.electronAPI.navigate(url), baseUrl + '/first');
+
+    await shell.evaluate((id) => window.electronAPI.setSplitScreen({ enabled: true, secondaryTabId: id }), second.id);
     await poll(geometry, (state) => state.views.filter((view) => view.visible && view.url.startsWith(baseUrl)).length === 2,
       'Both split panes should be visible');
 

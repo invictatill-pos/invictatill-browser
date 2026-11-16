@@ -49,20 +49,16 @@ test('the privileged renderer has a strict script policy and no guest webview', 
   assert.match(html, /base-uri\s+'none'/);
 });
 
-test('InvictaTill AI secrets and writing access stay behind the main-process bridge', () => {
+test('ChatGPT opens a regular workspace tab through the trusted shell bridge', () => {
   const main = read('main.js');
   const preload = read('preload.js');
-  const renderer = read(path.join('renderer', 'renderer.js'));
 
-  assert.match(main, /safeStorage/);
-  assert.match(main, /\/api\/v1\/chat/);
-  assert.match(main, /\/api\/v1\/writing/);
-  assert.match(main, /writingReplacementScript/);
-  assert.match(main, /The text changed while InvictaTill AI was working/);
-  assert.doesNotMatch(main, /api\.openai\.com|callOpenAi|responsesEndpoint/);
-  assert.ok(!/Authorization\s*:/i.test(preload));
-  assert.ok(!/Authorization\s*:/i.test(renderer));
-  assert.ok(!/invicta_sk_[A-Za-z0-9_-]+/.test(main), 'Embedded InvictaTill service credential remains');
+  assert.match(main, /'https:\/\/chatgpt\.com\/'/);
+  assert.match(main, /getWorkspaceTabs\(\)\.find\(\(tab\) => URL\.parse\(tab\.url\)\?\.origin === CHATGPT_ORIGIN\)/);
+  assert.match(main, /createTab\(CHATGPT_WEB_URL, \{ activate: true \}\)/);
+  assert.match(main, /registerHandler\('open-chatgpt-tab'/);
+  assert.match(preload, /openChatGptTab: \(\) => ipcRenderer\.invoke\('open-chatgpt-tab'\)/);
+  assert.doesNotMatch(main + preload, /api\.openai\.com|ask-invicta-ai|ai_config_v2|invicta-sk-|hf\.space\/api/);
 });
 
 test('saved passwords never fall back to plaintext persistence', () => {
@@ -148,25 +144,14 @@ test('password handling covers multi-step and shadow-DOM logins plus HTTP auth r
   assert.match(main, /crypto\.randomBytes/);
 });
 
-test('live writing suggestions stay origin-checked, reviewed, and away from sensitive fields', () => {
+test('ChatGPT selection action copies text on command and excludes password fields', () => {
   const main = read('main.js');
   const remotePreload = read('remote-preload.js');
 
-  assert.match(main, /trustedWritingSender/);
-  assert.match(main, /request-live-writing-suggestion/);
-  assert.match(main, /new URL\(claimedOrigin\)\.origin !== parsed\.origin/);
-  assert.match(main, /if \(privateInstance \|\| !event/);
-  assert.match(remotePreload, /get-live-writing-preference/);
-  assert.match(remotePreload, /request-live-writing-suggestion/);
-  assert.match(remotePreload, /event\.isTrusted/);
-  assert.match(remotePreload, /setRangeText/);
-  assert.match(remotePreload, /password\|passcode\|login/);
-  assert.match(remotePreload, /payment\|card\|cvv\|cvc/);
-  assert.match(remotePreload, /search\|query\|find/);
-  assert.match(main, /STRICT PROOFREADING TASK/);
-  assert.match(main, /isConversationalReply/);
-  assert.match(main, /builtInWritingCorrection/);
-  assert.doesNotMatch(remotePreload, /contextBridge|exposeInMainWorld|Authorization\s*:/i);
+  assert.match(main, /params\.formControlType === 'input-password'\) return;/);
+  assert.match(main, /label: 'Copy selection and open ChatGPT',[\s\S]*?clipboard\.writeText\(selection\)/);
+  assert.doesNotMatch(main + remotePreload, /request-live-writing-suggestion|get-live-writing-preference/);
+  assert.doesNotMatch(remotePreload, /open-chatgpt|contextBridge|exposeInMainWorld|Authorization\s*:/i);
 });
 
 test('WhatsApp compatibility is isolated to its sandboxed persistent surface', () => {

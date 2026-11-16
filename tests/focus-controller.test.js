@@ -4,10 +4,10 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const { createFocusController } = require('../focus-controller');
 
-function fixture() {
+function fixture(initialState = null) {
   let time = new Date('2026-07-22T09:00:00').getTime();
   let scheduled = null;
-  let savedState = null;
+  let savedState = initialState;
   let savedHistory = [];
   const sent = [];
   const notifications = [];
@@ -74,9 +74,29 @@ test('completed focus time updates daily statistics and emits a notification', (
 test('breaks do not inflate completed focus statistics and invalid durations fail', () => {
   const testState = fixture();
   assert.throws(() => testState.controller.start({ durationMinutes: 0.5 }), /between 1 and 180/);
+  assert.throws(() => testState.controller.start({ durationMinutes: 0 }), /between 1 and 180/);
   testState.controller.start({ mode: 'break', durationMinutes: 5 });
   testState.setTime(testState.getTime() + 5 * 60 * 1000);
   const completed = testState.controller.complete();
   assert.equal(completed.completedMode, 'break');
   assert.deepEqual(completed.stats, { sessionsToday: 0, minutesToday: 0, totalSessions: 0 });
+});
+
+test('pausing at the deadline completes the focus session even before its scheduled callback runs', () => {
+  const testState = fixture();
+  const started = testState.controller.start({ durationMinutes: 1 });
+  testState.setTime(started.endsAt);
+  const completed = testState.controller.pause();
+  assert.equal(completed.completedMode, 'focus');
+  assert.equal(testState.controller.resume().status, 'idle');
+  assert.equal(testState.getHistory().length, 1);
+  assert.equal(testState.notifications.length, 1);
+});
+
+test('restored empty timestamps and a paused timer at zero survive storage round trips', () => {
+  const testState = fixture({ status: 'paused', durationMinutes: 1, remainingMs: 0, lastCompletedAt: null });
+  const restored = testState.controller.getState();
+  assert.equal(restored.remainingSeconds, 0);
+  assert.equal(restored.lastCompletedAt, null);
+  assert.equal(testState.controller.resume().status, 'idle');
 });

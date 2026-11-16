@@ -32,50 +32,19 @@ async function main() {
   if (screenshotDir) fs.mkdirSync(screenshotDir, { recursive: true });
   let whatsappRequestUserAgent = '';
   const server = http.createServer((request, response) => {
-    if ((request.url === '/api/v1/status' || request.url === '/fallback/api/v1/status') &&
-        request.method === 'GET') {
-      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      response.end(JSON.stringify({ status: 'ok' }));
-      return;
-    }
-    if (request.url === '/fallback/api/v1/chat' && request.method === 'POST') {
-      let body = '';
-      request.setEncoding('utf8');
-      request.on('data', (chunk) => { body += chunk; });
-      request.on('end', () => {
-        const payload = JSON.parse(body || '{}');
-        response.writeHead(200, {
-          'Content-Type': 'application/json; charset=utf-8',
-          'X-Auth-Token': 'invicta-cloud-test-token',
-        });
-        response.end(JSON.stringify({
-          reply: `Invicta cloud fallback received: ${payload.message || ''}`,
-        }));
+    if (request.url === '/chatgpt-login') {
+      response.writeHead(302, {
+        Location: '/chatgpt',
+        'Set-Cookie': 'chatgpt-fixture=signed-in; Path=/; Max-Age=300; HttpOnly; SameSite=Lax',
       });
+      response.end();
       return;
     }
-    if ((request.url === '/api/v1/writing' || request.url === '/fallback/api/v1/writing') &&
-        request.method === 'POST') {
-      const authorized = request.url.startsWith('/fallback/') ||
-        request.headers.authorization === 'Bearer invicta-test-key';
-      response.writeHead(authorized ? 200 : 401, { 'Content-Type': 'application/json; charset=utf-8' });
-      response.end(JSON.stringify(authorized
-        ? { text: 'I definitely receive the report.' }
-        : { error: 'Unauthorized' }));
-      return;
-    }
-    if (request.url === '/api/v1/chat' && request.method === 'POST') {
-      let body = '';
-      request.setEncoding('utf8');
-      request.on('data', (chunk) => { body += chunk; });
-      request.on('end', () => {
-        const payload = JSON.parse(body || '{}');
-        const authorized = request.headers.authorization === 'Bearer invicta-test-key';
-        response.writeHead(authorized ? 200 : 401, { 'Content-Type': 'application/json; charset=utf-8' });
-        response.end(JSON.stringify(authorized
-          ? { reply: `Invicta service received: ${payload.message || ''}` }
-          : { error: 'Unauthorized' }));
-      });
+    if (request.url === '/chatgpt') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      const signedIn = /chatgpt-fixture=signed-in/.test(request.headers.cookie || '');
+      response.end('<!doctype html><meta charset="utf-8"><title>ChatGPT test page</title><main>' +
+        (signedIn ? '<p id="signed-in">Signed in</p>' : '<a id="sign-in" href="/chatgpt-login">Log in</a>') + '</main>');
       return;
     }
     if (request.url === '/download-test') {
@@ -176,24 +145,6 @@ async function main() {
         </form>`);
       return;
     }
-    if (request.url === '/writing-test') {
-      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      response.end(`<!doctype html>
-        <title>Live writing test page</title>
-        <style>
-          body{margin:40px;background:#eef4f7;color:#142231;font:16px system-ui}
-          main{max-width:760px;margin:auto;padding:30px;border-radius:18px;background:white;box-shadow:0 14px 40px #24394d22}
-          [contenteditable],input{box-sizing:border-box;width:100%;margin-top:8px;padding:14px;border:1px solid #8ba0ad;border-radius:10px;font:16px system-ui}
-          [contenteditable]{min-height:180px;background:white;font-weight:400}
-          label{display:block;margin-top:18px;font-weight:700}
-        </style>
-        <main>
-          <h1>Draft a message</h1>
-          <label>Message<div id="writing-draft" contenteditable="true" role="textbox" aria-label="Message draft"></div></label>
-          <label>Private value<input id="writing-password" type="password" autocomplete="current-password"></label>
-        </main>`);
-      return;
-    }
     if (request.url === '/whatsapp-test') {
       whatsappRequestUserAgent = String(request.headers['user-agent'] || '');
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -216,7 +167,7 @@ async function main() {
     }
 
     response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    response.end('<!doctype html><title>Invicta smoke page</title><main><h1>Verified browser content</h1><p>Orchid nebula is the unique summary phrase.</p><a href="/second">Next</a><a id="download-test" href="/download-test" download>Download</a></main>');
+    response.end('<!doctype html><title>Invicta smoke page</title><main><h1>Verified browser content</h1><p>Please review the report by Friday.</p><a href="/second">Next</a><a id="download-test" href="/download-test" download>Download</a></main>');
   });
 
   await new Promise((resolve, reject) => {
@@ -226,12 +177,13 @@ async function main() {
 
   const address = server.address();
   const pageUrl = `http://127.0.0.1:${address.port}/`;
+  const chatGptUrl = `http://localhost:${address.port}/chatgpt`;
   const electronEnvironment = {
     ...process.env,
     INVICTA_TEST_MODE: '1',
     INVICTA_TEST_DOWNLOAD_DIR: path.join(profileDir, 'downloads'),
     INVICTA_TEST_WHATSAPP_URL: `${pageUrl}whatsapp-test`,
-    INVICTA_TEST_AI_FALLBACK_URL: `${pageUrl}fallback/api/v1`,
+    INVICTA_TEST_CHATGPT_URL: chatGptUrl,
   };
   delete electronEnvironment.ELECTRON_RUN_AS_NODE;
   let electronApp;
@@ -326,8 +278,7 @@ async function main() {
     };
     log('Browser shell loaded');
     assert.equal(await window.title(), 'InvictaTill Browser');
-    assert.equal(await window.locator('#btn-ai-drawer').count(), 0,
-      'The duplicate toolbar InvictaTill AI button is still present');
+    assert.equal(await window.locator('#btn-chatgpt').count(), 1);
     await window.locator('#tabs-container').waitFor({ state: 'visible' });
     const modalParents = await window.evaluate(() => [
       'update-modal-backdrop',
@@ -340,7 +291,7 @@ async function main() {
     assert.ok(modalParents.every((item) => item.parent === 'BODY'),
       `Expected top-level modal backdrops, received ${JSON.stringify(modalParents)}`);
     const initialLayout = await assertViewportContained([
-      '#titlebar', '#tabs-bar', '#nav-bar', '#app-rail', '#btn-whatsapp', '#btn-invicta-ai', '#new-tab-page', '.ntp-content', '#ntp-search-form', '#quick-links',
+      '#titlebar', '#tabs-bar', '#nav-bar', '#app-rail', '#btn-whatsapp', '#btn-chatgpt', '#btn-browser-tools', '#new-tab-page', '.ntp-content', '#ntp-search-form', '#quick-links',
     ], 'Initial new-tab layout');
     assert.ok(initialLayout.elements.find((item) => item.selector === '.ntp-content').width >= 800,
       'Expected a usable desktop new-tab content width');
@@ -1368,32 +1319,22 @@ async function main() {
     assert.deepEqual(reordered.tabs.map((tab) => tab.id).slice(0, requestedOrder.length), requestedOrder);
     log('Tab reordering verified');
 
-    const aiResult = await window.evaluate(() => window.electronAPI.askInvictaAI(
-      'Summarize this page in one sentence',
-      { includePageContext: true },
-    ));
-    log('InvictaTill AI cloud recovery response received');
-    assert.equal(aiResult.engine, 'invicta-cloud');
-    assert.match(aiResult.response, /Invicta cloud fallback received/);
-    assert.equal(typeof aiResult.response, 'string');
-    assert.ok(aiResult.response.length > 20);
-
     const history = await poll(
       () => window.evaluate(() => window.electronAPI.getHistory()),
       (entries) => entries.some((entry) => entry.url === pageUrl),
     );
     assert.ok(history.some((entry) => entry.title === 'Invicta smoke page'));
 
-    await window.locator('#btn-invicta-ai').click();
-    log('Opening InvictaTill AI in the shared left app panel');
+    await window.locator('#btn-browser-tools').click();
+    log('Opening Browser tools in the shared left app panel');
     const drawer = window.locator('#workspace-drawer');
     await drawer.waitFor({ state: 'visible' });
     assert.equal(await drawer.getAttribute('aria-hidden'), 'false');
-    assert.equal(await window.locator('#btn-invicta-ai').getAttribute('aria-expanded'), 'true');
-    assert.equal(await window.locator('#btn-invicta-ai').evaluate((button) => button.classList.contains('active')), true);
+    assert.equal(await window.locator('#btn-browser-tools').getAttribute('aria-expanded'), 'true');
+    assert.equal(await window.locator('#btn-browser-tools').evaluate((button) => button.classList.contains('active')), true);
     assert.equal(await whatsappPanel.isHidden(), true);
     assert.equal((await window.evaluate(() => window.electronAPI.getWhatsappPanelState())).visible, false);
-    const aiPanelGeometry = await window.evaluate(() => {
+    const toolsPanelGeometry = await window.evaluate(() => {
       const rect = (selector) => {
         const bounds = document.querySelector(selector).getBoundingClientRect();
         return { left: bounds.left, right: bounds.right, top: bounds.top, width: bounds.width, height: bounds.height };
@@ -1405,34 +1346,22 @@ async function main() {
         stage: rect('#browser-stage'),
       };
     });
-    assert.ok(Math.abs(aiPanelGeometry.panel.left - aiPanelGeometry.rail.right) <= 1,
-      `InvictaTill AI panel is detached from the app rail: ${JSON.stringify(aiPanelGeometry)}`);
-    if (aiPanelGeometry.viewportWidth > 900) {
-      assert.ok(aiPanelGeometry.stage.left >= aiPanelGeometry.panel.right - 1,
-        `Browser page did not make room for InvictaTill AI: ${JSON.stringify(aiPanelGeometry)}`);
+    assert.ok(Math.abs(toolsPanelGeometry.panel.left - toolsPanelGeometry.rail.right) <= 1,
+      `Browser tools panel is detached from the app rail: ${JSON.stringify(toolsPanelGeometry)}`);
+    if (toolsPanelGeometry.viewportWidth > 900) {
+      assert.ok(toolsPanelGeometry.stage.left >= toolsPanelGeometry.panel.right - 1,
+        `Browser page did not make room for Browser tools: ${JSON.stringify(toolsPanelGeometry)}`);
     }
-    assert.equal((await window.locator('#ai-provider-badge').textContent()).trim(), 'InvictaTill AI · Cloud');
-    assert.equal(await window.locator('#ai-context-toggle').isChecked(), false,
-      'Page access should remain off until explicitly enabled');
-    assert.match(await window.locator('#ai-context-note').textContent(), /Page (?:access|context) is off/);
-    assert.equal(await window.locator('#setting-ai-provider option[value="invicta"]').count(), 1);
-    await capture('05a-invicta-ai-chat.png');
-    const aiTools = window.locator('#ai-tools-disclosure');
-    const aiToolsSummary = aiTools.locator('summary');
-    const aiQuickActions = aiTools.locator('.quick-actions');
-    assert.equal(await aiQuickActions.isVisible(), false,
-      'AI page and writing tools should remain tucked away until requested');
-    assert.equal(await window.locator('#ai-chat-input').isVisible(), true,
-      'The AI composer must be available without opening optional tools');
-    await aiToolsSummary.focus();
-    await aiToolsSummary.press('Enter');
-    await aiQuickActions.waitFor({ state: 'visible' });
-    assert.equal(await window.locator('#btn-ai-gmail-tasks').isVisible(), true);
-    assert.equal(await window.locator('#btn-ai-24h-report').isVisible(), true);
-    await aiToolsSummary.click();
-    await aiQuickActions.waitFor({ state: 'hidden' });
-    log('AI optional tools open on demand while the composer stays available');
-
+    await window.locator('#btn-tasks-24h-report').click();
+    await window.locator('#activity-report').waitFor({ state: 'visible' });
+    assert.match(await window.locator('#activity-report').textContent(), /Web pages visited: \d+/);
+    await capture('05a-activity-report.png');
+    await window.locator('#drawer-tab-tasks').click();
+    await window.locator('#btn-tasks-extract-email').click();
+    await window.waitForFunction(() => document.querySelector('#task-scan-status').textContent === 'Added 1 task.');
+    await window.locator('#pending-tasks-list').getByText('Please review the report by Friday.').waitFor();
+    await window.locator('#btn-tasks-extract-email').click();
+    await window.waitForFunction(() => document.querySelector('#task-scan-status').textContent === 'No new tasks found.');
     await window.locator('#drawer-tab-settings').click();
     await window.locator('#drawer-panel-settings').waitFor({ state: 'visible' });
     await assertViewportContained([
@@ -1462,118 +1391,51 @@ async function main() {
     await window.locator('#btn-end-focus').click();
     await window.locator('#focus-status-pill').waitFor({ state: 'hidden' });
     log('Persistent focus session controls and remote-work launcher verified');
-    await window.locator('#drawer-tab-chat').click();
     log('Update settings state and geometry verified');
-
-    const recoveredConnection = await window.evaluate(() => window.electronAPI.testAiConfig({
-      provider: 'invicta',
-      endpoint: 'http://127.0.0.1:7860/api/v1',
-    }));
-    assert.equal(recoveredConnection.success, true);
-    assert.equal(recoveredConnection.mode, 'cloud');
-    assert.match(recoveredConnection.message, /cloud fallback.*AI is working/i);
-    log('InvictaTill AI settings recovery verified');
-
-    const invictaResult = await window.evaluate(
-      async ({ endpoint }) => {
-        await window.electronAPI.saveAiConfig({
-          provider: 'invicta',
-          endpoint,
-          apiKey: 'invicta-test-key',
-        });
-        return window.electronAPI.askInvictaAI('Confirm the integration', {
-          includePageContext: false,
-        });
-      },
-      { endpoint: `http://127.0.0.1:${address.port}` },
-    );
-    assert.equal(invictaResult.provider, 'invicta');
-    assert.match(invictaResult.response, /Invicta service received/);
-    log('InvictaTill AI API provider verified');
-
     await window.locator('#btn-close-drawer').click();
     await drawer.waitFor({ state: 'hidden' });
 
-    const writingUrl = `${pageUrl}writing-test`;
-    await window.evaluate((url) => window.electronAPI.navigate(url), writingUrl);
-    await poll(
-      () => electronApp.evaluate(({ webContents }, targetUrl) => {
-        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
-        return Boolean(target && !target.isLoading());
-      }, writingUrl),
-      Boolean,
-      15_000,
-    );
-    await electronApp.evaluate(async ({ webContents }, targetUrl) => {
-      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
-      if (!target) throw new Error('Live writing test page was not found');
-      await target.executeJavaScript('document.getElementById("writing-draft").focus()');
-      await target.insertText('i definately recieve teh report');
-    }, writingUrl);
-    const liveSuggestion = await poll(
-      () => electronApp.evaluate(async ({ webContents }, targetUrl) => {
-        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
-        if (!target) return null;
-        return target.executeJavaScript(`(() => {
-          const host = document.querySelector('[data-invicta-writing-assistant]');
-          return host ? {
-            state: host.dataset.state,
-            suggestionLength: Number(host.dataset.suggestionLength || 0)
-          } : null;
-        })()`);
-      }, writingUrl),
-      (value) => Boolean(value && value.state === 'suggestion' && value.suggestionLength > 0),
-      25_000,
-    );
-    assert.ok(liveSuggestion.suggestionLength > 10);
-    await capture('05b-live-writing-suggestion.png');
-    await captureRemotePage(writingUrl, '05c-live-writing-page.png');
-    const applyPoint = await electronApp.evaluate(async ({ webContents }, targetUrl) => {
-      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
-      if (!target) throw new Error('Live writing test page was not found');
-      return target.executeJavaScript(`(() => {
-        const host = document.querySelector('[data-invicta-writing-assistant]');
-        const button = host && host.shadowRoot && host.shadowRoot.querySelector('[data-action="apply"]');
-        if (!button) return null;
-        const bounds = button.getBoundingClientRect();
-        return { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 };
-      })()`);
-    }, writingUrl);
-    assert.ok(applyPoint && Number.isFinite(applyPoint.x) && Number.isFinite(applyPoint.y));
-    await electronApp.evaluate(({ webContents }, details) => {
-      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === details.url);
-      if (!target) throw new Error('Live writing test page was not found');
-      const point = { x: Math.round(details.x), y: Math.round(details.y), button: 'left', clickCount: 1 };
-      target.sendInputEvent({ type: 'mouseDown', ...point });
-      target.sendInputEvent({ type: 'mouseUp', ...point });
-    }, { url: writingUrl, ...applyPoint });
-    await poll(
-      () => electronApp.evaluate(async ({ webContents }, targetUrl) => {
-        const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
-        return target
-          ? target.executeJavaScript('document.getElementById("writing-draft").textContent')
-          : '';
-      }, writingUrl),
-      (value) => value === 'I definitely receive the report.',
-    );
-    await electronApp.evaluate(async ({ webContents }, targetUrl) => {
-      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
-      if (!target) throw new Error('Live writing test page was not found');
-      await target.executeJavaScript('document.getElementById("writing-password").focus()');
-      await target.insertText(' this must remain private');
-    }, writingUrl);
-    await new Promise((resolve) => setTimeout(resolve, 1700));
-    const sensitiveFieldState = await electronApp.evaluate(async ({ webContents }, targetUrl) => {
-      const target = webContents.getAllWebContents().find((contents) => contents.getURL() === targetUrl);
-      if (!target) return 'missing';
-      return target.executeJavaScript(`(() => {
-        const host = document.querySelector('[data-invicta-writing-assistant]');
-        return host ? host.dataset.state : 'absent';
-      })()`);
-    }, writingUrl);
-    assert.ok(sensitiveFieldState === 'hidden' || sensitiveFieldState === 'absent',
-      `A suggestion was shown for a password field: ${sensitiveFieldState}`);
-    log('Live InvictaTill AI spelling and grammar suggestion verified');
+    const chatGptTab = () => window.evaluate((url) => window.electronAPI.getBrowserState().then((state) => {
+      return state.tabs.find((tab) => tab.id === state.activeTabId && tab.url === url && !tab.loading);
+    }), chatGptUrl);
+    const chatGptPage = (code) => electronApp.evaluate(({ webContents }, { url, code }) => {
+      const contents = webContents.getAllWebContents().find((item) => item.getURL() === url && !item.isDestroyed());
+      return contents && contents.executeJavaScript(code, true);
+    }, { url: chatGptUrl, code });
+
+    await window.locator('#btn-chatgpt').click();
+    const initialChatGpt = await poll(chatGptTab, Boolean);
+    assert.equal(await chatGptPage('document.querySelector("#sign-in").textContent'), 'Log in');
+    assert.deepEqual(await chatGptPage('({ require: typeof require, bridge: typeof window.electronAPI })'),
+      { require: 'undefined', bridge: 'undefined' });
+    await chatGptPage('document.querySelector("#sign-in").click()');
+    await poll(() => chatGptPage('Boolean(document.querySelector("#signed-in"))'), Boolean);
+    await captureRemotePage(chatGptUrl, '05b-chatgpt-tab.png');
+
+    await window.locator('#btn-menu').click();
+    await window.locator('#menu-chatgpt').click();
+    assert.equal((await poll(chatGptTab, Boolean)).id, initialChatGpt.id);
+    await window.locator('#btn-browser-tools').click();
+    await window.locator('#drawer-tab-settings').click();
+    await window.locator('#btn-settings-chatgpt').click();
+    assert.equal((await poll(chatGptTab, Boolean)).id, initialChatGpt.id);
+    await drawer.waitFor({ state: 'hidden' });
+
+    await window.locator('#btn-new-tab').click();
+    await window.locator('#quick-link-chatgpt').click();
+    assert.equal((await poll(chatGptTab, Boolean)).id, initialChatGpt.id);
+    await window.locator('#address-bar').press('Control+Shift+A');
+    await window.locator('#command-input').fill('Open ChatGPT');
+    await window.locator('.command-result').filter({ hasText: 'Open ChatGPT' }).click();
+    assert.equal((await poll(chatGptTab, Boolean)).id, initialChatGpt.id);
+
+    await window.evaluate((id) => window.electronAPI.closeTab(id), initialChatGpt.id);
+    await window.locator('#address-bar').press('Control+Shift+G');
+    const reopenedChatGpt = await poll(chatGptTab, Boolean);
+    assert.notEqual(reopenedChatGpt.id, initialChatGpt.id);
+    assert.equal(await chatGptPage('document.querySelector("#signed-in").textContent'), 'Signed in');
+    await window.evaluate((id) => window.electronAPI.closeTab(id), reopenedChatGpt.id);
+    log('ChatGPT launch points, tab reuse, and sign-in cookie retention verified');
 
     const requestedCompactBounds = await electronApp.evaluate(async ({ BrowserWindow }) => {
       const shell = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
@@ -1599,7 +1461,7 @@ async function main() {
       const links = Array.from(document.querySelectorAll('.quick-link')).map((element) => element.getBoundingClientRect());
       return new Set(links.map((bounds) => Math.round(bounds.top))).size;
     });
-    assert.equal(compactQuickLinks, 2, 'Expected the six compact quick links to form two rows');
+    assert.equal(compactQuickLinks, 2, 'Expected the compact quick links to form two rows');
     assert.ok(compactLayout.elements.find((item) => item.selector === '.omnibox-shell').width >= 300,
       'Compact omnibox became too narrow');
     await capture('04-compact-library-900.png');
@@ -1648,7 +1510,7 @@ async function main() {
       log(`Saved shell screenshot to ${screenshotPath}`);
     }
 
-    process.stdout.write('✓ Electron shell, tabs, navigation, history, drawer, and AI smoke checks passed\n');
+    process.stdout.write('✓ Electron shell, tabs, navigation, history, tools, and ChatGPT smoke checks passed\n');
   } finally {
     if (electronApp) {
       await Promise.race([

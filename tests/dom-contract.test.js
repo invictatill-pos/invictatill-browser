@@ -42,13 +42,13 @@ test('find-in-page controls and accessible landmarks exist', () => {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }
   for (const id of [
-    'app-rail', 'btn-whatsapp', 'btn-invicta-ai', 'btn-download-popout', 'download-popout',
+    'app-rail', 'btn-whatsapp', 'btn-chatgpt', 'btn-browser-tools', 'btn-download-popout', 'download-popout',
     'download-popout-list', 'btn-close-download-popout', 'btn-open-all-downloads',
     'password-save-popout', 'password-save-domain', 'password-save-username',
     'btn-close-password-save', 'btn-dismiss-password-save', 'btn-confirm-password-save',
     'whatsapp-panel', 'whatsapp-panel-view-host', 'whatsapp-panel-status',
     'whatsapp-unread-badge', 'btn-whatsapp-open-tab', 'btn-whatsapp-reload',
-    'btn-close-whatsapp', 'setting-live-writing',
+    'btn-close-whatsapp', 'drawer-panel-activity', 'activity-report',
   ]) {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }
@@ -56,10 +56,7 @@ test('find-in-page controls and accessible landmarks exist', () => {
   assert.match(html, /Available for autofill in every normal workspace/);
   assert.match(html, /Your sign-in stays available across every workspace/);
   assert.match(html, /aria-controls=["']whatsapp-panel["']/);
-  assert.match(html, /id=["']btn-invicta-ai["'][^>]+aria-controls=["']workspace-drawer["']/);
-  assert.ok(!idSet.has('btn-ai-drawer'), 'The duplicate toolbar AI button should stay removed');
-  assert.match(html, /Show spelling and grammar suggestions while typing/);
-  assert.match(html, /Password, login, payment, search, and private-window fields are excluded/);
+  assert.match(html, /id=["']btn-browser-tools["'][^>]+aria-controls=["']workspace-drawer["']/);
   assert.match(html, /Ctrl\+Shift\+G/);
 });
 
@@ -99,7 +96,7 @@ test('HTTP Basic Auth prompts belong to their tab and leave browser controls usa
   assert.match(html, /id=["']http-auth-modal-backdrop["'][^>]*aria-modal=["']false["']/);
   assert.match(html, /<main class=["']browser-stage["'] id=["']browser-stage["'][^>]*>[\s\S]*id=["']http-auth-modal-backdrop["'][\s\S]*<\/main>/);
   assert.match(css, /\.http-auth-backdrop\s*{[^}]*\bposition:\s*absolute;[^}]*\binset:\s*0;[^}]*\bz-index:\s*50;[^}]*\boverflow:\s*hidden;/s);
-  assert.doesNotMatch(css, /body\.(?:whatsapp-panel-open|ai-panel-open|fullscreen) \.http-auth-backdrop/);
+  assert.doesNotMatch(css, /body\.(?:whatsapp-panel-open|tools-panel-open|fullscreen) \.http-auth-backdrop/);
   assert.doesNotMatch(renderer, /\[els\.httpAuthBackdrop, els\.httpAuthModal\]/,
     'Tab auth prompts must stay outside the global modal focus trap');
   assert.doesNotMatch(renderer, /(?:open|close)ModalSurface\(els\.httpAuthBackdrop/);
@@ -112,10 +109,12 @@ test('HTTP Basic Auth prompts belong to their tab and leave browser controls usa
   assert.match(main, /sendToShell\('http-auth-closed',\s*\{[^}]*requestId[^}]*tabId:\s*entry\.tabId/);
 });
 
-test('InvictaTill AI is the only user-selectable AI agent', () => {
-  assert.equal((html.match(/<option\s+value=["']invicta["']/g) || []).length, 1);
-  assert.doesNotMatch(html, /<option\s+value=["'](?:openai|local)["']/i);
-  assert.match(html, /InvictaTill AI is the browser’s only AI agent/);
+test('ChatGPT launch controls replace the old chat and provider settings', () => {
+  for (const id of ['btn-chatgpt', 'quick-link-chatgpt', 'menu-chatgpt', 'btn-settings-chatgpt']) {
+    assert.ok(idSet.has(id), `Missing #${id}`);
+  }
+  assert.match(renderer, /title: 'Open ChatGPT'[^\n]*run: openChatGpt/);
+  assert.doesNotMatch(html, /InvictaTill AI|setting-ai-|setting-live-writing|drawer-panel-chat/);
 });
 
 test('renderer avoids executable HTML and dynamic code sinks', () => {

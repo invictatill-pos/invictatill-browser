@@ -25,7 +25,7 @@ const els = {
   splitButton: $('btn-split-screen'),
   appRail: $('app-rail'),
   whatsappButton: $('btn-whatsapp'),
-  aiRailButton: $('btn-invicta-ai'),
+  toolsRailButton: $('btn-browser-tools'),
   whatsappResizeHandle: $('whatsapp-resize-handle'),
   whatsappPanel: $('whatsapp-panel'),
   whatsappPanelHost: $('whatsapp-panel-view-host'),
@@ -88,15 +88,6 @@ const els = {
   passwordSaveDomain: $('password-save-domain'),
   passwordSaveUsername: $('password-save-username'),
   passwordSaveConfirm: $('btn-confirm-password-save'),
-  aiMessages: $('ai-chat-messages'),
-  aiChatScroll: $('ai-chat-scroll'),
-  aiInput: $('ai-chat-input'),
-  aiSend: $('btn-send-ai'),
-  aiStop: $('btn-stop-ai'),
-  aiStatus: $('ai-composer-status'),
-  aiContext: $('ai-context-toggle'),
-  aiContextNote: $('ai-context-note'),
-  aiProviderBadge: $('ai-provider-badge'),
   updateBanner: $('update-banner'),
   updateTitle: $('update-banner-title'),
   updateSub: $('update-banner-sub'),
@@ -197,9 +188,8 @@ const els = {
   memGcStatus: $('mem-gc-status'),
   memStatTotal: $('mem-stat-total'),
   memStatFree: $('mem-stat-free'),
-  memStatSleeping: $('mem-stat-sleeping'),
   settingCompactNav: $('setting-compact-nav'),
-  settingTabSleep: $('setting-tab-sleep'),
+  settingBackgroundThrottling: $('setting-background-throttling'),
   importModalBackdrop: $('import-modal-backdrop'),
   importModal: $('import-modal'),
   btnCloseImportModal: $('btn-close-import-modal'),
@@ -269,17 +259,8 @@ const state = {
     searchEngine: 'google',
     homepage: '',
     restoreSession: true,
-    activityTracking: false,
-    liveWritingSuggestions: true
+    activityTracking: false
   },
-  aiConfig: {
-    provider: 'invicta',
-    endpoint: '',
-    connectionMode: 'offline',
-  },
-  aiBusy: false,
-  aiRequestId: 0,
-  activeAiRequestId: null,
   updateReady: false,
   updateStatus: 'idle',
   currentVersion: '',
@@ -311,6 +292,7 @@ function setHidden(node, hidden) {
 function visibleModalSurface() {
   const surfaces = [
     [els.screenPickerBackdrop, els.screenPickerModal],
+    [els.importModalBackdrop, els.importModal],
     [els.siteInfoModalBackdrop, els.siteInfoModal],
     [els.addWorkspaceModalBackdrop, els.addWorkspaceModal],
     [els.passwordsModalBackdrop, els.passwordsModal],
@@ -323,8 +305,11 @@ function visibleModalSurface() {
   return null;
 }
 
+const modalOpeners = new WeakMap();
+
 function openModalSurface(backdrop, dialog) {
   if (!backdrop || !dialog) return;
+  if (backdrop.classList.contains('hidden')) modalOpeners.set(backdrop, document.activeElement);
   if (!state.modalOpen) state.previousModalFocus = document.activeElement;
   setHidden(backdrop, false);
   state.modalOpen = true;
@@ -334,10 +319,16 @@ function openModalSurface(backdrop, dialog) {
 
 function closeModalSurface(backdrop) {
   if (!backdrop) return;
+  const opener = modalOpeners.get(backdrop);
+  modalOpeners.delete(backdrop);
   setHidden(backdrop, true);
-  state.modalOpen = Boolean(visibleModalSurface());
+  const surface = visibleModalSurface();
+  state.modalOpen = Boolean(surface);
   scheduleLayout();
-  if (!state.modalOpen && state.previousModalFocus && typeof state.previousModalFocus.focus === 'function') {
+  if (surface && !surface[1].contains(document.activeElement)) {
+    const dialog = surface[1];
+    (opener && dialog.contains(opener) ? opener : dialog).focus();
+  } else if (!state.modalOpen && state.previousModalFocus && typeof state.previousModalFocus.focus === 'function') {
     state.previousModalFocus.focus();
   }
   if (!state.modalOpen) state.previousModalFocus = null;
@@ -538,6 +529,10 @@ function updateViewLayout() {
   if (state.passwordSaveRequest && window.innerWidth > 720 && els.passwordSavePopout) {
     right = Math.max(right, Math.ceil(els.passwordSavePopout.getBoundingClientRect().width + 12));
   }
+  if (state.zoomPopupOpen && els.zoomPopup && els.zoomPopup.offsetWidth) {
+    const popupLeft = els.zoomPopup.getBoundingClientRect().right - els.zoomPopup.offsetWidth;
+    right = Math.max(right, Math.ceil(window.innerWidth - popupLeft + 8));
+  }
   let bottom = 0;
   if (state.updateBannerVisible && els.updateBanner) {
     bottom = Math.ceil(els.updateBanner.getBoundingClientRect().height + 30);
@@ -546,7 +541,8 @@ function updateViewLayout() {
     top: Math.max(0, Math.ceil(chromeRect.bottom)),
     left: Math.max(0, left),
     right: Math.max(0, right),
-    bottom: Math.max(0, bottom)
+    bottom: Math.max(0, bottom),
+    compact: document.body.classList.contains('compact-nav')
   };
   if (els.httpAuthBackdrop && els.browserStage) {
     const stageRect = els.browserStage.getBoundingClientRect();
@@ -558,7 +554,7 @@ function updateViewLayout() {
     els.httpAuthBackdrop.style.setProperty('--http-auth-width', promptWidth + 'px');
     els.httpAuthBackdrop.style.setProperty('--http-auth-height', Math.max(1, window.innerHeight - layout.top - layout.bottom) + 'px');
   }
-  const layoutKey = layout.top + ':' + layout.left + ':' + layout.right + ':' + layout.bottom;
+  const layoutKey = layout.top + ':' + layout.left + ':' + layout.right + ':' + layout.bottom + ':' + layout.compact;
   if (layoutKey !== state.lastLayoutKey) {
     state.lastLayoutKey = layoutKey;
     invokeOptional('setViewLayout', layout).catch(function () {});
@@ -604,11 +600,7 @@ function scheduleLayout() {
   if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
   resizeFrame = window.requestAnimationFrame(function () {
     resizeFrame = 0;
-    applyTheme();
-  applyCompactNav(localStorage.getItem('invicta-compact-nav') === 'true');
-  updateMemoryStats();
-  setInterval(updateMemoryStats, 15000);
-  updateViewLayout();
+    updateViewLayout();
   });
 }
 
@@ -682,6 +674,7 @@ function normalizeTab(raw) {
     muted: Boolean(tab.muted || tab.isMuted),
     crashed: Boolean(tab.crashed || tab.status === 'crashed'),
     pinned: Boolean(tab.pinned),
+    readingMode: Boolean(tab.readingMode),
     canGoBack: Boolean(tab.canGoBack),
     canGoForward: Boolean(tab.canGoForward),
     zoom: Number.isFinite(Number(tab.zoom)) ? Number(tab.zoom) : undefined,
@@ -784,7 +777,12 @@ function focusAdjacentTab(currentId, direction) {
 
 function renderTabs() {
   if (!els.tabsContainer) return;
+  const focusedControl = document.activeElement;
+  const focused = focusedControl?.closest('.tab-item');
+  const focusId = focused && focused.dataset.tabId;
   clearNode(els.tabsContainer);
+  let selectedItem;
+  let focusTarget;
   state.tabs.forEach(function (tab) {
     const selected = sameId(tab.id, state.activeTabId);
     const item = createElement('div', 'tab-item');
@@ -792,7 +790,6 @@ function renderTabs() {
     item.setAttribute('role', 'presentation');
     item.classList.toggle('active', selected);
     item.classList.toggle('pinned', tab.pinned);
-    item.classList.toggle('sleeping', Boolean(tab.sleeping));
     if (tab.loading) item.classList.add('loading');
     if (tab.crashed) item.classList.add('crashed');
 
@@ -825,11 +822,6 @@ function renderTabs() {
 
     const displayTitle = formatTabTitle(tab);
     const title = createElement('span', 'tab-title', displayTitle);
-    if (tab.sleeping) {
-      const sleepIcon = createElement('span', 'tab-sleep-icon', ' 💤');
-      sleepIcon.title = 'Tab is sleeping to save memory. Click to wake.';
-      title.appendChild(sleepIcon);
-    }
     selectButton.setAttribute('title', displayTitle);
     const audioButton = createElement('button', 'tab-state-button', tab.muted ? '🔇' : '🔊');
     audioButton.type = 'button';
@@ -866,6 +858,11 @@ function renderTabs() {
       selectButton.append(faviconWrap, title);
     }
     item.append(selectButton, audioButton, closeButton);
+    if (sameId(tab.id, focusId)) {
+      if (focusedControl.matches('.tab-close-button')) focusTarget = closeButton;
+      else if (focusedControl.matches('.tab-state-button') && (tab.audible || tab.muted)) focusTarget = audioButton;
+      else focusTarget = selectButton;
+    }
 
     item.draggable = true;
     item.addEventListener('dragstart', function (event) {
@@ -934,12 +931,16 @@ function renderTabs() {
       }
     });
     els.tabsContainer.appendChild(item);
-    if (selected) {
-      window.requestAnimationFrame(function () {
-        item.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      });
-    }
+    if (selected) selectedItem = item;
   });
+  if (focusId) {
+    const target = focusTarget || selectedItem?.querySelector('[role="tab"]');
+    if (target) target.focus();
+  } else if (selectedItem) {
+    window.requestAnimationFrame(function () {
+      selectedItem.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  }
   const reopen = $('btn-reopen-tab');
   if (reopen) reopen.disabled = state.closedTabCount <= 0;
   const menuReopen = $('menu-reopen-tab');
@@ -996,6 +997,13 @@ function renderBrowserControls() {
   els.reloadButton.disabled = !tab;
   els.reloadButton.setAttribute('aria-label', tab && tab.loading ? 'Stop loading' : 'Reload page');
   els.reloadButton.title = tab && tab.loading ? 'Stop loading (Esc)' : 'Reload (Ctrl+R)';
+  if (els.btnReadingMode) {
+    const enabled = Boolean(tab && tab.readingMode);
+    els.btnReadingMode.dataset.active = String(enabled);
+    els.btnReadingMode.classList.toggle('active', enabled);
+    els.btnReadingMode.setAttribute('aria-pressed', String(enabled));
+    els.btnReadingMode.disabled = !hasPage || tab.loading || tab.crashed || els.btnReadingMode.hasAttribute('aria-busy');
+  }
   const muted = Boolean(tab && tab.muted);
   els.muteButton.disabled = !hasPage;
   els.muteButton.setAttribute('aria-pressed', muted ? 'true' : 'false');
@@ -1733,10 +1741,12 @@ function getNextZoomOut(current) {
 // ── Zoom Popup ─────────────────────────────────
 function openZoomPopup() {
   if (!els.zoomPopup) return;
+  closeMenu(false);
   state.zoomPopupOpen = true;
   els.zoomPopup.classList.remove('hidden');
   if (els.btnZoomReset) els.btnZoomReset.setAttribute('aria-expanded', 'true');
   syncZoomPopup();
+  scheduleLayout();
 }
 
 function closeZoomPopup() {
@@ -1744,6 +1754,7 @@ function closeZoomPopup() {
   state.zoomPopupOpen = false;
   els.zoomPopup.classList.add('hidden');
   if (els.btnZoomReset) els.btnZoomReset.setAttribute('aria-expanded', 'false');
+  scheduleLayout();
 }
 
 function toggleZoomPopup() {
@@ -1879,21 +1890,18 @@ function searchUrl(query) {
 
 function normalizeNavigationInput(rawValue) {
   const value = String(rawValue || '').trim();
-  if (!value) return 'about:blank';
   if (isNewTabUrl(value)) return 'about:blank';
-  const scheme = value.match(/^([a-z][a-z0-9+.-]*):/i);
-  const allowed = ['http', 'https'];
-  if (scheme && allowed.includes(scheme[1].toLowerCase())) {
+  if (/^(?:[a-z]:[\\/]|\\\\|file:)/i.test(value)) return value;
+  if (/^https?:/i.test(value)) {
     try { return new URL(value).href; } catch (error) { return searchUrl(value); }
   }
   const hasSpace = /\s/.test(value);
-  const looksLikeIp = /^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#]|$)/.test(value);
-  const looksLikeHost = /^(?:localhost(?::\d+)?|(?:[a-z0-9-]+\.)+[a-z]{2,})(?:[/:?#]|$)/i.test(value);
-  if (!hasSpace && (looksLikeIp || looksLikeHost)) {
-    const prefix = /^localhost(?::|\/|$)/i.test(value) || looksLikeIp ? 'http://' : 'https://';
+  const localAddress = /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3}|\[[\da-f:.]+\])(?::\d+)?(?:[/?#]|$)/i.test(value);
+  const looksLikeHost = /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/:?#]|$)/i.test(value);
+  if (!hasSpace && (localAddress || looksLikeHost)) {
+    const prefix = localAddress ? 'http://' : 'https://';
     try { return new URL(prefix + value).href; } catch (error) { return searchUrl(value); }
   }
-  if (scheme) return searchUrl(value);
   return searchUrl(value);
 }
 
@@ -1926,6 +1934,18 @@ async function newTab(url) {
     }
   } catch (error) {
     notify(errorMessage(error), 'error');
+  }
+}
+
+async function openChatGpt() {
+  if (state.drawerOpen) closeDrawer(false);
+  if (state.whatsappPanelOpen) setWhatsappPanelOpen(false);
+  closeMenu(false);
+  try {
+    await invoke('openChatGptTab');
+    await refreshBrowserState();
+  } catch (error) {
+    notify('Could not open ChatGPT: ' + errorMessage(error), 'error');
   }
 }
 
@@ -3035,24 +3055,21 @@ function setDrawerPanel(panelName, focusTab) {
   if (panelName === 'history') loadHistory();
   if (panelName === 'downloads') loadDownloads();
   if (panelName === 'focus') loadFocusState();
-  if (panelName === 'settings') {
-    populateBrowserSettings();
-    loadAiConfig();
-  }
+  if (panelName === 'settings') populateBrowserSettings();
 }
 
 function openDrawer(panelName) {
   if (state.whatsappPanelOpen) setWhatsappPanelOpen(false);
   state.drawerOpen = true;
-  document.body.classList.add('ai-panel-open');
+  document.body.classList.add('tools-panel-open');
   setHidden(els.drawer, false);
   els.drawer.setAttribute('aria-hidden', 'false');
-  if (els.aiRailButton) {
-    els.aiRailButton.classList.add('active');
-    els.aiRailButton.setAttribute('aria-expanded', 'true');
-    els.aiRailButton.title = 'Close InvictaTill AI';
+  if (els.toolsRailButton) {
+    els.toolsRailButton.classList.add('active');
+    els.toolsRailButton.setAttribute('aria-expanded', 'true');
+    els.toolsRailButton.title = 'Close browser tools';
   }
-  const targetPanel = panelName || 'chat';
+  const targetPanel = panelName || 'tasks';
   setDrawerPanel(targetPanel, false);
   state.lastLayoutKey = '';
   scheduleLayout();
@@ -3060,29 +3077,28 @@ function openDrawer(panelName) {
     const drawerTab = document.querySelector('.drawer-tab[data-panel="' + targetPanel + '"]');
     const panel = document.querySelector('.drawer-panel[data-panel="' + targetPanel + '"]');
     if (panel) panel.scrollTop = 0;
-    if (targetPanel === 'chat' && els.aiChatScroll) els.aiChatScroll.scrollTop = 0;
     if (drawerTab) drawerTab.focus();
   }, 0);
 }
 
 function closeDrawer(restoreFocus) {
   state.drawerOpen = false;
-  document.body.classList.remove('ai-panel-open');
+  document.body.classList.remove('tools-panel-open');
   setHidden(els.drawer, true);
   els.drawer.setAttribute('aria-hidden', 'true');
-  if (els.aiRailButton) {
-    els.aiRailButton.classList.remove('active');
-    els.aiRailButton.setAttribute('aria-expanded', 'false');
-    els.aiRailButton.title = 'Open InvictaTill AI';
+  if (els.toolsRailButton) {
+    els.toolsRailButton.classList.remove('active');
+    els.toolsRailButton.setAttribute('aria-expanded', 'false');
+    els.toolsRailButton.title = 'Open browser tools';
   }
   state.lastLayoutKey = '';
   scheduleLayout();
-  if (restoreFocus && els.aiRailButton) els.aiRailButton.focus();
+  if (restoreFocus && els.toolsRailButton) els.toolsRailButton.focus();
 }
 
 function toggleDrawer() {
   if (state.drawerOpen) closeDrawer(true);
-  else openDrawer('chat');
+  else openDrawer();
 }
 
 function openMenu() {
@@ -3117,6 +3133,7 @@ function browserCommandItems() {
   const tab = activeTab();
   return [
     { kind: 'command', id: 'new-tab', title: 'New tab', meta: 'Browser', shortcut: 'Ctrl+T', keywords: 'create open page', run: newTab },
+    { kind: 'command', id: 'chatgpt', title: 'Open ChatGPT', meta: 'Pinned app', shortcut: 'Ctrl+Shift+G', keywords: 'openai ai chat assistant sign in', run: openChatGpt },
     { kind: 'command', id: 'reopen-tab', title: 'Reopen closed tab', meta: 'Browser', shortcut: 'Ctrl+Shift+T', keywords: 'restore recent closed', run: reopenClosedTab },
     { kind: 'command', id: 'private', title: 'New private window', meta: 'Privacy', keywords: 'incognito private session', run: openPrivateWindow },
     { kind: 'command', id: 'focus', title: 'Open focus sessions', meta: 'Work from home', keywords: 'timer pomodoro deep work break', run: function () { openDrawer('focus'); } },
@@ -3241,260 +3258,6 @@ function handleCommandPaletteKeydown(event) {
   }
 }
 
-function createMessage(content, sender, options) {
-  setHidden($('ai-welcome-card'), true);
-  if (sender === 'user') $('ai-tools-disclosure').open = false;
-  const message = createElement('div', 'chat-message ' + sender);
-  const avatar = createElement('span', 'message-avatar', sender === 'user' ? 'You' : '✦');
-  avatar.setAttribute('aria-hidden', 'true');
-  const bubble = createElement('div', 'message-bubble');
-  const copy = createElement('p', '', content || '');
-  bubble.appendChild(copy);
-  if (options && (options.copy || options.retry)) {
-    const actions = createElement('div', 'message-actions');
-    if (options.copy) {
-      const copyButton = createElement('button', '', 'Copy');
-      copyButton.type = 'button';
-      copyButton.addEventListener('click', async function () {
-        try {
-          await navigator.clipboard.writeText(String(content || ''));
-          notify('Response copied', 'success');
-        } catch (error) {
-          notify('Could not copy response', 'error');
-        }
-      });
-      actions.appendChild(copyButton);
-    }
-    if (options.retry) {
-      const retryButton = createElement('button', '', 'Retry');
-      retryButton.type = 'button';
-      retryButton.addEventListener('click', function () {
-        sendAiMessage(options.retry.prompt, options.retry.includePageContext, false);
-      });
-      actions.appendChild(retryButton);
-    }
-    bubble.appendChild(actions);
-  }
-  message.append(avatar, bubble);
-  els.aiMessages.appendChild(message);
-  if (els.aiChatScroll) els.aiChatScroll.scrollTop = els.aiChatScroll.scrollHeight;
-  else els.aiMessages.scrollTop = els.aiMessages.scrollHeight;
-  return message;
-}
-
-function appendChatMessage(sender, content) {
-  createMessage(String(content || ''), sender === 'user' ? 'user' : 'assistant');
-}
-
-function setAiBusy(busy) {
-  state.aiBusy = busy;
-  els.aiSend.disabled = busy;
-  els.aiInput.disabled = busy;
-  setHidden(els.aiStop, !busy);
-  els.aiStatus.textContent = busy
-    ? 'InvictaTill AI is thinking…'
-    : 'Enter to send · Shift+Enter for a new line';
-}
-
-function timeoutPromise(milliseconds) {
-  return new Promise(function (_, reject) {
-    window.setTimeout(function () {
-      reject(new Error('The AI request timed out. Check the provider and try again.'));
-    }, milliseconds);
-  });
-}
-
-async function maybeSaveExtractedTask(extracted) {
-  if (!extracted) return;
-  const task = typeof extracted === 'string' ? { text: extracted } : extracted;
-  const text = taskText(task);
-  if (!text) return;
-  if (!window.confirm('Add this AI-suggested task?\n\n' + text)) return;
-  const tab = activeTab();
-  await addTask(text, { url: tab ? tab.url : '', title: tab ? tab.title : '' });
-}
-
-async function sendAiMessage(promptValue, includePageContext, echoUser) {
-  if (state.aiBusy) return;
-  const prompt = String(promptValue !== undefined ? promptValue : els.aiInput.value).trim();
-  if (!prompt) return;
-  const includeContext = includePageContext !== undefined ? Boolean(includePageContext) : Boolean(els.aiContext.checked);
-  const shouldEcho = echoUser !== false;
-  if (shouldEcho) createMessage(prompt, 'user');
-  els.aiInput.value = '';
-  els.aiContext.checked = false;
-  updateAiContextNote();
-  const requestId = state.aiRequestId + 1;
-  const ipcRequestId = 'renderer-ai-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-  state.aiRequestId = requestId;
-  state.activeAiRequestId = ipcRequestId;
-  setAiBusy(true);
-  const thinking = createMessage('Thinking…', 'assistant');
-  try {
-    const request = invoke('askInvictaAI', prompt, {
-      includePageContext: includeContext,
-      requestId: ipcRequestId,
-      timeoutMs: 55000
-    });
-    const result = await Promise.race([request, timeoutPromise(60000)]);
-    if (requestId !== state.aiRequestId) return;
-    thinking.remove();
-    if (result && result.success === false) throw new Error(result.error || (result.cancelled ? 'Request cancelled' : 'AI request failed'));
-    const response = typeof result === 'string' ? result : result && (result.response || result.text || result.message);
-    if (!response) throw new Error('InvictaTill AI returned an empty response.');
-    createMessage(String(response), 'assistant', {
-      copy: true,
-      retry: { prompt: prompt, includePageContext: includeContext }
-    });
-    if (result && result.provider) {
-      state.aiConfig.provider = result.provider;
-      state.aiConfig.connectionMode = String(result.engine || '').replace(/^invicta-/, '') ||
-        state.aiConfig.connectionMode;
-      updateAiProviderBadge();
-    }
-    await maybeSaveExtractedTask(result && result.taskExtracted);
-  } catch (error) {
-    if (requestId !== state.aiRequestId) return;
-    thinking.remove();
-    createMessage('I could not complete that request. ' + errorMessage(error), 'assistant', {
-      retry: { prompt: prompt, includePageContext: includeContext }
-    });
-  } finally {
-    if (requestId === state.aiRequestId) {
-      state.activeAiRequestId = null;
-      setAiBusy(false);
-    }
-  }
-}
-
-function stopAiRequest() {
-  if (!state.aiBusy) return;
-  const activeRequestId = state.activeAiRequestId;
-  state.aiRequestId += 1;
-  state.activeAiRequestId = null;
-  setAiBusy(false);
-  if (activeRequestId) invokeOptional('cancelAiRequest', activeRequestId).catch(function () {});
-  createMessage('Response stopped.', 'assistant');
-}
-
-function updateAiContextNote() {
-  els.aiContextNote.textContent = els.aiContext.checked
-    ? 'Your next message can include text from the current page.'
-    : 'Only what you type is shared. Page access is off.';
-}
-
-function updateAiProviderBadge() {
-  const mode = String(state.aiConfig.connectionMode || '').toLowerCase();
-  const labels = {
-    local: 'InvictaTill AI · Local',
-    cloud: 'InvictaTill AI · Cloud',
-    remote: 'InvictaTill AI · Connected',
-    'built-in': 'InvictaTill AI · Built-in',
-    starting: 'InvictaTill AI · Starting',
-  };
-  els.aiProviderBadge.textContent = labels[mode] || 'InvictaTill AI';
-  els.aiProviderBadge.classList.remove('cloud', 'local');
-  els.aiProviderBadge.classList.add('invicta');
-}
-
-function handleAiServiceStatus(payload) {
-  if (!payload || typeof payload !== 'object') return;
-  const mode = String(payload.status || '').toLowerCase();
-  if (mode) state.aiConfig.connectionMode = mode;
-  updateAiProviderBadge();
-  const status = $('ai-settings-status');
-  if (status && payload.message) status.textContent = String(payload.message);
-}
-
-async function loadAiConfig() {
-  try {
-    const config = await invokeOptional('getAiConfig');
-    if (config && typeof config === 'object') {
-      state.aiConfig = {
-        provider: 'invicta',
-        endpoint: String(config.endpoint || ''),
-        connectionMode: String(config.connectionMode || 'offline'),
-      };
-    }
-  } catch (error) {}
-  $('setting-ai-provider').value = state.aiConfig.provider;
-  $('setting-ai-endpoint').value = state.aiConfig.endpoint;
-  $('setting-ai-key').value = '';
-  $('setting-ai-clear-key').checked = false;
-  syncAiConfigFormAvailability();
-  updateAiProviderBadge();
-}
-
-function syncAiConfigFormAvailability(applyProviderDefault) {
-  const endpoint = $('setting-ai-endpoint');
-  if (applyProviderDefault && !endpoint.value) {
-    endpoint.value = 'http://127.0.0.1:7860/api/v1';
-  }
-  endpoint.placeholder = 'http://127.0.0.1:7860/api/v1 or your secure InvictaTill AI URL';
-  endpoint.disabled = false;
-  $('setting-ai-key').disabled = false;
-}
-
-function aiConfigFromForm() {
-  const config = {
-    provider: 'invicta',
-    endpoint: $('setting-ai-endpoint').value.trim()
-  };
-  const key = $('setting-ai-key').value.trim();
-  if (key) config.apiKey = key;
-  if ($('setting-ai-clear-key').checked) config.clearApiKey = true;
-  return config;
-}
-
-async function saveAiSettings(event) {
-  event.preventDefault();
-  const status = $('ai-settings-status');
-  const config = aiConfigFromForm();
-  status.textContent = 'Saving…';
-  try {
-    const result = await invoke('saveAiConfig', config);
-    if (result && result.success === false) throw new Error(result.error || 'Could not save AI settings');
-    state.aiConfig = {
-      provider: 'invicta',
-      endpoint: result && result.endpoint
-        ? String(result.endpoint)
-        : (config.endpoint || state.aiConfig.endpoint || ''),
-      connectionMode: result && result.connectionMode
-        ? String(result.connectionMode)
-        : state.aiConfig.connectionMode,
-    };
-    $('setting-ai-key').value = '';
-    $('setting-ai-clear-key').checked = false;
-    updateAiProviderBadge();
-    status.textContent = 'AI settings saved.';
-  } catch (error) {
-    status.textContent = 'Save failed: ' + errorMessage(error);
-  }
-}
-
-async function testAiSettings() {
-  const status = $('ai-settings-status');
-  const button = $('btn-test-ai-settings');
-  button.disabled = true;
-  status.textContent = 'Testing connection…';
-  try {
-    const result = await Promise.race([
-      invoke('testAiConfig', aiConfigFromForm()),
-      timeoutPromise(20000)
-    ]);
-    if (result && result.success === false) throw new Error(result.error || 'Connection failed');
-    if (result && (result.mode || result.engine)) {
-      state.aiConfig.connectionMode = String(result.mode || result.engine).replace(/^invicta-/, '');
-      updateAiProviderBadge();
-    }
-    status.textContent = result && result.message ? String(result.message) : 'Connection successful.';
-  } catch (error) {
-    status.textContent = 'Test failed: ' + errorMessage(error);
-  } finally {
-    button.disabled = false;
-  }
-}
-
 async function loadSettings() {
   try {
     const settings = await invokeFirst(['getSettings']);
@@ -3503,8 +3266,7 @@ async function loadSettings() {
         searchEngine: settings.searchEngine || state.settings.searchEngine,
         homepage: String(settings.homepage || ''),
         restoreSession: settings.restoreSession !== false,
-        activityTracking: settings.activityTracking === true,
-        liveWritingSuggestions: settings.liveWritingSuggestions !== false
+        activityTracking: settings.activityTracking === true
       });
     }
   } catch (error) {}
@@ -3517,7 +3279,6 @@ function populateBrowserSettings() {
   $('setting-homepage').value = state.settings.homepage;
   $('setting-restore-session').checked = Boolean(state.settings.restoreSession);
   $('setting-activity-tracking').checked = Boolean(state.settings.activityTracking);
-  $('setting-live-writing').checked = state.settings.liveWritingSuggestions !== false;
 }
 
 async function saveBrowserSettings(event) {
@@ -3526,8 +3287,7 @@ async function saveBrowserSettings(event) {
     searchEngine: $('setting-search-engine').value,
     homepage: $('setting-homepage').value.trim(),
     restoreSession: $('setting-restore-session').checked,
-    activityTracking: $('setting-activity-tracking').checked,
-    liveWritingSuggestions: $('setting-live-writing').checked
+    activityTracking: $('setting-activity-tracking').checked
   });
   try {
     const result = await invoke('saveSettings', next);
@@ -3699,7 +3459,7 @@ function applyUpdateState(info) {
     title = 'Restarting to update';
     message = 'InvictaTill Browser is closing and applying update ' + targetVersion + '.';
   } else if (status === 'error') {
-    title = 'Update check failed';
+    title = 'Browser update failed';
     message = data.error || 'The update service returned an unexpected error.';
   }
 
@@ -3785,13 +3545,14 @@ function handleUpdateDownloaded(info) {
 function handleUpdateError(info) {
   const data = { ...(info || {}), status: 'error' };
   applyUpdateState(data);
-  if (data.interactive) {
+  if (data.interactive || state.updateBannerVisible) {
     setUpdateBannerVisible(true);
-    els.updateTitle.textContent = 'Update check failed';
+    els.updateTitle.textContent = 'Browser update failed';
     els.updateSub.textContent = data.error || 'The update service returned an unexpected error.';
     setHidden(els.updateProgress, true);
-    syncUpdateStateUI(false);
-    notify('Update check failed: ' + (data.error || 'Unknown update error'), 'error', 7000);
+  }
+  if (data.interactive) {
+    notify('Browser update failed: ' + (data.error || 'Unknown update error'), 'error', 7000);
   }
 }
 
@@ -3835,39 +3596,44 @@ async function installUpdate() {
 }
 
 async function trigger24HReport() {
-  openDrawer('chat');
-  appendChatMessage('user', 'Generate 24H WFH Productivity & Activity Report');
-  setAiBusy(true);
+  openDrawer('activity');
+  const button = $('btn-generate-activity-report');
+  if (button.disabled) return;
+  const output = $('activity-report');
+  const status = $('activity-report-status');
+  button.disabled = true;
+  status.hidden = false;
+  status.textContent = 'Generating report…';
   try {
-    let result = null;
-    if (typeof api.get24HReport === 'function') {
-      result = await api.get24HReport();
-    }
-    const reportText = result && (result.response || result.report) ? (result.response || result.report) : 'Generating report failed';
-    appendChatMessage('assistant', reportText);
-  } catch (err) {
-    appendChatMessage('assistant', 'Could not generate WFH report: ' + errorMessage(err));
+    const result = await invoke('get24HReport');
+    if (!result || !result.success || !result.report) throw new Error('Report unavailable');
+    output.textContent = result.report;
+    output.hidden = false;
+    status.textContent = 'Report ready.';
+  } catch (error) {
+    status.textContent = 'Could not generate the report. ' + errorMessage(error);
   } finally {
-    setAiBusy(false);
+    button.disabled = false;
   }
 }
 
 async function triggerEmailTaskExtraction() {
-  openDrawer('chat');
-  appendChatMessage('user', 'Extract tasks and action items from active email/page');
-  setAiBusy(true);
+  const button = $('btn-tasks-extract-email');
+  if (button.disabled) return;
+  const status = $('task-scan-status');
+  button.disabled = true;
+  status.hidden = false;
+  status.textContent = 'Scanning the current page…';
   try {
-    let result = null;
-    if (typeof api.extractEmailTasks === 'function') {
-      result = await api.extractEmailTasks();
-    }
-    const summaryText = result && (result.response || result.summary) ? (result.response || result.summary) : 'Task extraction complete';
-    appendChatMessage('assistant', summaryText);
+    const result = await invoke('extractEmailTasks');
+    if (!result || !result.success) throw new Error(result && result.error || 'Open the page you want to scan.');
+    const count = result.addedTasks.length;
+    status.textContent = count ? 'Added ' + count + (count === 1 ? ' task.' : ' tasks.') : 'No new tasks found.';
     await loadTasks();
-  } catch (err) {
-    appendChatMessage('assistant', 'Could not extract email tasks: ' + errorMessage(err));
+  } catch (error) {
+    status.textContent = 'Could not scan for tasks. ' + errorMessage(error);
   } finally {
-    setAiBusy(false);
+    button.disabled = false;
   }
 }
 
@@ -3903,7 +3669,9 @@ function trapModalFocus(event) {
   const surface = visibleModalSurface();
   const dialog = surface && surface[1];
   if (!dialog) return;
-  const focusable = Array.from(dialog.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])'));
+  const focusable = Array.from(dialog.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])')).filter(function (element) {
+    return element.tabIndex >= 0 && element.getClientRects().length > 0;
+  });
   if (!focusable.length) {
     event.preventDefault();
     dialog.focus();
@@ -3911,10 +3679,11 @@ function trapModalFocus(event) {
   }
   const first = focusable[0];
   const last = focusable[focusable.length - 1];
-  if (event.shiftKey && document.activeElement === first) {
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || !focusable.includes(active))) {
     event.preventDefault();
     last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
+  } else if (!event.shiftKey && (active === last || !focusable.includes(active))) {
     event.preventDefault();
     first.focus();
   }
@@ -3938,16 +3707,6 @@ function registerBrowserEvents() {
       }
     });
   });
-  registerEvent('tab-sleep-state', function (payload) {
-    if (!payload || payload.tabId === undefined) return;
-    const targetTab = state.tabs.find(function (t) { return sameId(t.id, payload.tabId); });
-    if (targetTab) {
-      targetTab.sleeping = Boolean(payload.sleeping);
-      renderTabs();
-    }
-    updateMemoryStats();
-  });
-
   registerEvent('tab-switched', function (payload) {
     const tab = tabFromPayload(payload);
     if (tab && tab.id !== undefined) {
@@ -3993,26 +3752,13 @@ function registerBrowserEvents() {
     takeScreenshot();
   });
   registerEvent('open-command-palette', openCommandPalette);
+  registerEvent('open-chatgpt-requested', openChatGpt);
   registerEvent('show-find-bar', openFindBar);
   registerEvent('found-in-page-result', handleFindResult);
   registerEvent('download-created', function (payload) { upsertDownload(payload, true); });
   registerEvent('download-updated', function (payload) { upsertDownload(payload, false); });
   registerEvent('password-save-request', showPasswordSaveRequest);
   registerEvent('whatsapp-panel-status', handleWhatsappPanelStatus);
-  registerEvent('ai-writing-status', function (payload) {
-    const status = payload && payload.status ? String(payload.status) : 'error';
-    const message = payload && payload.message
-      ? String(payload.message)
-      : 'InvictaTill AI writing action updated.';
-    if (status === 'working') {
-      setTitleStatus(message);
-      notify(message, 'info', 5000);
-      return;
-    }
-    setTitleStatus('');
-    notify(message, status === 'completed' ? 'success' : 'error', status === 'completed' ? 3500 : 6500);
-  });
-  registerEvent('ai-service-status', handleAiServiceStatus);
   registerEvent('fullscreen-change', function (isFullscreen) {
     state.isFullscreen = Boolean(isFullscreen);
     document.body.classList.toggle('fullscreen', state.isFullscreen);
@@ -4060,7 +3806,9 @@ function applyTheme(theme) {
   localStorage.setItem('invicta-theme', mode);
   const buttons = document.querySelectorAll('.theme-btn');
   buttons.forEach(function (btn) {
-    btn.classList.toggle('active', btn.dataset.theme === mode);
+    const selected = btn.dataset.theme === mode;
+    btn.classList.toggle('active', selected);
+    btn.setAttribute('aria-pressed', String(selected));
   });
 }
 
@@ -4068,7 +3816,7 @@ function applyCompactNav(enabled) {
   document.body.classList.toggle('compact-nav', Boolean(enabled));
   localStorage.setItem('invicta-compact-nav', enabled ? 'true' : 'false');
   if (els.settingCompactNav) els.settingCompactNav.checked = Boolean(enabled);
-  updateViewLayout();
+  scheduleLayout();
 }
 
 async function updateMemoryStats() {
@@ -4082,55 +3830,59 @@ async function updateMemoryStats() {
       setHidden(els.memoryPill, false);
       els.memoryPill.classList.toggle('warn', stats.totalMB > 800);
       els.memoryPill.classList.toggle('danger', stats.totalMB > 1500);
-      els.memoryPill.title = 'InvictaTill Browser: ' + stats.totalMB + ' MB RAM (' + stats.sleepingTabs.length + ' sleeping tabs). Click to free memory.';
+      els.memoryPill.title = 'InvictaTill Browser: ' + stats.totalMB + ' MB RAM. Click to clear page caches.';
     }
     if (els.memStatTotal) els.memStatTotal.textContent = stats.totalMB + ' MB';
     if (els.memStatFree) els.memStatFree.textContent = stats.freeSystemMB + ' MB';
-    if (els.memStatSleeping) els.memStatSleeping.textContent = String(stats.sleepingTabs.length);
+    const toggle = els.settingBackgroundThrottling;
+    if (toggle && !toggle.disabled) toggle.checked = stats.backgroundTabThrottling !== false;
   } catch (e) {}
 }
 
 async function freeMemoryAction() {
-  if (els.memGcStatus) els.memGcStatus.textContent = 'Freeing memory…';
+  if (els.memGcStatus) els.memGcStatus.textContent = 'Clearing page caches…';
   try {
-    await invokeOptional('forceGc');
-    notify('Memory cleared! Caches purged.', 'success');
-    if (els.memGcStatus) els.memGcStatus.textContent = 'Memory freed!';
+    await invoke('forceGc');
+    notify('Page caches cleared', 'success');
+    if (els.memGcStatus) els.memGcStatus.textContent = 'Page caches cleared';
     setTimeout(function () {
       if (els.memGcStatus) els.memGcStatus.textContent = '';
     }, 2500);
     await updateMemoryStats();
   } catch (err) {
-    notify('Could not free memory: ' + errorMessage(err), 'error');
+    notify('Could not clear page caches: ' + errorMessage(err), 'error');
     if (els.memGcStatus) els.memGcStatus.textContent = '';
   }
 }
 
 async function toggleReadingMode() {
   const tab = activeTab();
-  if (!tab || !tab.id) return;
+  const button = els.btnReadingMode;
+  if (!tab || !button || button.disabled) return;
+  button.setAttribute('aria-busy', 'true');
+  button.disabled = true;
   try {
-    const isReading = await invokeOptional('toggleReadingMode', tab.id);
-    if (els.btnReadingMode) {
-      els.btnReadingMode.dataset.active = isReading ? 'true' : 'false';
-      els.btnReadingMode.classList.toggle('active', Boolean(isReading));
+    const isReading = await invoke('toggleReadingMode', tab.id);
+    if (sameId(state.activeTabId, tab.id)) {
+      notify(isReading ? 'Reading mode enabled' : 'Reading mode disabled', 'info');
     }
-    notify(isReading ? 'Reading mode enabled' : 'Reading mode disabled', 'info');
   } catch (e) {
     notify('Reading mode unavailable on this page', 'error');
+  } finally {
+    button.removeAttribute('aria-busy');
+    renderBrowserControls();
   }
 }
 
 function openImportModal() {
   closeMenu(false);
-  closeDrawer(false);
-  setHidden(els.importModalBackdrop, false);
   setHidden(els.importResultMessage, true);
+  openModalSurface(els.importModalBackdrop, els.importModal);
   checkInstalledBrowsers();
 }
 
 function closeImportModal() {
-  setHidden(els.importModalBackdrop, true);
+  closeModalSurface(els.importModalBackdrop);
 }
 
 async function checkInstalledBrowsers() {
@@ -4180,7 +3932,7 @@ async function handleImportPasswordsCsv() {
     if (!res || res.canceled) return;
     if (res.success) {
       showImportResult('Successfully imported ' + res.count + ' saved passwords!' + (res.skipped ? ' (' + res.skipped + ' skipped)' : ''), false);
-      loadSavedPasswords();
+      if (!els.passwordsModalBackdrop.classList.contains('hidden')) renderPasswordsList();
       notify('Imported ' + res.count + ' passwords!', 'success');
     } else {
       showImportResult('Import failed: ' + (res.reason || 'Unknown error'), true);
@@ -4230,10 +3982,30 @@ function wireUi() {
       applyTheme(btn.dataset.theme);
     });
   });
+  const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+  systemTheme.addEventListener('change', function () {
+    if (localStorage.getItem('invicta-theme') === 'system') applyTheme('system');
+  });
 
   if (els.settingCompactNav) {
     els.settingCompactNav.addEventListener('change', function () {
       applyCompactNav(els.settingCompactNav.checked);
+    });
+  }
+  if (els.settingBackgroundThrottling) {
+    els.settingBackgroundThrottling.addEventListener('change', async function () {
+      const toggle = els.settingBackgroundThrottling;
+      const enabled = toggle.checked;
+      toggle.disabled = true;
+      try {
+        toggle.checked = await invoke('setBackgroundTabThrottling', enabled);
+      } catch (error) {
+        toggle.checked = !enabled;
+        notify('Could not save background throttling preference: ' + errorMessage(error), 'error');
+      } finally {
+        toggle.disabled = false;
+        updateMemoryStats();
+      }
     });
   }
   bindClick('btn-reopen-tab', reopenClosedTab);
@@ -4254,7 +4026,10 @@ function wireUi() {
   bindClick('btn-whatsapp', function () {
     setWhatsappPanelOpen(!state.whatsappPanelOpen);
   });
-  bindClick('btn-invicta-ai', toggleDrawer);
+  bindClick('btn-browser-tools', toggleDrawer);
+  bindClick('btn-chatgpt', openChatGpt);
+  bindClick('quick-link-chatgpt', openChatGpt);
+  bindClick('btn-settings-chatgpt', openChatGpt);
   bindClick('btn-close-whatsapp', function () { setWhatsappPanelOpen(false); });
   bindClick('btn-whatsapp-reload', async function () {
     state.whatsappPanelStatus = 'loading';
@@ -4599,7 +4374,7 @@ function wireUi() {
     ntpSearchInput.blur();
     setHidden(ntpSuggestionsContainer, true);
   });
-  document.querySelectorAll('.quick-link').forEach(function (button) {
+  document.querySelectorAll('.quick-link[data-url]').forEach(function (button) {
     button.addEventListener('click', function () { navigate(button.dataset.url); });
   });
   bindClick('clear-bookmarks-btn', clearBookmarks);
@@ -4662,38 +4437,14 @@ function wireUi() {
   bindClick('btn-clear-history', clearHistory);
   bindClick('btn-clear-downloads', clearFinishedDownloads);
 
-  els.aiContext.addEventListener('change', updateAiContextNote);
-  bindClick('btn-send-ai', function () { sendAiMessage(); });
-  bindClick('btn-stop-ai', stopAiRequest);
-  els.aiInput.addEventListener('keydown', function (event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      sendAiMessage();
-    }
-  });
-  document.querySelectorAll('[data-ai-action]').forEach(function (button) {
-    button.addEventListener('click', function () {
-      if (!els.aiContext.checked) {
-        notify('Enable “Share this page” before using a page action.', 'warning', 4500);
-        els.aiContext.focus();
-        return;
-      }
-      sendAiMessage(button.dataset.aiAction, els.aiContext.checked);
-    });
-  });
-
   $('browser-settings-form').addEventListener('submit', saveBrowserSettings);
-  $('ai-settings-form').addEventListener('submit', saveAiSettings);
-  $('setting-ai-provider').addEventListener('change', function () {
-    syncAiConfigFormAvailability(true);
-  });
-  bindClick('btn-test-ai-settings', testAiSettings);
   bindClick('btn-private-window', openPrivateWindow);
   bindClick('btn-print-page', printPage);
   bindClick('btn-save-pdf', savePagePdf);
   bindClick('btn-clear-browsing-data', clearBrowsingData);
 
   bindClick('menu-new-tab', function () { newTab(); closeMenu(); });
+  bindClick('menu-chatgpt', openChatGpt);
   bindClick('menu-command-center', function () { closeMenu(); openCommandPalette(); });
   bindClick('menu-history', function () { closeMenu(); openDrawer('history'); });
   bindClick('menu-focus', function () { closeMenu(); openDrawer('focus'); });
@@ -4729,8 +4480,7 @@ function wireUi() {
   bindClick('menu-settings', function () { closeMenu(); openDrawer('settings'); });
   bindClick('menu-release-notes', function () { closeMenu(); openUpdateModal(); });
 
-  bindClick('btn-ai-gmail-tasks', triggerEmailTaskExtraction);
-  bindClick('btn-ai-24h-report', trigger24HReport);
+  bindClick('btn-generate-activity-report', trigger24HReport);
   bindClick('btn-tasks-24h-report', trigger24HReport);
   bindClick('btn-tasks-extract-email', triggerEmailTaskExtraction);
   bindClick('btn-zoom-out', zoomOut);
@@ -4976,6 +4726,7 @@ function wireUi() {
     if (event.target === els.siteInfoModalBackdrop) closeSiteInfoModal();
     if (event.target === els.addWorkspaceModalBackdrop) closeAddWorkspaceModal();
     if (event.target === els.passwordsModalBackdrop) closePasswordsModal();
+    if (event.target === els.importModalBackdrop) closeImportModal();
     if (event.target === els.commandBackdrop) closeCommandPalette(true);
     if (event.target === els.screenPickerBackdrop) {
       cancelScreenPickerModal();
@@ -5029,6 +4780,9 @@ function handleGlobalShortcuts(event) {
     } else if (!els.screenPickerBackdrop.classList.contains('hidden')) {
       event.preventDefault();
       cancelScreenPickerModal();
+    } else if (!els.importModalBackdrop.classList.contains('hidden')) {
+      event.preventDefault();
+      closeImportModal();
     } else if (!els.siteInfoModalBackdrop.classList.contains('hidden')) {
       event.preventDefault();
       closeSiteInfoModal();
@@ -5041,6 +4795,10 @@ function handleGlobalShortcuts(event) {
     } else if (!els.updateModalBackdrop.classList.contains('hidden')) {
       event.preventDefault();
       closeUpdateModal();
+    } else if (state.zoomPopupOpen) {
+      event.preventDefault();
+      closeZoomPopup();
+      els.btnZoomReset.focus();
     } else if (state.menuOpen) {
       event.preventDefault();
       closeMenu(true);
@@ -5059,9 +4817,6 @@ function handleGlobalShortcuts(event) {
     } else if (state.findOpen) {
       event.preventDefault();
       closeFindBar();
-    } else if (state.aiBusy) {
-      event.preventDefault();
-      stopAiRequest();
     } else if (state.drawerOpen) {
       event.preventDefault();
       closeDrawer(true);
@@ -5086,6 +4841,9 @@ function handleGlobalShortcuts(event) {
   } else if (ctrl && event.shiftKey && key === 'a') {
     event.preventDefault();
     openCommandPalette();
+  } else if (ctrl && event.shiftKey && key === 'g') {
+    event.preventDefault();
+    openChatGpt();
   } else if (ctrl && key === 'l') {
     event.preventDefault();
     els.addressBar.focus();
@@ -5155,9 +4913,12 @@ async function loadVersion() {
 
 async function initialize() {
   wireUi();
+  applyTheme();
+  applyCompactNav(localStorage.getItem('invicta-compact-nav') === 'true');
+  updateMemoryStats();
+  window.setInterval(updateMemoryStats, 15000);
   registerBrowserEvents();
-  updateAiContextNote();
-  setDrawerPanel('chat', false);
+  setDrawerPanel('tasks', false);
   closeDrawer(false);
   closeMenu(false);
   setDownloadPopoutOpen(false);
@@ -5170,7 +4931,6 @@ async function initialize() {
   setHidden(els.updateBanner, true);
   await Promise.all([
     loadSettings(),
-    loadAiConfig(),
     loadBookmarks(),
     loadTasks(),
     loadHistory(),
@@ -5594,7 +5354,7 @@ async function renderExtensionToolbar() {
 
           if (api.openExtensionPopup) {
             var result = await api.openExtensionPopup(ext.id, screenX, screenY);
-            if (result && !result.success) {
+            if (result && !result.success && !result.canceled) {
               if (result.reason === 'no-popup') {
                 notify(ext.name + ' has no popup page. Check the Extension Store to configure it.', 'info');
               } else {

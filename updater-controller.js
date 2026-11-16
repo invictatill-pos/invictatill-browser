@@ -69,7 +69,7 @@ function createUpdateController(options) {
       error: message,
       percent: null,
       checkedAt: now(),
-      interactive: interactiveCheck,
+      interactive: interactiveCheck || state.status === 'installing',
     });
     return dispatch('update-error');
   }
@@ -85,6 +85,7 @@ function createUpdateController(options) {
     updater.allowDowngrade = false;
 
     updater.on('checking-for-update', function () {
+      if (state.status === 'checking') return;
       setState({
         status: 'checking',
         error: null,
@@ -159,7 +160,13 @@ function createUpdateController(options) {
     configure();
     if (!updater || disabledReason) return { success: false, ...snapshot() };
     if (state.status === 'downloaded') return { success: true, ...snapshot() };
-    if (checkPromise) return checkPromise;
+    if (checkPromise) {
+      if (interactive !== false && !interactiveCheck) {
+        interactiveCheck = true;
+        setState({ interactive: true });
+      }
+      return checkPromise;
+    }
 
     interactiveCheck = interactive !== false;
     setState({
@@ -172,7 +179,9 @@ function createUpdateController(options) {
 
     checkPromise = Promise.resolve()
       .then(function () { return updater.checkForUpdates(); })
-      .then(function () {
+      .then(async function (result) {
+        // Electron's check returns the download as a separate promise.
+        if (result && result.downloadPromise) await result.downloadPromise;
         if (state.status === 'checking') {
           setState({ status: 'current', version: currentVersion, checkedAt: now() });
           dispatch('update-not-available');
@@ -194,7 +203,7 @@ function createUpdateController(options) {
 
   function scheduleAutomaticCheck(delayMs) {
     configure();
-    if (!updater || disabledReason || timer) return false;
+    if (!updater || disabledReason || timer !== null) return false;
     timer = schedule(function () {
       timer = null;
       check(false).catch(function () {});
@@ -212,7 +221,7 @@ function createUpdateController(options) {
       setState({ status: 'installing', error: null, interactive: true });
       dispatch('update-installing');
       updater.quitAndInstall(false, true);
-      return { success: true, ...snapshot() };
+      return { success: state.status !== 'error', ...snapshot() };
     } catch (error) {
       recordError(error);
       return { success: false, ...snapshot() };

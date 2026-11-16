@@ -42,7 +42,7 @@ test('manual update check reports an already-current build', async () => {
   assert.equal(result.status, 'current');
   assert.equal(result.interactive, true);
   assert.equal(result.checkedAt, '2026-07-22T15:00:00.000Z');
-  assert.ok(sent.some((entry) => entry.channel === 'update-checking'));
+  assert.equal(sent.filter((entry) => entry.channel === 'update-checking').length, 1);
   assert.ok(sent.some((entry) => entry.channel === 'update-not-available'));
 });
 
@@ -99,6 +99,50 @@ test('missing GitHub update metadata becomes a clear visible error', async () =>
   assert.match(result.error, /latest\.yml is missing/i);
   assert.equal(sent.at(-1).channel, 'update-error');
   assert.equal(sent.at(-1).payload.interactive, true);
+});
+
+test('a failed background download is handled once and a manual check can join it', async () => {
+  const sent = [];
+  let rejectDownload;
+  const updater = new FakeUpdater(async (instance) => {
+    instance.emit('update-available', { version: '2.1.14' });
+    const downloadPromise = new Promise((resolve, reject) => { rejectDownload = reject; });
+    return { downloadPromise };
+  });
+  const controller = createUpdateController({
+    updater,
+    currentVersion: '2.1.13',
+    send: (channel, payload) => sent.push({ channel, payload }),
+  });
+  const automatic = controller.check(false);
+  await Promise.resolve();
+  assert.equal(controller.getState().status, 'downloading');
+  const manual = controller.check(true);
+  const error = new Error('connection timed out');
+  updater.emit('error', error);
+  rejectDownload(error);
+
+  const result = await automatic;
+  assert.deepEqual(result, await manual);
+  assert.equal(result.success, false);
+  assert.equal(result.interactive, true);
+  assert.equal(updater.checkCalls, 1);
+  assert.equal(sent.filter((entry) => entry.channel === 'update-error').length, 1);
+});
+
+test('install reports native errors emitted during the restart attempt', async () => {
+  const updater = new FakeUpdater(async (instance) => {
+    instance.emit('update-downloaded', { version: '2.1.14' });
+    return {};
+  });
+  updater.quitAndInstall = () => updater.emit('error', new Error('Installer could not be started'));
+  const controller = createUpdateController({ updater });
+  await controller.check(true);
+  const result = controller.install();
+  assert.equal(result.success, false);
+  assert.equal(result.status, 'error');
+  assert.equal(result.interactive, true);
+  assert.match(result.error, /installer could not be started/i);
 });
 
 test('disabled and portable builds do not contact the update service', async () => {

@@ -18,14 +18,17 @@ function fixture(t, settings = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'invictatill-extension-test-'));
   const extensionsRoot = path.join(root, 'extensions');
   const loads = [];
+  const removed = [];
   const targetSession = {
-    async loadExtension(directory, options) {
-      loads.push({ directory, options });
-      if (settings.beforeLoad) await settings.beforeLoad(directory);
-      if (settings.loadError && settings.loadError(directory)) throw new Error('Test extension load failed');
-      return { id: extensionId };
+    extensions: {
+      async loadExtension(directory, options) {
+        loads.push({ directory, options });
+        if (settings.beforeLoad) await settings.beforeLoad(directory);
+        if (settings.loadError && settings.loadError(directory)) throw new Error('Test extension load failed');
+        return { id: extensionId };
+      },
+      removeExtension(id) { removed.push(id); },
     },
-    removeExtension() {},
   };
   const electron = {
     app: { getPath: () => root },
@@ -42,7 +45,7 @@ function fixture(t, settings = {}) {
     assert.ok(path.basename(resolved).startsWith('invictatill-extension-test-'));
     fs.rmSync(resolved, { recursive: true, force: true });
   });
-  return { root, extensionsRoot, loads, manager };
+  return { root, extensionsRoot, loads, removed, targetSession, manager };
 }
 
 function unpacked(root, overrides = {}) {
@@ -209,7 +212,7 @@ test('registry paths and unsafe ids cannot load or delete folders outside the ma
   assert.deepEqual(await manager.loadAllExtensions(), []);
   assert.equal(loads.length, 0);
   assert.deepEqual(manager.getInstalledExtensions(), []);
-  manager.uninstallExtension(extensionId);
+  await manager.uninstallExtension(extensionId);
   assert.throws(() => manager.uninstallExtension('../outside'), /Invalid extension id/);
   assert.ok(fs.existsSync(path.join(outside, 'manifest.json')));
 });
@@ -284,6 +287,53 @@ test('concurrent extension installs are serialized and cannot be uninstalled dur
   await Promise.all([first, second]);
   assert.equal(manager.publicExtension(extensionId).version, '2.0.0');
   assertNoStaging(extensionsRoot);
+});
+
+test('a failed enable leaves the extension disabled and supports a successful retry', async (t) => {
+  let rejectLoad = false;
+  const { root, extensionsRoot, manager } = fixture(t, { loadError: () => rejectLoad });
+  await manager.installFromPath(unpacked(root), { extensionId });
+  await manager.toggleExtension(extensionId, false);
+  rejectLoad = true;
+  await assert.rejects(manager.toggleExtension(extensionId, true), /Test extension load failed/);
+  assert.equal(manager.publicExtension(extensionId).enabled, false);
+  const registry = JSON.parse(fs.readFileSync(path.join(extensionsRoot, 'extension-registry.json'), 'utf8'));
+  assert.equal(registry[extensionId].enabled, false);
+
+  rejectLoad = false;
+  const enabled = await manager.toggleExtension(extensionId, true);
+  assert.equal(enabled.enabled, true);
+  assert.equal(enabled.loaded, true);
+});
+
+test('popups and unloads use each workspace session’s runtime extension id', async (t) => {
+  const { root, loads, removed, targetSession, manager } = fixture(t);
+  let workspaceLoads = 0;
+  const workspaceId = 'b'.repeat(32);
+  const workspaceRemoved = [];
+  const workspace = {
+    extensions: {
+      async loadExtension() {
+        workspaceLoads += 1;
+        return { id: workspaceId };
+      },
+      removeExtension(id) { workspaceRemoved.push(id); },
+    },
+  };
+  const directory = unpacked(root, { action: { default_popup: 'popup.html' } });
+  fs.writeFileSync(path.join(directory, 'popup.html'), '<title>Popup</title>');
+  const installation = manager.installFromPath(directory, { extensionId });
+  const readiness = manager.registerSession(workspace);
+  await Promise.all([installation, readiness, manager.registerSession(targetSession)]);
+  assert.equal(workspaceLoads, 1);
+  assert.equal(loads.length, 1);
+  assert.equal(manager.getExtensionPopup(extensionId, workspace).url, `chrome-extension://${workspaceId}/popup.html`);
+  assert.equal(manager.getExtensionPopup(extensionId, targetSession).url, `chrome-extension://${extensionId}/popup.html`);
+
+  await manager.toggleExtension(extensionId, false);
+  assert.deepEqual(removed, [extensionId]);
+  assert.deepEqual(workspaceRemoved, [workspaceId]);
+  assert.equal(manager.getExtensionPopup(extensionId, workspace), null);
 });
 
 test('downloads reject unapproved redirects before contacting their target', async (t) => {

@@ -1,12 +1,12 @@
 # InvictaTill Browser
 
-InvictaTill Browser is a Windows productivity browser with an opt-in AI workspace. It combines a familiar multi-tab Chromium experience with private-by-default page assistance, task capture, browsing tools, and a release process designed around verification rather than silent production publishing.
+InvictaTill Browser is a Windows productivity browser with Chromium tabs, workspaces, direct access to ChatGPT, and tools for tasks, focus sessions, and browsing.
 
 ## Architecture and security model
 
-The application uses Electron with a trusted local browser-chrome window and sandboxed `WebContentsView` instances for web pages. Tab creation, navigation, permissions, downloads, printing, persistence, and AI requests are owned by the main process. A context-isolated preload exposes a narrow IPC API to the local renderer; remote pages do not receive Node.js or Electron access.
+The application uses Electron with a trusted local browser-chrome window and sandboxed `WebContentsView` instances for web pages. The main process owns tab creation, navigation, permissions, downloads, printing, and persistence. A context-isolated preload exposes a narrow IPC API to the local renderer. Remote pages have no Node.js or Electron access.
 
-Regular tabs share the normal persistent browser session. Private windows use an isolated, temporary session and do not contribute to session restore, browsing history, or optional activity records. Website permissions are decided per request rather than granted globally, and new-window requests are validated before they are opened.
+Regular tabs in each workspace share a persistent website session. Private windows use an isolated, temporary session and are excluded from session restore, browsing history, and optional activity records. The browser evaluates website permissions per request and validates new-window destinations.
 
 ## Browser features
 
@@ -27,26 +27,15 @@ Regular tabs share the normal persistent browser session. Private windows use an
 - Clear-browsing-data controls and visible update status.
 - Persistent focus sessions with pause/resume, completion notifications, daily focused-time statistics, recovery breaks, and one-click remote-work launchers.
 
-## InvictaTill AI
+## ChatGPT
 
-InvictaTill AI is the browser's single AI agent. It connects to the companion `self-learning-ai/invicta-space` service through `/api/v1/chat` for questions and `/api/v1/writing` for private draft rewriting. The browser securely starts the local service at `http://127.0.0.1:7860/api/v1` when the source checkout and Python environment are available, then automatically recovers through the official InvictaTill AI cloud service if local AI is unavailable. Built-in page intelligence and writing correction remain available during a complete connection outage.
+Open **ChatGPT** from the app rail, new-tab shortcuts, browser menu, command palette, or **Browser tools → Settings**. You can also press `Ctrl+Shift+G`. The shortcut opens [chatgpt.com](https://chatgpt.com/) in the current workspace and reuses an existing ChatGPT tab there. Choose **Log in** on the site and sign in with your ChatGPT account.
 
-In Gmail and other web editors, right-click inside a draft to use **Fix spelling & grammar**, **Improve writing**, **Make concise**, or **Make professional**. `Ctrl+Shift+G` runs spelling and grammar correction on the focused editor. The browser verifies that the original text has not changed before applying the result, so an AI response cannot overwrite typing entered while it was working.
+Select text on a page or in a draft and choose **Copy selection and open ChatGPT** to copy it to the clipboard. Paste it into ChatGPT when you want to share it. Chromium spellcheck is available in supported text fields.
 
-Page context is opt-in for each message. With **Share this page for this message** off, the assistant receives only the text you type. Turning it on authorizes extraction of the active page's readable text for that request; review sensitive pages before sharing them.
+## Browser tools
 
-Activity tracking is a separate opt-in setting and is off by default. When enabled, it records sanitized navigation activity for the workspace views; URL query strings and fragments are removed. It is not enabled in private windows.
-
-### Configure an AI provider
-
-1. Open **InvictaTill AI**, then select **Settings**.
-2. Enter the InvictaTill AI API base URL. The bundled local service uses `http://127.0.0.1:7860/api/v1`.
-3. Enter an API key if the configured remote service requires one. The local guest service does not require a key.
-4. Select **Test connection**, then **Save**.
-
-The InvictaTill service may use plain HTTP only on a loopback address such as `127.0.0.1` or `localhost`; all remote API endpoints must use HTTPS.
-
-Configure the service only through in-app Settings. Saved keys and continuity tokens are encrypted by the main process and are never read back into a web page.
+Use **Tasks → Scan page for tasks** to scan the active page for action items on your device. **Activity** generates a 24-hour report from browser records. Activity tracking is off by default and excluded from private windows. When enabled in Settings, it records navigation with URL query strings and fragments removed.
 
 ### Saved login security
 
@@ -96,7 +85,7 @@ Production artifacts must be code-signed and verified before a release draft is 
 
 ### Browser updates
 
-Installed Setup builds check the stable GitHub release feed after startup. Update status is also available under **InvictaTill AI > Settings > Browser updates**, where a user can retry a check and restart once the verified update has downloaded. Development, private, and portable builds show why automatic installation is unavailable; portable users update by downloading the next portable executable manually.
+Installed Setup builds check the stable GitHub release feed after startup. In **Browser tools → Settings → Browser updates**, you can check again and restart once the verified update has downloaded. Development, private, and portable builds show why automatic installation is unavailable. Portable users can update by downloading the next portable executable.
 
 A public update release is valid only when the Setup executable, matching `.blockmap`, and `latest.yml` are published together. Verify a published tag with:
 

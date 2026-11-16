@@ -6,6 +6,12 @@ function cleanText(value, maxLength) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
 }
 
+function readNumber(value) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function dayKey(timestamp) {
   const date = new Date(timestamp);
   const year = date.getFullYear();
@@ -42,13 +48,13 @@ function createFocusController(options) {
   };
 
   function clearTimer() {
-    if (timer) unschedule(timer);
+    if (timer !== null) unschedule(timer);
     timer = null;
   }
 
   function sanitizeHistory(raw) {
     if (!Array.isArray(raw)) return [];
-    return raw.filter((entry) => entry && Number.isFinite(Number(entry.completedAt)))
+    return raw.filter((entry) => entry && readNumber(entry.completedAt) !== null)
       .map((entry) => ({
         completedAt: Number(entry.completedAt),
         durationMinutes: Math.max(1, Math.min(180, Number(entry.durationMinutes) || 1)),
@@ -60,7 +66,9 @@ function createFocusController(options) {
 
   function sanitizeState(raw) {
     if (!raw || typeof raw !== 'object') return state;
-    const status = ['active', 'paused'].includes(raw.status) ? raw.status : 'idle';
+    const endsAt = readNumber(raw.endsAt);
+    const status = raw.status === 'paused' || (raw.status === 'active' && endsAt !== null)
+      ? raw.status : 'idle';
     const mode = raw.mode === 'break' ? 'break' : 'focus';
     const durationMinutes = Math.max(1, Math.min(180, Number(raw.durationMinutes) || (mode === 'break' ? 5 : 25)));
     const durationMs = durationMinutes * 60 * 1000;
@@ -68,12 +76,12 @@ function createFocusController(options) {
       status,
       mode,
       durationMinutes,
-      startedAt: Number.isFinite(Number(raw.startedAt)) ? Number(raw.startedAt) : null,
-      endsAt: status === 'active' && Number.isFinite(Number(raw.endsAt)) ? Number(raw.endsAt) : null,
-      remainingMs: Math.max(0, Math.min(durationMs, Number(raw.remainingMs) || durationMs)),
+      startedAt: status === 'idle' ? null : readNumber(raw.startedAt),
+      endsAt: status === 'active' ? endsAt : null,
+      remainingMs: status === 'idle' ? durationMs : Math.max(0, Math.min(durationMs, readNumber(raw.remainingMs) ?? durationMs)),
       intention: cleanText(raw.intention, 240),
       workspaceId: cleanText(raw.workspaceId || 'default', 100),
-      lastCompletedAt: Number.isFinite(Number(raw.lastCompletedAt)) ? Number(raw.lastCompletedAt) : null,
+      lastCompletedAt: readNumber(raw.lastCompletedAt),
     };
   }
 
@@ -88,7 +96,7 @@ function createFocusController(options) {
   }
 
   function remainingMs() {
-    if (state.status === 'active' && state.endsAt) return Math.max(0, state.endsAt - now());
+    if (state.status === 'active') return Math.max(0, state.endsAt - now());
     if (state.status === 'paused') return Math.max(0, state.remainingMs);
     return state.durationMinutes * 60 * 1000;
   }
@@ -118,9 +126,12 @@ function createFocusController(options) {
 
   function scheduleCompletion() {
     clearTimer();
-    if (state.status !== 'active' || !state.endsAt) return;
-    const delay = Math.max(0, state.endsAt - now());
-    timer = schedule(complete, delay);
+    if (state.status !== 'active') return;
+    timer = schedule(function () {
+      if (state.status !== 'active') return;
+      if (remainingMs() > 0) scheduleCompletion();
+      else complete();
+    }, remainingMs());
     if (timer && typeof timer.unref === 'function') timer.unref();
   }
 
@@ -158,7 +169,7 @@ function createFocusController(options) {
     history = sanitizeHistory(loadHistory());
     state = sanitizeState(loadState());
     if (state.status === 'active') {
-      if (!state.endsAt || state.endsAt <= now()) return complete();
+      if (remainingMs() === 0) return complete();
       scheduleCompletion();
     }
     persist();
@@ -166,14 +177,14 @@ function createFocusController(options) {
   }
 
   function start(input) {
-    configure();
     const request = input && typeof input === 'object' ? input : {};
     const mode = request.mode === 'break' ? 'break' : 'focus';
     const defaultDuration = mode === 'break' ? 5 : 25;
-    const durationMinutes = Number(request.durationMinutes || defaultDuration);
+    const durationMinutes = request.durationMinutes == null ? defaultDuration : readNumber(request.durationMinutes);
     if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 180) {
       throw new RangeError('Focus duration must be between 1 and 180 minutes');
     }
+    getState();
     const durationMs = Math.round(durationMinutes * 60 * 1000);
     const startedAt = now();
     state = {
@@ -195,7 +206,9 @@ function createFocusController(options) {
   function pause() {
     configure();
     if (state.status !== 'active') return snapshot();
-    state = { ...state, status: 'paused', remainingMs: remainingMs(), endsAt: null };
+    const remaining = remainingMs();
+    if (remaining === 0) return complete();
+    state = { ...state, status: 'paused', remainingMs: remaining, endsAt: null };
     clearTimer();
     persist();
     return emit();
@@ -204,8 +217,8 @@ function createFocusController(options) {
   function resume() {
     configure();
     if (state.status !== 'paused') return snapshot();
-    const remaining = Math.max(1000, state.remainingMs);
-    state = { ...state, status: 'active', endsAt: now() + remaining, remainingMs: remaining };
+    if (state.remainingMs === 0) return complete();
+    state = { ...state, status: 'active', endsAt: now() + state.remainingMs };
     persist();
     scheduleCompletion();
     return emit();
@@ -213,6 +226,7 @@ function createFocusController(options) {
 
   function cancel() {
     configure();
+    if (state.status === 'active' && remainingMs() === 0) return complete();
     clearTimer();
     state = {
       ...state,
@@ -227,13 +241,13 @@ function createFocusController(options) {
 
   function getState() {
     configure();
-    if (state.status === 'active' && state.endsAt <= now()) return complete();
+    if (state.status === 'active' && remainingMs() === 0) return complete();
     return snapshot();
   }
 
   function dispose() {
     clearTimer();
-    persist();
+    if (configured) persist();
   }
 
   return { cancel, complete, configure, dispose, getState, pause, resume, start };

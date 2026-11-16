@@ -158,9 +158,13 @@
       <span class="app-rail-badge hidden" id="whatsapp-unread-badge" aria-label="Unread WhatsApp messages">0</span>
       <span class="app-rail-label">WhatsApp</span>
     </button>
-    <button class="app-rail-button invicta-ai-rail-button" id="btn-invicta-ai" type="button" aria-label="Open InvictaTill AI side panel" aria-expanded="false" aria-controls="workspace-drawer" title="Open InvictaTill AI">
-      <span class="rail-ai-spark" aria-hidden="true">✦</span>
-      <span class="app-rail-label">InvictaTill AI</span>
+    <button class="app-rail-button" id="btn-chatgpt" type="button" aria-label="Open ChatGPT" title="Open ChatGPT (Ctrl+Shift+G)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.5a8.5 8.5 0 0 1-8.5 8.5H4l1.5-3.6a8.5 8.5 0 1 1 15-4.9Z"></path><path d="M8.5 11.5h7"></path></svg>
+      <span class="app-rail-label">ChatGPT</span>
+    </button>
+    <button class="app-rail-button" id="btn-browser-tools" type="button" aria-label="Browser tools" aria-expanded="false" aria-controls="workspace-drawer" title="Open browser tools">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M4 9h16m-10 0v11"></path></svg>
+      <span class="app-rail-label">Tools</span>
     </button>
   </aside>
 
@@ -223,6 +227,10 @@
             </div>
           </div>
           <div class="quick-links" id="quick-links">
+            <button class="quick-link" id="quick-link-chatgpt" type="button">
+              <span class="quick-link-icon icon-neutral" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.5a8.5 8.5 0 0 1-8.5 8.5H4l1.5-3.6a8.5 8.5 0 1 1 15-4.9Z"></path><path d="M8.5 11.5h7"></path></svg></span>
+              <span>ChatGPT</span>
+            </button>
             <button class="quick-link" type="button" data-url="https://docs.google.com">
               <span class="quick-link-icon icon-blue" aria-hidden="true">D</span>
               <span>Google Docs</span>
@@ -411,15 +419,14 @@
       <div class="drawer-brand">
         <span class="drawer-brand-mark" aria-hidden="true">✦</span>
         <div>
-          <h2 id="drawer-title">InvictaTill AI</h2>
-          <p>A little help, when you need it.</p>
+          <h2 id="drawer-title">Browser tools</h2>
         </div>
       </div>
-      <button class="icon-button" id="btn-close-drawer" type="button" aria-label="Close InvictaTill AI panel" title="Close InvictaTill AI">✕</button>
+      <button class="icon-button" id="btn-close-drawer" type="button" aria-label="Close browser tools" title="Close browser tools">✕</button>
     </div>
     <div class="drawer-tabs" role="tablist" aria-label="Workspace sections">
-      <button class="drawer-tab active" id="drawer-tab-chat" type="button" role="tab" aria-selected="true" aria-controls="drawer-panel-chat" tabindex="0" data-panel="chat">Chat</button>
-      <button class="drawer-tab" id="drawer-tab-tasks" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-tasks" tabindex="-1" data-panel="tasks">Tasks <span class="count-badge" id="task-badge-count">0</span></button>
+      <button class="drawer-tab active" id="drawer-tab-tasks" type="button" role="tab" aria-selected="true" aria-controls="drawer-panel-tasks" tabindex="0" data-panel="tasks">Tasks <span class="count-badge" id="task-badge-count">0</span></button>
+      <button class="drawer-tab" id="drawer-tab-activity" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-activity" tabindex="-1" data-panel="activity">Activity</button>
       <button class="drawer-tab" id="drawer-tab-focus" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-focus" tabindex="-1" data-panel="focus">Focus</button>
       <button class="drawer-tab" id="drawer-tab-history" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-history" tabindex="-1" data-panel="history">History</button>
       <button class="drawer-tab" id="drawer-tab-downloads" type="button" role="tab" aria-selected="false" aria-controls="drawer-panel-downloads" tabindex="-1" data-panel="downloads">Downloads <span class="count-badge hidden" id="download-badge-count">0</span></button>
@@ -427,51 +434,7 @@
     </div>
 
     <div class="drawer-body">
-      <section class="drawer-panel active" id="drawer-panel-chat" role="tabpanel" aria-labelledby="drawer-tab-chat" data-panel="chat">
-        <div class="ai-chat-scroll" id="ai-chat-scroll">
-        <div class="ai-welcome-card" id="ai-welcome-card">
-          <div class="ai-welcome-heading">
-            <span class="ai-welcome-orb" aria-hidden="true">✦</span>
-            <div>
-              <strong>What’s on your mind?</strong>
-              <p>Ask a question or work through an idea.</p>
-            </div>
-          </div>
-        </div>
-        <div class="ai-privacy-row">
-          <span class="provider-badge invicta visually-hidden" id="ai-provider-badge">InvictaTill AI</span>
-          <label class="toggle-row compact-toggle" for="ai-context-toggle">
-            <input id="ai-context-toggle" type="checkbox">
-            <span class="toggle-control" aria-hidden="true"></span>
-            <span>Use current page</span>
-          </label>
-        </div>
-        <p class="privacy-note" id="ai-context-note">Only what you type is shared. Page access is off.</p>
-        <details class="ai-tools-disclosure" id="ai-tools-disclosure">
-          <summary>Page &amp; writing tools</summary>
-          <p class="ai-capability-note" title="Writing shortcut: Ctrl+Shift+G">For writing help, right-click your draft or press <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>G</kbd>.</p>
-          <div class="quick-actions" aria-label="AI quick actions">
-          <button class="chip-button" type="button" data-ai-action="Summarize this page clearly."><span aria-hidden="true">≡</span><span><strong>Summarize page</strong><small>Get the main points</small></span></button>
-          <button class="chip-button" type="button" data-ai-action="Explain the key ideas on this page."><span aria-hidden="true">?</span><span><strong>Explain this</strong><small>Make it easier to understand</small></span></button>
-          <button class="chip-button" type="button" data-ai-action="Extract useful tasks from this page."><span aria-hidden="true">✓</span><span><strong>Find tasks</strong><small>Turn the page into actions</small></span></button>
-          <button class="chip-button" id="btn-ai-gmail-tasks" type="button"><span aria-hidden="true">@</span><span><strong>Email actions</strong><small>Find follow-ups and deadlines</small></span></button>
-          <button class="chip-button wide" id="btn-ai-24h-report" type="button"><span aria-hidden="true">↗</span><span><strong>Daily work report</strong><small>Review your last 24 hours</small></span></button>
-          </div>
-        </details>
-        <div class="ai-chat-messages" id="ai-chat-messages" role="log" aria-live="polite" aria-relevant="additions"></div>
-        </div>
-        <div class="ai-composer">
-          <label class="visually-hidden" for="ai-chat-input">Message InvictaTill AI</label>
-          <textarea id="ai-chat-input" rows="2" placeholder="Ask me anything…" maxlength="12000"></textarea>
-          <div class="composer-actions">
-            <span class="composer-status" id="ai-composer-status" role="status" aria-live="polite">Enter to send · Shift+Enter for a new line</span>
-            <button class="secondary-button compact hidden" id="btn-stop-ai" type="button">Stop</button>
-            <button class="primary-button compact ai-send-button" id="btn-send-ai" type="button">Send <span aria-hidden="true">↗</span></button>
-          </div>
-        </div>
-      </section>
-
-      <section class="drawer-panel" id="drawer-panel-tasks" role="tabpanel" aria-labelledby="drawer-tab-tasks" data-panel="tasks" hidden>
+      <section class="drawer-panel active" id="drawer-panel-tasks" role="tabpanel" aria-labelledby="drawer-tab-tasks" data-panel="tasks">
         <form class="inline-form" id="task-form">
           <label class="visually-hidden" for="new-task-input">New task</label>
           <input id="new-task-input" type="text" maxlength="500" placeholder="Add a task">
@@ -480,12 +443,23 @@
         <div class="list-toolbar">
           <p id="task-summary">0 open tasks</p>
           <div class="toolbar-actions">
-            <button class="secondary-button compact micro-button" id="btn-tasks-24h-report" type="button">📊 24H Report</button>
-            <button class="secondary-button compact micro-button" id="btn-tasks-extract-email" type="button">📬 Email Tasks</button>
+            <button class="secondary-button compact micro-button" id="btn-tasks-24h-report" type="button">24-hour report</button>
+            <button class="secondary-button compact micro-button" id="btn-tasks-extract-email" type="button">Scan page for tasks</button>
           </div>
         </div>
+        <p class="settings-status" id="task-scan-status" role="status" hidden></p>
         <div class="data-list" id="pending-tasks-list"></div>
         <p class="empty-state" id="tasks-empty">No tasks yet.</p>
+      </section>
+
+      <section class="drawer-panel" id="drawer-panel-activity" role="tabpanel" aria-labelledby="drawer-tab-activity" data-panel="activity" hidden>
+        <div class="list-toolbar">
+          <h3>24-hour activity report</h3>
+          <button class="secondary-button compact" id="btn-generate-activity-report" type="button">Generate report</button>
+        </div>
+        <p class="privacy-note">Turn on activity tracking in Settings to include browsing activity.</p>
+        <p class="settings-status" id="activity-report-status" role="status" hidden></p>
+        <pre class="activity-report" id="activity-report" aria-label="24-hour activity report" tabindex="0" hidden></pre>
       </section>
 
       <section class="drawer-panel" id="drawer-panel-focus" role="tabpanel" aria-labelledby="drawer-tab-focus" data-panel="focus" hidden>
@@ -613,12 +587,6 @@
               <span class="toggle-control" aria-hidden="true"></span>
               <span>Enable 24H WFH Activity tracking</span>
             </label>
-            <label class="toggle-row" for="setting-live-writing">
-              <input id="setting-live-writing" type="checkbox">
-              <span class="toggle-control" aria-hidden="true"></span>
-              <span>Show spelling and grammar suggestions while typing</span>
-            </label>
-            <p class="privacy-note live-writing-privacy">After you pause, only the current sentence from supported editors is checked by InvictaTill AI. Password, login, payment, search, and private-window fields are excluded.</p>
             <div class="form-actions">
               <button class="primary-button compact" type="submit">Save preferences</button>
               <span class="settings-status" id="browser-settings-status" role="status" aria-live="polite"></span>
@@ -626,36 +594,11 @@
           </fieldset>
         </form>
 
-        <form id="ai-settings-form">
-          <fieldset class="settings-group">
-            <legend>InvictaTill AI connection</legend>
-            <label class="setting-row" for="setting-ai-provider">
-              <span>AI agent</span>
-              <select id="setting-ai-provider" disabled>
-                <option value="invicta">InvictaTill AI</option>
-              </select>
-            </label>
-            <label class="setting-row" for="setting-ai-endpoint">
-              <span>API Base URL</span>
-              <input id="setting-ai-endpoint" type="text" placeholder="https://invictatill.shop">
-            </label>
-            <label class="setting-row" for="setting-ai-key">
-              <span>API key (optional locally)</span>
-              <input id="setting-ai-key" type="password" placeholder="Key is saved; enter new key to replace">
-            </label>
-            <label class="toggle-row" for="setting-ai-clear-key">
-              <input id="setting-ai-clear-key" type="checkbox">
-              <span class="toggle-control" aria-hidden="true"></span>
-              <span>Clear stored API key</span>
-            </label>
-            <div class="form-actions">
-              <button class="primary-button compact" type="submit">Save AI settings</button>
-              <button class="secondary-button compact" id="btn-test-ai-settings" type="button">Test connection</button>
-            </div>
-            <p class="privacy-note">InvictaTill AI is the browser’s only AI agent. The local service works without an API key; remote services may require one.</p>
-            <p class="settings-status" id="ai-settings-status" role="status" aria-live="polite"></p>
-          </fieldset>
-        </form>
+        <fieldset class="settings-group">
+          <legend>ChatGPT</legend>
+          <p class="privacy-note">Sign in with your ChatGPT account on the official website.</p>
+          <button class="secondary-button compact" id="btn-settings-chatgpt" type="button">Open ChatGPT</button>
+        </fieldset>
 
         <fieldset class="settings-group">
           <legend>Memory &amp; Performance</legend>
@@ -668,19 +611,15 @@
               <span>System free RAM</span>
               <span class="memory-stats-value" id="mem-stat-free">—</span>
             </div>
-            <div class="memory-stats-row">
-              <span>Sleeping tabs</span>
-              <span class="memory-stats-value" id="mem-stat-sleeping">0</span>
-            </div>
           </div>
-          <label class="toggle-row" for="setting-tab-sleep">
-            <input id="setting-tab-sleep" type="checkbox" checked>
+          <label class="toggle-row" for="setting-background-throttling">
+            <input id="setting-background-throttling" type="checkbox" checked>
             <span class="toggle-control" aria-hidden="true"></span>
-            <span>Auto-sleep inactive tabs (saves RAM)</span>
+            <span>Throttle background tabs</span>
           </label>
-          <p class="privacy-note">Tabs inactive for 10+ minutes are suspended to free memory. They reload when you switch to them.</p>
+          <p class="privacy-note">Allow Chromium to reduce timers and animations when tabs run in the background.</p>
           <div class="form-actions">
-            <button class="secondary-button compact" id="btn-force-gc" type="button">Free memory now</button>
+            <button class="secondary-button compact" id="btn-force-gc" type="button">Clear page caches</button>
             <span class="settings-status" id="mem-gc-status" role="status" aria-live="polite"></span>
           </div>
         </fieldset>
@@ -723,6 +662,7 @@
     <button role="menuitem" type="button" id="menu-private-window">New private window</button>
     <button role="menuitem" type="button" id="menu-command-center">Search tabs &amp; commands <kbd>Ctrl+Shift+A</kbd></button>
     <div class="menu-separator" role="separator"></div>
+    <button role="menuitem" type="button" id="menu-chatgpt">Open ChatGPT <kbd>Ctrl+Shift+G</kbd></button>
     <button role="menuitem" type="button" id="menu-history">History</button>
     <button role="menuitem" type="button" id="menu-focus">Focus session</button>
     <button role="menuitem" type="button" id="menu-tasks">Tasks</button>

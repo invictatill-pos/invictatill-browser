@@ -1,7 +1,7 @@
 {
   "name": "invictatill-browser",
-  "version": "2.11.0",
-  "description": "A secure Chromium-based Windows productivity browser with private-by-default page assistance, direct InvictaTill AI integration, split view, session restore, and modern browsing tools.",
+  "version": "2.12.0",
+  "description": "A Chromium-based Windows productivity browser with ChatGPT shortcuts, workspaces, split view, session restore, and task and focus tools.",
   "main": "main.js",
   "author": "InvictaTill",
   "license": "MIT",

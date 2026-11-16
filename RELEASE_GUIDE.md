@@ -57,7 +57,7 @@ Do not release from a long-lived developer checkout or from a machine whose depe
    npm run test:e2e
    ```
 
-   The release is blocked if any command fails or if the E2E release suite is unavailable. E2E coverage must include startup, tabs and session restore, navigation, downloads, permissions, private windows, find/mute/zoom, screenshot, print/PDF, split view, AI local/cloud error paths, and opt-in privacy behavior.
+   The release is blocked if any command fails or if the E2E release suite is unavailable. E2E coverage must include startup, tabs and session restore, navigation, downloads, permissions, private windows, find/mute/zoom, screenshot, print/PDF, split view, ChatGPT tab launch and session behavior, and opt-in privacy behavior.
 
 The release script repeats `npm ci`, `npm run check`, and `npm test` as its own clean packaging gate. It executes each once and performs a single combined NSIS/portable build. E2E tests remain a separate precondition because they require the disposable desktop environment.
 

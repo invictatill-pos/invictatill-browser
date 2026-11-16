@@ -6,7 +6,7 @@
  * Provides extension loading/unloading, Chrome Web Store CRX download/unpack,
  * extension toolbar management, and a curated extension store.
  *
- * Uses Electron's session.loadExtension() API for Manifest V2/V3 extensions.
+ * Uses Electron's session extension API for Manifest V2/V3 extensions.
  */
 
 const path = require('path');
@@ -128,12 +128,10 @@ function createExtensionManager(options) {
   const extensionsRoot = path.join(app.getPath('userData'), EXTENSIONS_DIR_NAME);
   const registryPath = path.join(extensionsRoot, EXTENSION_REGISTRY_FILE);
   let registry = Object.create(null);
-  let loadedExtensions = new Map();
-  let installQueue = Promise.resolve();
+  const loadedExtensions = new Map();
+  let extensionQueue = Promise.resolve();
   const installingIds = new Set();
-  // Set of sessions into which extensions should be loaded.
-  // main.js registers workspace sessions here as they are created.
-  const registeredSessions = new Set();
+  const registeredSessions = new Map();
 
   function ensureExtensionsDir() {
     fs.mkdirSync(extensionsRoot, { recursive: true });
@@ -446,13 +444,16 @@ function createExtensionManager(options) {
     return total;
   }
 
+  // Serialize loading and registry changes while Electron awaits its extension loader.
+  function queueExtensionOperation(operation) {
+    const result = extensionQueue.then(operation);
+    extensionQueue = result.catch(() => {});
+    return result;
+  }
+
   // Install an extension from a local CRX or unpacked directory.
   function installFromPath(extensionPath, options) {
-    // A second installation must not replace directories while the first one is
-    // awaiting Electron's asynchronous extension loader.
-    const result = installQueue.then(() => performInstallFromPath(extensionPath, options));
-    installQueue = result.catch(() => {});
-    return result;
+    return queueExtensionOperation(() => performInstallFromPath(extensionPath, options));
   }
 
   async function performInstallFromPath(extensionPath, options) {
@@ -654,23 +655,19 @@ function createExtensionManager(options) {
 
   // Register a session so extensions are loaded into it.
   function registerSession(targetSession) {
-    if (!targetSession || registeredSessions.has(targetSession)) return;
-    registeredSessions.add(targetSession);
-    // Load all currently-enabled extensions into the new session.
-    for (const extId of Object.keys(registry)) {
-      const entry = registry[extId];
-      if (!entry || entry.enabled === false) continue;
-      try {
-        const extPath = managedExtensionPath(extId);
-        directorySize(extPath);
-        parseManifest(extPath);
-        targetSession.loadExtension(extPath, { allowFileAccess: false }).catch(function (err) {
-          if (isDev) console.error('Failed to load extension ' + extId + ' into session:', err.message);
-        });
-      } catch (error) {
-        if (isDev) console.error('Failed to validate extension ' + extId + ':', error.message);
+    if (!targetSession || registeredSessions.has(targetSession)) return registeredSessions.get(targetSession);
+    const ready = queueExtensionOperation(async () => {
+      if (!registeredSessions.has(targetSession)) return;
+      for (const extId of Object.keys(registry)) {
+        try {
+          await loadExtension(extId, [targetSession]);
+        } catch (error) {
+          if (isDev) console.error('Failed to load extension ' + extId + ' into session:', error.message);
+        }
       }
-    }
+    });
+    registeredSessions.set(targetSession, ready);
+    return ready;
   }
 
   function unregisterSession(targetSession) {
@@ -683,7 +680,7 @@ function createExtensionManager(options) {
 
   // Collect all sessions to load into: the hardcoded default + all registered.
   function allSessions() {
-    const sessions = new Set(registeredSessions);
+    const sessions = new Set(registeredSessions.keys());
     // Always include the default partition as a fallback.
     try {
       sessions.add(session.fromPartition('persist:invictatill'));
@@ -692,42 +689,43 @@ function createExtensionManager(options) {
   }
 
   // Load extension into all registered sessions.
-  async function loadExtension(extId) {
+  async function loadExtension(extId, targets = allSessions()) {
     const entry = registry[extId];
     if (!entry || entry.enabled === false) return null;
-    if (loadedExtensions.has(extId)) return loadedExtensions.get(extId);
+    const existing = loadedExtensions.get(extId);
+    const extensions = existing || new Map();
+    const pending = targets.filter((targetSession) => !extensions.has(targetSession));
+    if (!pending.length) return extensions.values().next().value || null;
 
     const extPath = managedExtensionPath(extId);
     directorySize(extPath);
     parseManifest(extPath);
 
-    var lastExt = null;
-    var lastError = null;
-    const targets = allSessions();
-    for (const targetSession of targets) {
+    let lastError = null;
+    for (const targetSession of pending) {
       try {
-        const ext = await targetSession.loadExtension(extPath, { allowFileAccess: false });
-        if (!lastExt) lastExt = ext;
+        const ext = await targetSession.extensions.loadExtension(extPath, { allowFileAccess: false });
+        extensions.set(targetSession, ext);
       } catch (error) {
         lastError = error;
         if (isDev) console.error('Failed to load extension ' + extId + ' into session:', error.message);
       }
     }
-    if (!lastExt) {
+    if (!extensions.size) {
       throw new Error(lastError ? lastError.message : 'Failed to load extension into any session');
     }
-    loadedExtensions.set(extId, lastExt);
-    if (onStatusChange) onStatusChange('loaded', extId);
-    return lastExt;
+    loadedExtensions.set(extId, extensions);
+    if (!existing && onStatusChange) onStatusChange('loaded', extId);
+    return extensions.values().next().value;
   }
 
   // Unload extension from all registered sessions.
   function unloadExtension(extId) {
-    const ext = loadedExtensions.get(extId);
-    if (!ext) return;
-    for (const targetSession of allSessions()) {
+    const extensions = loadedExtensions.get(extId);
+    if (!extensions) return;
+    for (const [targetSession, ext] of extensions) {
       try {
-        targetSession.removeExtension(ext.id);
+        targetSession.extensions.removeExtension(ext.id);
       } catch (error) {
         // Extension may already be unloaded from this session.
       }
@@ -739,37 +737,56 @@ function createExtensionManager(options) {
   // Enable/disable an extension.
   function toggleExtension(extId, enabled) {
     if (installingIds.has(extId)) throw new Error('Extension installation is still in progress');
-    const entry = registry[extId];
-    if (!entry) throw new Error('Extension not found');
-    entry.enabled = Boolean(enabled);
-    saveRegistry();
-    if (enabled) {
-      loadExtension(extId);
-    } else {
-      unloadExtension(extId);
-    }
-    return publicExtension(extId);
+    return queueExtensionOperation(async () => {
+      const entry = registry[extId];
+      if (!entry) throw new Error('Extension not found');
+      const previousEnabled = entry.enabled;
+      entry.enabled = Boolean(enabled);
+      try {
+        if (enabled) await loadExtension(extId);
+        saveRegistry();
+      } catch (error) {
+        entry.enabled = previousEnabled;
+        if (previousEnabled === false) unloadExtension(extId);
+        throw error;
+      }
+      if (!enabled) unloadExtension(extId);
+      return publicExtension(extId);
+    });
   }
 
   // Uninstall an extension completely.
   function uninstallExtension(extId) {
     if (installingIds.has(extId)) throw new Error('Extension installation is still in progress');
+    managedExtensionPath(extId);
+    return queueExtensionOperation(() => performUninstallExtension(extId));
+  }
+
+  function performUninstallExtension(extId) {
     ensureExtensionsDir();
     const extPath = managedExtensionPath(extId);
-    unloadExtension(extId);
     const entry = registry[extId];
-    if (entry && fs.existsSync(extPath)) {
-      try {
-        fs.rmSync(extPath, { recursive: true, force: true });
-      } catch (error) { /* ignore cleanup errors */ }
-    }
+    if (!entry) return { success: true };
     delete registry[extId];
-    saveRegistry();
+    try {
+      saveRegistry();
+    } catch (error) {
+      registry[extId] = entry;
+      throw error;
+    }
+    unloadExtension(extId);
+    try {
+      fs.rmSync(extPath, { recursive: true, force: true });
+    } catch (error) { /* Ignore cleanup errors after editing the registry. */ }
     return { success: true };
   }
 
   // Load all enabled extensions at startup.
-  async function loadAllExtensions() {
+  function loadAllExtensions() {
+    return queueExtensionOperation(restoreInstalledExtensions);
+  }
+
+  async function restoreInstalledExtensions() {
     ensureExtensionsDir();
     loadRegistry();
     const results = [];
@@ -786,11 +803,17 @@ function createExtensionManager(options) {
     return results;
   }
 
+  function runtimeExtension(extId, targetSession) {
+    const extensions = loadedExtensions.get(extId);
+    if (!extensions) return null;
+    return targetSession ? extensions.get(targetSession) : extensions.values().next().value;
+  }
+
   // Get the popup URL for a browser action.
-  function getExtensionPopup(extId) {
+  function getExtensionPopup(extId, targetSession) {
     const entry = registry[extId];
     if (!entry) return null;
-    const ext = loadedExtensions.get(extId);
+    const ext = runtimeExtension(extId, targetSession);
     if (!ext) return null;
     const action = entry.browserAction;
     if (!action || !action.default_popup) return null;
@@ -806,10 +829,10 @@ function createExtensionManager(options) {
   }
 
   // Get options page URL.
-  function getExtensionOptionsUrl(extId) {
+  function getExtensionOptionsUrl(extId, targetSession) {
     const entry = registry[extId];
     if (!entry) return null;
-    const ext = loadedExtensions.get(extId);
+    const ext = runtimeExtension(extId, targetSession);
     if (!ext) return null;
     if (!entry.optionsPage) return null;
     try {
@@ -821,17 +844,14 @@ function createExtensionManager(options) {
 
   // Search Chrome Web Store (simple name-based filtering from our curated list).
   function searchExtensions(query) {
-    const lower = (query || '').toLowerCase().trim();
-    if (!lower) return FEATURED_EXTENSIONS;
-    return FEATURED_EXTENSIONS.filter((ext) =>
+    const lower = String(query || '').toLowerCase().trim();
+    const featured = getFeaturedExtensions();
+    if (!lower) return featured;
+    return featured.filter((ext) =>
       ext.name.toLowerCase().includes(lower) ||
       ext.description.toLowerCase().includes(lower) ||
       ext.category.toLowerCase().includes(lower)
-    ).map((ext) => ({
-      ...ext,
-      installed: Boolean(registry[ext.id]),
-      enabled: registry[ext.id] ? registry[ext.id].enabled !== false : false,
-    }));
+    );
   }
 
   return {

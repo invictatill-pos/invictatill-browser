@@ -12,8 +12,7 @@ const allowedEvents = new Set([
   'found-in-page-result',
   'download-updated',
   'download-created',
-  'ai-writing-status',
-  'ai-service-status',
+  'open-chatgpt-requested',
   'password-save-request',
   'whatsapp-panel-status',
   'fullscreen-change',
@@ -39,7 +38,6 @@ const allowedEvents = new Set([
   'permission-state-changed',
   'http-auth-request',
   'http-auth-closed',
-  'tab-sleep-state',
 ]);
 
 const eventWrappers = new Map();
@@ -112,6 +110,7 @@ const api = {
   setWhatsappPanel: (details) => ipcRenderer.invoke('set-whatsapp-panel', details),
   reloadWhatsappPanel: () => ipcRenderer.invoke('reload-whatsapp-panel'),
   openWhatsappTab: () => ipcRenderer.invoke('open-whatsapp-tab'),
+  openChatGptTab: () => ipcRenderer.invoke('open-chatgpt-tab'),
   setSplitScreen: (options) => ipcRenderer.invoke('set-split-screen', options),
 
   // Active-page operations.
@@ -126,7 +125,6 @@ const api = {
   openDevTools: () => ipcRenderer.invoke('open-devtools'),
   openDevToolsConsole: () => ipcRenderer.invoke('open-devtools-console'),
   viewPageSource: () => ipcRenderer.invoke('view-page-source'),
-  getPageContext: (options) => ipcRenderer.invoke('get-page-context', options),
 
   // Profiles, privacy, history, and downloads.
   launchPrivateWindow: () => ipcRenderer.invoke('launch-private-window'),
@@ -206,15 +204,6 @@ const api = {
   savePendingTasks: (tasks) =>
     ipcRenderer.invoke('save-pending-tasks', tasks),
 
-  // Invicta AI. API secrets are accepted only as save input and are never read back.
-  getAiConfig: () => ipcRenderer.invoke('get-ai-config'),
-  saveAiConfig: (config) => ipcRenderer.invoke('save-ai-config', config),
-  testAiConfig: (config) => ipcRenderer.invoke('test-ai-config', config),
-  askInvictaAI: (prompt, options) =>
-    ipcRenderer.invoke('ask-invicta-ai', { prompt, options }),
-  cancelAiRequest: (requestId) =>
-    ipcRenderer.invoke('cancel-ai-request', requestId),
-
   // Version/update and safe diagnostics.
   getVersion: () => ipcRenderer.invoke('get-version'),
   getReleaseNotes: () => ipcRenderer.invoke('get-release-notes'),
@@ -230,10 +219,9 @@ const api = {
   getGpuInfo: () => ipcRenderer.invoke('get-gpu-info'),
   boostGpuPriority: () => ipcRenderer.invoke('boost-gpu-priority'),
 
-  // Memory management and tab sleeping.
+  // Memory and browser performance.
   getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
-  wakeTab: (tabId) => ipcRenderer.invoke('wake-tab', tabId),
-  sleepTab: (tabId) => ipcRenderer.invoke('sleep-tab', tabId),
+  setBackgroundTabThrottling: (enabled) => ipcRenderer.invoke('set-background-tab-throttling', enabled),
   forceGc: () => ipcRenderer.invoke('force-gc'),
   toggleReadingMode: (tabId) => ipcRenderer.invoke('toggle-reading-mode', tabId),
 
