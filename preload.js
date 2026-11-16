@@ -39,6 +39,7 @@ const allowedEvents = new Set([
   'permission-state-changed',
   'http-auth-request',
   'http-auth-closed',
+  'tab-sleep-state',
 ]);
 
 const eventWrappers = new Map();
@@ -228,6 +229,13 @@ const api = {
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
   getGpuInfo: () => ipcRenderer.invoke('get-gpu-info'),
   boostGpuPriority: () => ipcRenderer.invoke('boost-gpu-priority'),
+
+  // Memory management and tab sleeping.
+  getMemoryStats: () => ipcRenderer.invoke('get-memory-stats'),
+  wakeTab: (tabId) => ipcRenderer.invoke('wake-tab', tabId),
+  sleepTab: (tabId) => ipcRenderer.invoke('sleep-tab', tabId),
+  forceGc: () => ipcRenderer.invoke('force-gc'),
+  toggleReadingMode: (tabId) => ipcRenderer.invoke('toggle-reading-mode', tabId),
 
   // Generic event API with allowlisting and a real disposer.
   on: subscribe,

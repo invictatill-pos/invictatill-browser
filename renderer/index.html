@@ -29,6 +29,9 @@
         </button>
       </div>
       <div class="titlebar-status" id="titlebar-status" role="status" aria-live="polite"></div>
+      <button class="memory-pill hidden" id="memory-pill" type="button" title="Browser memory usage — click to free memory" aria-label="Memory usage">
+        <span id="memory-pill-text">— MB</span>
+      </button>
       <button class="focus-status-pill hidden" id="focus-status-pill" type="button" aria-label="Open active focus session" title="Open focus session">
         <span class="focus-status-dot" aria-hidden="true"></span>
         <span id="focus-status-pill-text">Focus 25:00</span>
@@ -124,6 +127,9 @@
             <p class="zoom-hint"><kbd>Ctrl</kbd>+/− zoom &nbsp;·&nbsp; <kbd>0</kbd> reset</p>
           </div>
         </div>
+        <button class="chrome-button action-button" id="btn-reading-mode" type="button" aria-label="Toggle reading mode" title="Reading mode" data-active="false">
+          <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="M3 4h12M3 7.5h8M3 11h10M3 14.5h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
         <button class="chrome-button action-button download-nav-button" id="btn-download-popout" type="button" aria-label="Show downloads" aria-expanded="false" aria-controls="download-popout" title="Downloads">
           <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden="true"><path d="M9 2.5v8m0 0 3-3m-3 3-3-3M3 13.5v1.2c0 .45.35.8.8.8h10.4c.45 0 .8-.35.8-.8v-1.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
           <span class="download-nav-badge hidden" id="download-popout-badge">0</span>
@@ -564,6 +570,23 @@
       </section>
 
       <section class="drawer-panel settings-panel" id="drawer-panel-settings" role="tabpanel" aria-labelledby="drawer-tab-settings" data-panel="settings" hidden>
+        <fieldset class="settings-group">
+          <legend>Appearance &amp; Theme</legend>
+          <div class="setting-row">
+            <span>Color theme</span>
+            <div class="theme-switcher">
+              <button class="theme-btn active" data-theme="light" type="button">☀️ Light</button>
+              <button class="theme-btn" data-theme="dark" type="button">🌙 Dark</button>
+              <button class="theme-btn" data-theme="system" type="button">💻 System</button>
+            </div>
+          </div>
+          <label class="toggle-row" for="setting-compact-nav">
+            <input id="setting-compact-nav" type="checkbox">
+            <span class="toggle-control" aria-hidden="true"></span>
+            <span>Compact navigation bar</span>
+          </label>
+        </fieldset>
+
         <form id="browser-settings-form">
           <fieldset class="settings-group">
             <legend>Browser preferences</legend>
@@ -633,6 +656,34 @@
             <p class="settings-status" id="ai-settings-status" role="status" aria-live="polite"></p>
           </fieldset>
         </form>
+
+        <fieldset class="settings-group">
+          <legend>Memory &amp; Performance</legend>
+          <div class="memory-stats-card" id="memory-stats-card">
+            <div class="memory-stats-row">
+              <span>Browser RAM</span>
+              <span class="memory-stats-value" id="mem-stat-total">—</span>
+            </div>
+            <div class="memory-stats-row">
+              <span>System free RAM</span>
+              <span class="memory-stats-value" id="mem-stat-free">—</span>
+            </div>
+            <div class="memory-stats-row">
+              <span>Sleeping tabs</span>
+              <span class="memory-stats-value" id="mem-stat-sleeping">0</span>
+            </div>
+          </div>
+          <label class="toggle-row" for="setting-tab-sleep">
+            <input id="setting-tab-sleep" type="checkbox" checked>
+            <span class="toggle-control" aria-hidden="true"></span>
+            <span>Auto-sleep inactive tabs (saves RAM)</span>
+          </label>
+          <p class="privacy-note">Tabs inactive for 10+ minutes are suspended to free memory. They reload when you switch to them.</p>
+          <div class="form-actions">
+            <button class="secondary-button compact" id="btn-force-gc" type="button">Free memory now</button>
+            <span class="settings-status" id="mem-gc-status" role="status" aria-live="polite"></span>
+          </div>
+        </fieldset>
 
         <fieldset class="settings-group">
           <legend>Updates and tools</legend>

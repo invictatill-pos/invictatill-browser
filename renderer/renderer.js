@@ -190,6 +190,16 @@ const els = {
   extCategoryFilter: $('ext-category-filter'),
   extInstalledBadge: $('ext-installed-badge'),
   extWebstoreLink: $('ext-webstore-link'),
+  memoryPill: $('memory-pill'),
+  memoryPillText: $('memory-pill-text'),
+  btnReadingMode: $('btn-reading-mode'),
+  btnForceGc: $('btn-force-gc'),
+  memGcStatus: $('mem-gc-status'),
+  memStatTotal: $('mem-stat-total'),
+  memStatFree: $('mem-stat-free'),
+  memStatSleeping: $('mem-stat-sleeping'),
+  settingCompactNav: $('setting-compact-nav'),
+  settingTabSleep: $('setting-tab-sleep'),
 };
 
 const state = {
@@ -578,7 +588,11 @@ function scheduleLayout() {
   if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
   resizeFrame = window.requestAnimationFrame(function () {
     resizeFrame = 0;
-    updateViewLayout();
+    applyTheme();
+  applyCompactNav(localStorage.getItem('invicta-compact-nav') === 'true');
+  updateMemoryStats();
+  setInterval(updateMemoryStats, 15000);
+  updateViewLayout();
   });
 }
 
@@ -762,6 +776,7 @@ function renderTabs() {
     item.setAttribute('role', 'presentation');
     item.classList.toggle('active', selected);
     item.classList.toggle('pinned', tab.pinned);
+    item.classList.toggle('sleeping', Boolean(tab.sleeping));
     if (tab.loading) item.classList.add('loading');
     if (tab.crashed) item.classList.add('crashed');
 
@@ -794,6 +809,11 @@ function renderTabs() {
 
     const displayTitle = formatTabTitle(tab);
     const title = createElement('span', 'tab-title', displayTitle);
+    if (tab.sleeping) {
+      const sleepIcon = createElement('span', 'tab-sleep-icon', ' 💤');
+      sleepIcon.title = 'Tab is sleeping to save memory. Click to wake.';
+      title.appendChild(sleepIcon);
+    }
     selectButton.setAttribute('title', displayTitle);
     const audioButton = createElement('button', 'tab-state-button', tab.muted ? '🔇' : '🔊');
     audioButton.type = 'button';
@@ -3901,6 +3921,16 @@ function registerBrowserEvents() {
       }
     });
   });
+  registerEvent('tab-sleep-state', function (payload) {
+    if (!payload || payload.tabId === undefined) return;
+    const targetTab = state.tabs.find(function (t) { return sameId(t.id, payload.tabId); });
+    if (targetTab) {
+      targetTab.sleeping = Boolean(payload.sleeping);
+      renderTabs();
+    }
+    updateMemoryStats();
+  });
+
   registerEvent('tab-switched', function (payload) {
     const tab = tabFromPayload(payload);
     if (tab && tab.id !== undefined) {
@@ -4000,11 +4030,100 @@ function bindClick(id, handler) {
   if (node) node.addEventListener('click', handler);
 }
 
+function applyTheme(theme) {
+  const mode = theme || localStorage.getItem('invicta-theme') || 'light';
+  if (mode === 'dark') {
+    document.body.classList.add('theme-dark');
+  } else if (mode === 'system') {
+    const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.body.classList.toggle('theme-dark', isDark);
+  } else {
+    document.body.classList.remove('theme-dark');
+  }
+  localStorage.setItem('invicta-theme', mode);
+  const buttons = document.querySelectorAll('.theme-btn');
+  buttons.forEach(function (btn) {
+    btn.classList.toggle('active', btn.dataset.theme === mode);
+  });
+}
+
+function applyCompactNav(enabled) {
+  document.body.classList.toggle('compact-nav', Boolean(enabled));
+  localStorage.setItem('invicta-compact-nav', enabled ? 'true' : 'false');
+  if (els.settingCompactNav) els.settingCompactNav.checked = Boolean(enabled);
+  updateViewLayout();
+}
+
+async function updateMemoryStats() {
+  try {
+    const stats = await invokeOptional('getMemoryStats');
+    if (!stats) return;
+    if (els.memoryPillText) {
+      els.memoryPillText.textContent = stats.totalMB + ' MB';
+    }
+    if (els.memoryPill) {
+      setHidden(els.memoryPill, false);
+      els.memoryPill.classList.toggle('warn', stats.totalMB > 800);
+      els.memoryPill.classList.toggle('danger', stats.totalMB > 1500);
+      els.memoryPill.title = 'InvictaTill Browser: ' + stats.totalMB + ' MB RAM (' + stats.sleepingTabs.length + ' sleeping tabs). Click to free memory.';
+    }
+    if (els.memStatTotal) els.memStatTotal.textContent = stats.totalMB + ' MB';
+    if (els.memStatFree) els.memStatFree.textContent = stats.freeSystemMB + ' MB';
+    if (els.memStatSleeping) els.memStatSleeping.textContent = String(stats.sleepingTabs.length);
+  } catch (e) {}
+}
+
+async function freeMemoryAction() {
+  if (els.memGcStatus) els.memGcStatus.textContent = 'Freeing memory…';
+  try {
+    await invokeOptional('forceGc');
+    notify('Memory cleared! Caches purged.', 'success');
+    if (els.memGcStatus) els.memGcStatus.textContent = 'Memory freed!';
+    setTimeout(function () {
+      if (els.memGcStatus) els.memGcStatus.textContent = '';
+    }, 2500);
+    await updateMemoryStats();
+  } catch (err) {
+    notify('Could not free memory: ' + errorMessage(err), 'error');
+    if (els.memGcStatus) els.memGcStatus.textContent = '';
+  }
+}
+
+async function toggleReadingMode() {
+  const tab = activeTab();
+  if (!tab || !tab.id) return;
+  try {
+    const isReading = await invokeOptional('toggleReadingMode', tab.id);
+    if (els.btnReadingMode) {
+      els.btnReadingMode.dataset.active = isReading ? 'true' : 'false';
+      els.btnReadingMode.classList.toggle('active', Boolean(isReading));
+    }
+    notify(isReading ? 'Reading mode enabled' : 'Reading mode disabled', 'info');
+  } catch (e) {
+    notify('Reading mode unavailable on this page', 'error');
+  }
+}
+
 function wireUi() {
   bindClick('btn-minimize', function () { invokeOptional('minimize'); });
   bindClick('btn-maximize', function () { invokeOptional('maximize'); });
   bindClick('btn-close', function () { invokeOptional('closeWindow'); });
   bindClick('btn-new-tab', function () { newTab(); });
+  bindClick('memory-pill', freeMemoryAction);
+  bindClick('btn-force-gc', freeMemoryAction);
+  bindClick('btn-reading-mode', toggleReadingMode);
+
+  document.querySelectorAll('.theme-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      applyTheme(btn.dataset.theme);
+    });
+  });
+
+  if (els.settingCompactNav) {
+    els.settingCompactNav.addEventListener('change', function () {
+      applyCompactNav(els.settingCompactNav.checked);
+    });
+  }
   bindClick('btn-reopen-tab', reopenClosedTab);
   bindClick('btn-command-center', openCommandPalette);
   bindClick('focus-status-pill', function () { openDrawer('focus'); });

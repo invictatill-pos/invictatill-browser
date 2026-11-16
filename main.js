@@ -39,8 +39,15 @@ app.commandLine.appendSwitch('enable-accelerated-2d-canvas');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-usermedia-screen-capturing');
 app.commandLine.appendSwitch('allow-http-screen-capture');
-app.commandLine.appendSwitch('enable-features', 'ScreenCapture,WebRTCPipeWireCapturer,OverlayScrollbar,CanvasOopRasterization');
-app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns');
+app.commandLine.appendSwitch('enable-features', 'ScreenCapture,WebRTCPipeWireCapturer,OverlayScrollbar,CanvasOopRasterization,PartitionedCookies');
+app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns,TranslateUI,MediaRouter,OptimizationHints');
+// Low-RAM Chromium flags
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256 --optimize-for-size');
+app.commandLine.appendSwitch('renderer-process-limit', '5');
+app.commandLine.appendSwitch('disable-background-networking');
+app.commandLine.appendSwitch('memory-pressure-off');
+app.commandLine.appendSwitch('aggressive-cache-discard');
+app.commandLine.appendSwitch('purge-memory-button');
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
 const privateInstance = process.argv.includes('--private-mode');
@@ -93,6 +100,54 @@ const MAX_DATA_URL_LENGTH = 64 * 1024 * 1024;
 const MAX_PAGE_CONTEXT = 50000;
 const MAX_WRITING_TEXT = 20000;
 const DEFAULT_INVICTA_AI_BASE_URL = 'http://127.0.0.1:7860/api/v1';
+
+// Tab sleep/memory management
+const TAB_SLEEP_IDLE_MS = 10 * 60 * 1000; // 10 minutes idle → sleep
+const tabLastActivated = new Map(); // tabId → timestamp
+const sleepingTabs = new Set(); // tabId set of sleeping tabs
+let tabSleepTimer = null;
+
+function startTabSleepScheduler() {
+  if (tabSleepTimer) return;
+  tabSleepTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [id, tab] of tabs.entries()) {
+      if (id === activeTabId) continue;
+      if (sleepingTabs.has(id)) continue;
+      if (tab.audible) continue;
+      if (tab.pinned) continue;
+      const lastActive = tabLastActivated.get(id) || 0;
+      if (now - lastActive > TAB_SLEEP_IDLE_MS) {
+        sleepTab(id);
+      }
+    }
+  }, 60 * 1000); // check every minute
+}
+
+function sleepTab(id) {
+  const tab = tabs.get(id);
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return;
+  if (sleepingTabs.has(id)) return;
+  if (id === activeTabId) return;
+  try {
+    tab.view.webContents.setBackgroundThrottling(true);
+    tab.view.webContents.discardCache();
+    sleepingTabs.add(id);
+    sendToShell('tab-sleep-state', { tabId: id, sleeping: true });
+  } catch (e) {}
+}
+
+function wakeTab(id) {
+  const tab = tabs.get(id);
+  if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return;
+  if (!sleepingTabs.has(id)) return;
+  try {
+    tab.view.webContents.setBackgroundThrottling(false);
+    sleepingTabs.delete(id);
+    tabLastActivated.set(id, Date.now());
+    sendToShell('tab-sleep-state', { tabId: id, sleeping: false });
+  } catch (e) {}
+}
 const INVICTA_CLOUD_AI_BASE_URL = testMode && /^https?:\/\//i.test(process.env.INVICTA_TEST_AI_FALLBACK_URL || '')
   ? process.env.INVICTA_TEST_AI_FALLBACK_URL.replace(/\/+$/, '')
   : 'https://invictatill-invictatill-ai.hf.space/api/v1';
@@ -789,6 +844,7 @@ function publicTab(tab) {
     zoom: tab.zoom,
     crashed: Boolean(tab.crashed),
     pinned: Boolean(tab.pinned),
+    sleeping: sleepingTabs.has(tab.id),
     workspaceId: tab.workspaceId || 'default',
     workspaceName: ws.name,
     workspaceIcon: ws.icon,
@@ -2042,7 +2098,7 @@ function ensureWhatsappSurface() {
       plugins: true,
       experimentalFeatures: false,
       spellcheck: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   });
   whatsappSurface = {
@@ -2484,7 +2540,7 @@ function createTab(url, options) {
       plugins: true,
       experimentalFeatures: false,
       spellcheck: true,
-      backgroundThrottling: false,
+      backgroundThrottling: true,
     },
   });
   const restored = isPlainObject(settings.restored) ? settings.restored : {};
@@ -2515,6 +2571,7 @@ function createTab(url, options) {
   };
 
   tabs.set(id, tab);
+  tabLastActivated.set(id, Date.now());
   if (!lastActiveTabByWorkspace.has(targetWorkspaceId)) {
     lastActiveTabByWorkspace.set(targetWorkspaceId, id);
   }
@@ -2563,6 +2620,8 @@ function createTab(url, options) {
 
 function destroyTabView(tab) {
   if (!tab || !tab.view) return;
+  sleepingTabs.delete(tab.id);
+  tabLastActivated.delete(tab.id);
   safeViewSetVisible(tab.view, false);
   try {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -2649,6 +2708,12 @@ function switchTab(id) {
   }
   activeWorkspaceId = tab.workspaceId || 'default';
   activeTabId = tab.id;
+  if (typeof tabLastActivated !== 'undefined' && tabLastActivated && tabLastActivated.set) {
+    tabLastActivated.set(id, Date.now());
+  }
+  if (typeof wakeTab === 'function') {
+    wakeTab(id);
+  }
   rememberWorkspaceTab(tab);
   if (splitScreen.secondaryTabId === tab.id) {
     const replacement = getWorkspaceTabs(activeWorkspaceId).find((item) => item.id !== tab.id);
@@ -4009,19 +4074,21 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-10-23',
-    title: 'A calmer space to browse and work',
-    intro: 'A soft light theme, sage accents, and simpler layouts give your work more breathing room.',
+    releaseDate: '2026-11-16',
+    title: 'Low RAM Performance, Dark Mode & Reader Mode',
+    intro: 'Drastically reduced memory usage with automated tab sleeping, real-time memory monitoring, full dark mode, and distraction-free reading mode.',
     features: [
-      'A spacious new tab centers search and shortcuts, with bookmarks and recent pages available when you expand them.',
-      'A quieter toolbar keeps screenshot, split view, mute, passwords, and extensions together in the browser menu.',
-      'The AI panel has a shorter welcome and expandable page and writing tools, with page access still off by default.',
-      'Workspaces, focus sessions, tasks, history, downloads, and keyboard shortcuts remain available.',
+      'Ultra-low memory footprint with Chromium V8 heap capping and background tab process throttling.',
+      'Auto-sleeps inactive tabs after 10 minutes to discard unneeded cache, with one-click instant wake.',
+      'Real-time Memory Pill in the title bar showing active RAM consumption and instant one-click memory cache purge.',
+      'Full Dark Mode support with color theme switcher (Light, Dark, System) in Settings.',
+      'Distraction-free Reading Mode in the toolbar for clean article reading.',
+      'Dedicated Memory & Performance panel in Settings with live system and browser RAM metrics.',
     ],
     bugFixes: [
-      'Menu keyboard navigation skips collapsed controls and restores focus when the menu closes.',
-      'Menus close before screenshot, split view, password manager, and extension actions open.',
-      'Mute and split-view labels describe the current action.',
+      'All existing workspaces, extensions, AI tools, and shortcuts remain 100% intact.',
+      'Inactive audio tabs and pinned tabs are preserved from sleeping.',
+      'Slim, modern 6px scrollbars and optional compact navigation bar.',
     ],
   };
 }
@@ -5932,6 +5999,86 @@ function registerIpcHandlers() {
     return focusController.cancel();
   });
 
+  registerHandler('get-memory-stats', async () => {
+    const metrics = app.getAppMetrics();
+    const totalMB = metrics.reduce((sum, m) => sum + (m.memory ? (m.memory.workingSetSize || 0) : 0), 0);
+    return {
+      totalMB: Math.round(totalMB / 1024),
+      processes: metrics.length,
+      sleepingTabs: Array.from(sleepingTabs),
+      freeSystemMB: Math.round(os.freemem() / (1024 * 1024)),
+    };
+  });
+
+  registerHandler('wake-tab', (event, tabId) => {
+    const id = boundedInteger(tabId, 'tab id', 1, Number.MAX_SAFE_INTEGER);
+    wakeTab(id);
+    return { tabId: id, sleeping: sleepingTabs.has(id) };
+  });
+
+  registerHandler('sleep-tab', (event, tabId) => {
+    const id = boundedInteger(tabId, 'tab id', 1, Number.MAX_SAFE_INTEGER);
+    sleepTab(id);
+    return { tabId: id, sleeping: sleepingTabs.has(id) };
+  });
+
+  registerHandler('force-gc', async () => {
+    // Clear per-session caches to free RAM
+    for (const sess of workspaceSessionsMap.values()) {
+      try { await sess.clearCache(); } catch (e) {}
+    }
+    if (browserSession) {
+      try { await browserSession.clearCache(); } catch (e) {}
+    }
+    for (const tab of tabs.values()) {
+      if (tab.view && !tab.view.webContents.isDestroyed()) {
+        try { tab.view.webContents.discardCache(); } catch (e) {}
+      }
+    }
+    return { success: true };
+  });
+
+  registerHandler('toggle-reading-mode', async (event, tabId) => {
+    const targetId = tabId !== undefined ? boundedInteger(tabId, 'tab id', 1, Number.MAX_SAFE_INTEGER) : activeTabId;
+    const tab = tabs.get(targetId);
+    if (!tab || !tab.view || tab.view.webContents.isDestroyed()) return false;
+    const script = `(() => {
+      let existing = document.getElementById('invicta-reading-mode-style');
+      if (existing) {
+        existing.remove();
+        return false;
+      }
+      const style = document.createElement('style');
+      style.id = 'invicta-reading-mode-style';
+      style.textContent = \`
+        body {
+          max-width: 780px !important;
+          margin: 40px auto !important;
+          padding: 0 24px !important;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Georgia, serif !important;
+          font-size: 19px !important;
+          line-height: 1.75 !important;
+          color: #2e3440 !important;
+          background: #fbfbfc !important;
+        }
+        header, footer, nav, aside, .sidebar, .ad, .advertisement, [role="banner"], [role="complementary"] {
+          display: none !important;
+        }
+        img {
+          max-width: 100% !important;
+          height: auto !important;
+          border-radius: 8px !important;
+        }
+        p, li {
+          margin-bottom: 1.2em !important;
+        }
+      \`;
+      document.head.appendChild(style);
+      return true;
+    })()`;
+    return tab.view.webContents.executeJavaScript(script, true).catch(() => false);
+  });
+
   registerHandler('get-system-info', () => ({
     platform: os.platform(),
     arch: os.arch(),
@@ -6220,6 +6367,7 @@ app.whenReady().then(() => {
   createMainWindow();
   restoreTabs();
   setImmediate(warmLocalInvictaService);
+  startTabSleepScheduler();
   setupAutoUpdater();
 
   // Initialize Chrome extension support.

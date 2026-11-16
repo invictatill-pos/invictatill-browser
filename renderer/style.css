@@ -6193,3 +6193,311 @@ kbd {
   padding: 0 4px;
   white-space: nowrap;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   DARK THEME
+   ══════════════════════════════════════════════════════════════ */
+body.theme-dark {
+  color-scheme: dark;
+  --bg-canvas: #111318;
+  --bg-chrome: #1a1d24;
+  --bg-base: #111318;
+  --bg-raised: #1f2330;
+  --bg-elevated: #252936;
+  --bg-hover: #2d3245;
+  --bg-active: #333a52;
+  --text-primary: #e8eaf2;
+  --text-secondary: #9ca3b4;
+  --text-muted: #7a8396;
+  --text-subtle: #7a8396;
+  --border: #2d3245;
+  --border-strong: #394157;
+  --green: #5faf7c;
+  --green-strong: #4f9a6b;
+  --blue: #6b9fd4;
+  --cyan: #5fa8a4;
+  --purple: #9d8dc4;
+  --orange: #d4874a;
+  --yellow: #d4a84b;
+  --red: #d46b6e;
+  --focus: #6bb8a0;
+  --accent-emerald: #5faf7c;
+  --accent-blue: #6b9fd4;
+  --bg-tertiary: #252936;
+  --bg-secondary: #2d3245;
+  --accent-soft: #2a3d4f;
+  --on-accent: #ffffff;
+  --overlay: rgba(5, 7, 15, 0.55);
+  --shadow-sm: 0 4px 18px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 18px 60px rgba(0, 0, 0, 0.5);
+}
+
+body.theme-dark .omnibox-shell {
+  background: var(--bg-elevated);
+}
+
+body.theme-dark .tab-item.active {
+  background: var(--bg-raised);
+  border-color: var(--border-strong);
+}
+
+body.theme-dark .new-tab-page {
+  background: var(--bg-canvas);
+}
+
+body.theme-dark .ntp-backdrop {
+  background: radial-gradient(ellipse at 30% 25%, rgba(95, 175, 124, 0.08) 0%, transparent 65%),
+              radial-gradient(ellipse at 75% 70%, rgba(107, 159, 212, 0.07) 0%, transparent 65%);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TAB SLEEP INDICATOR
+   ══════════════════════════════════════════════════════════════ */
+.tab-item.sleeping {
+  opacity: 0.65;
+}
+
+.tab-sleep-icon {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: 2px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.tab-item.sleeping .tab-sleep-icon {
+  display: inline;
+}
+
+.tab-sleep-icon {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MEMORY STATS BADGE IN TITLEBAR
+   ══════════════════════════════════════════════════════════════ */
+.memory-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  height: 22px;
+  background: rgba(71, 107, 85, 0.1);
+  border: 1px solid rgba(71, 107, 85, 0.2);
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 0.15s;
+  margin-left: 8px;
+}
+
+.memory-pill:hover {
+  background: rgba(71, 107, 85, 0.18);
+  color: var(--text-secondary);
+}
+
+.memory-pill.warn {
+  background: rgba(150, 100, 47, 0.12);
+  border-color: rgba(150, 100, 47, 0.3);
+  color: var(--orange);
+}
+
+.memory-pill.danger {
+  background: rgba(178, 79, 82, 0.12);
+  border-color: rgba(178, 79, 82, 0.3);
+  color: var(--red);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   READING MODE OVERLAY
+   ══════════════════════════════════════════════════════════════ */
+.reading-mode-btn {
+  /* shown via JS when in reading mode */
+}
+
+.reading-mode-btn[data-active="true"] {
+  color: var(--green) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   THEME TOGGLE BUTTON (settings panel)
+   ══════════════════════════════════════════════════════════════ */
+.theme-switcher {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.theme-btn {
+  flex: 1;
+  min-width: 72px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  text-align: center;
+}
+
+.theme-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.theme-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--green);
+  color: var(--green);
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FOCUS BUTTON GLOW ANIMATION
+   ══════════════════════════════════════════════════════════════ */
+.focus-status-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(71, 107, 85, 0.5); }
+  50% { box-shadow: 0 0 0 4px rgba(71, 107, 85, 0); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   IMPROVED NTP HERO
+   ══════════════════════════════════════════════════════════════ */
+.ntp-hero .ntp-logo {
+  font-size: 36px;
+  display: block;
+  margin-bottom: 8px;
+  animation: float-logo 4s ease-in-out infinite;
+}
+
+@keyframes float-logo {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TAB WORKSPACE COLOR DOT
+   ══════════════════════════════════════════════════════════════ */
+.tab-ws-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: 0 0 6px;
+  margin-left: 2px;
+  background: var(--workspace-color, var(--border-strong));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   IMPROVED SCROLLBARS (thinner, modern)
+   ══════════════════════════════════════════════════════════════ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 99px;
+  border: none;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PILL BUTTON VARIANT
+   ══════════════════════════════════════════════════════════════ */
+.pill-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.pill-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NAV BAR — COMPACT MODE (saves vertical space)
+   ══════════════════════════════════════════════════════════════ */
+body.compact-nav .tabs-bar {
+  --tabs-height: 34px;
+  padding: 3px 8px 0;
+}
+
+body.compact-nav .tab-item {
+  height: 30px;
+}
+
+body.compact-nav .nav-bar {
+  --nav-height: 44px;
+  padding: 5px 10px;
+}
+
+body.compact-nav .omnibox-shell {
+  height: 32px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SLEEP GC BUTTON IN SETTINGS
+   ══════════════════════════════════════════════════════════════ */
+#btn-force-gc {
+  gap: 6px;
+}
+
+#btn-force-gc::before {
+  content: "🧹";
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MEMORY STATS PANEL (drawer)
+   ══════════════════════════════════════════════════════════════ */
+.memory-stats-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.memory-stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.memory-stats-row:last-child {
+  border-bottom: none;
+}
+
+.memory-stats-value {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.memory-stats-value.warn { color: var(--orange); }
+.memory-stats-value.danger { color: var(--red); }
+.memory-stats-value.ok { color: var(--green); }
