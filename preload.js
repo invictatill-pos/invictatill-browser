@@ -237,6 +237,12 @@ const api = {
   forceGc: () => ipcRenderer.invoke('force-gc'),
   toggleReadingMode: (tabId) => ipcRenderer.invoke('toggle-reading-mode', tabId),
 
+  // Data import: history and passwords
+  detectInstalledBrowsers: () => ipcRenderer.invoke('detect-installed-browsers'),
+  importBrowserHistory: (browserName) => ipcRenderer.invoke('import-browser-history', browserName),
+  pickAndImportPasswords: () => ipcRenderer.invoke('pick-and-import-passwords'),
+  pickAndImportHistory: () => ipcRenderer.invoke('pick-and-import-history'),
+
   // Generic event API with allowlisting and a real disposer.
   on: subscribe,
   off: unsubscribe,

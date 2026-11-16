@@ -6501,3 +6501,89 @@ body.compact-nav .omnibox-shell {
 .memory-stats-value.warn { color: var(--orange); }
 .memory-stats-value.danger { color: var(--red); }
 .memory-stats-value.ok { color: var(--green); }
+
+/* ═══════════════════════════════════════════════════════════════
+   DATA IMPORT MODAL & CARDS
+   ══════════════════════════════════════════════════════════════ */
+.import-section {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.import-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 8px;
+}
+
+.import-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--text-primary);
+}
+
+.import-browser-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.import-browser-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.import-browser-card:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.import-browser-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.import-browser-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.import-status-text {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.import-status-text.detected {
+  color: var(--green);
+}
+
+.import-status-text.not-found {
+  color: var(--text-subtle);
+}
+
+.import-result-message {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.4;
+  background: rgba(71, 107, 85, 0.12);
+  border: 1px solid rgba(71, 107, 85, 0.25);
+  color: var(--green);
+}
+
+.import-result-message.error {
+  background: rgba(178, 79, 82, 0.12);
+  border-color: rgba(178, 79, 82, 0.25);
+  color: var(--red);
+}

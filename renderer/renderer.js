@@ -200,6 +200,22 @@ const els = {
   memStatSleeping: $('mem-stat-sleeping'),
   settingCompactNav: $('setting-compact-nav'),
   settingTabSleep: $('setting-tab-sleep'),
+  importModalBackdrop: $('import-modal-backdrop'),
+  importModal: $('import-modal'),
+  btnCloseImportModal: $('btn-close-import-modal'),
+  btnCloseImportDone: $('btn-close-import-done'),
+  btnOpenImportModal: $('btn-open-import-modal'),
+  menuImportData: $('menu-import-data'),
+  btnImportPasswordsModal: $('btn-import-passwords-modal'),
+  btnImportChrome: $('btn-import-chrome'),
+  btnImportEdge: $('btn-import-edge'),
+  btnImportBrave: $('btn-import-brave'),
+  btnImportPasswordsCsv: $('btn-import-passwords-csv'),
+  btnImportHistoryFile: $('btn-import-history-file'),
+  statusChromeDetected: $('status-chrome-detected'),
+  statusEdgeDetected: $('status-edge-detected'),
+  statusBraveDetected: $('status-brave-detected'),
+  importResultMessage: $('import-result-message'),
 };
 
 const state = {
@@ -2132,6 +2148,7 @@ async function closeFindBar() {
   state.findTabId = null;
   document.body.classList.remove('find-open');
   setHidden(els.findBar, true);
+  setHidden(els.importModalBackdrop, true);
   els.findResults.textContent = '0/0';
   els.findInput.value = '';
   try { await invokeOptional('stopFind', targetId); } catch (error) {}
@@ -4104,6 +4121,91 @@ async function toggleReadingMode() {
   }
 }
 
+function openImportModal() {
+  closeMenu(false);
+  closeDrawer(false);
+  setHidden(els.importModalBackdrop, false);
+  setHidden(els.importResultMessage, true);
+  checkInstalledBrowsers();
+}
+
+function closeImportModal() {
+  setHidden(els.importModalBackdrop, true);
+}
+
+async function checkInstalledBrowsers() {
+  try {
+    const detected = await invokeOptional('detectInstalledBrowsers') || {};
+    if (els.statusChromeDetected) {
+      els.statusChromeDetected.textContent = detected.chrome ? '✓ Detected' : 'Not installed';
+      els.statusChromeDetected.className = 'import-status-text ' + (detected.chrome ? 'detected' : 'not-found');
+    }
+    if (els.statusEdgeDetected) {
+      els.statusEdgeDetected.textContent = detected.edge ? '✓ Detected' : 'Not installed';
+      els.statusEdgeDetected.className = 'import-status-text ' + (detected.edge ? 'detected' : 'not-found');
+    }
+    if (els.statusBraveDetected) {
+      els.statusBraveDetected.textContent = detected.brave ? '✓ Detected' : 'Not installed';
+      els.statusBraveDetected.className = 'import-status-text ' + (detected.brave ? 'detected' : 'not-found');
+    }
+  } catch (e) {}
+}
+
+function showImportResult(msg, isError) {
+  if (!els.importResultMessage) return;
+  els.importResultMessage.textContent = msg;
+  els.importResultMessage.className = 'import-result-message ' + (isError ? 'error' : '');
+  setHidden(els.importResultMessage, false);
+}
+
+async function handleImportBrowser(browserName) {
+  showImportResult('Importing history from ' + browserName + '…', false);
+  try {
+    const res = await invokeOptional('importBrowserHistory', browserName);
+    if (res && res.success) {
+      showImportResult('Successfully imported ' + res.count + ' browsing history records from ' + browserName + '!', false);
+      loadHistory();
+      notify('Imported ' + res.count + ' history items from ' + browserName, 'success');
+    } else {
+      showImportResult('Could not import history from ' + browserName + '.', true);
+    }
+  } catch (err) {
+    showImportResult('Import error: ' + errorMessage(err), true);
+  }
+}
+
+async function handleImportPasswordsCsv() {
+  try {
+    const res = await invokeOptional('pickAndImportPasswords');
+    if (!res || res.canceled) return;
+    if (res.success) {
+      showImportResult('Successfully imported ' + res.count + ' saved passwords!' + (res.skipped ? ' (' + res.skipped + ' skipped)' : ''), false);
+      loadSavedPasswords();
+      notify('Imported ' + res.count + ' passwords!', 'success');
+    } else {
+      showImportResult('Import failed: ' + (res.reason || 'Unknown error'), true);
+    }
+  } catch (err) {
+    showImportResult('Error importing passwords: ' + errorMessage(err), true);
+  }
+}
+
+async function handleImportHistoryFile() {
+  try {
+    const res = await invokeOptional('pickAndImportHistory');
+    if (!res || res.canceled) return;
+    if (res.success) {
+      showImportResult('Successfully imported ' + res.count + ' history entries from file!', false);
+      loadHistory();
+      notify('Imported ' + res.count + ' history items!', 'success');
+    } else {
+      showImportResult('Import failed: ' + (res.reason || 'Unknown error'), true);
+    }
+  } catch (err) {
+    showImportResult('Error importing history: ' + errorMessage(err), true);
+  }
+}
+
 function wireUi() {
   bindClick('btn-minimize', function () { invokeOptional('minimize'); });
   bindClick('btn-maximize', function () { invokeOptional('maximize'); });
@@ -4112,6 +4214,16 @@ function wireUi() {
   bindClick('memory-pill', freeMemoryAction);
   bindClick('btn-force-gc', freeMemoryAction);
   bindClick('btn-reading-mode', toggleReadingMode);
+  bindClick('btn-open-import-modal', openImportModal);
+  bindClick('menu-import-data', openImportModal);
+  bindClick('btn-import-passwords-modal', openImportModal);
+  bindClick('btn-close-import-modal', closeImportModal);
+  bindClick('btn-close-import-done', closeImportModal);
+  bindClick('btn-import-chrome', function () { handleImportBrowser('chrome'); });
+  bindClick('btn-import-edge', function () { handleImportBrowser('edge'); });
+  bindClick('btn-import-brave', function () { handleImportBrowser('brave'); });
+  bindClick('btn-import-passwords-csv', handleImportPasswordsCsv);
+  bindClick('btn-import-history-file', handleImportHistoryFile);
 
   document.querySelectorAll('.theme-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {

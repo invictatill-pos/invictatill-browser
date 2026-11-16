@@ -3880,6 +3880,256 @@ function savePasswordsToStore() {
   store.set('workspace_passwords_v1', toSave);
 }
 
+function parseCsvRows(text) {
+  const rows = [];
+  let currentRow = [];
+  let currentField = '';
+  let insideQuotes = false;
+  const clean = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+
+  for (let i = 0; i < clean.length; i++) {
+    const char = clean[i];
+    const nextChar = clean[i + 1];
+
+    if (char === '"') {
+      if (insideQuotes && nextChar === '"') {
+        currentField += '"';
+        i++;
+      } else {
+        insideQuotes = !insideQuotes;
+      }
+    } else if (char === ',' && !insideQuotes) {
+      currentRow.push(currentField.trim());
+      currentField = '';
+    } else if ((char === '\r' || char === '\n') && !insideQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++;
+      }
+      currentRow.push(currentField.trim());
+      if (currentRow.some((f) => f.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentField = '';
+    } else {
+      currentField += char;
+    }
+  }
+  if (currentField.length > 0 || currentRow.length > 0) {
+    currentRow.push(currentField.trim());
+    if (currentRow.some((f) => f.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+  return rows;
+}
+
+function importPasswordsFromCsv(csvText) {
+  if (privateInstance) throw new Error('Cannot import passwords in private mode');
+  if (!secureStorageAvailable()) throw new Error('OS secure storage is not available; passwords cannot be saved');
+
+  const rows = parseCsvRows(csvText);
+  if (rows.length < 2) return { success: true, count: 0, skipped: 0 };
+
+  const headers = rows[0].map((h) => h.toLowerCase());
+  let urlIdx = headers.findIndex((h) => h.includes('url') || h.includes('website') || h.includes('origin'));
+  let userIdx = headers.findIndex((h) => h.includes('username') || h.includes('user') || h.includes('login') || h.includes('email'));
+  let passIdx = headers.findIndex((h) => h.includes('password') || h.includes('pass'));
+
+  if (urlIdx === -1 || passIdx === -1) {
+    if (rows[0].length >= 4) {
+      urlIdx = 1; userIdx = 2; passIdx = 3;
+    } else if (rows[0].length >= 3) {
+      urlIdx = 0; userIdx = 1; passIdx = 2;
+    } else {
+      throw new Error('Unrecognized password CSV format. Columns for URL and Password are required.');
+    }
+  }
+
+  let count = 0;
+  let skipped = 0;
+
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const rawUrl = row[urlIdx] || '';
+    const username = userIdx >= 0 ? (row[userIdx] || '') : '';
+    const password = row[passIdx] || '';
+
+    if (!rawUrl || !password) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      const origin = normalizeCredentialOrigin(rawUrl);
+      const domain = normalizeCredentialDomain(origin);
+      const existing = findSavedCredential(origin, username);
+      if (existing) {
+        existing.password = password;
+        existing.updatedAt = Date.now();
+      } else {
+        savedPasswords.push({
+          id: 'pwd-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          origin,
+          domain,
+          username: username.slice(0, 250),
+          password: password.slice(0, 500),
+          updatedAt: Date.now(),
+        });
+      }
+      count++;
+    } catch (e) {
+      skipped++;
+    }
+  }
+
+  if (count > 0) {
+    savePasswordsToStore();
+  }
+  return { success: true, count, skipped };
+}
+
+function getInstalledBrowserHistoryPaths() {
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const appData = process.env.APPDATA || '';
+  return {
+    chrome: path.join(localAppData, 'Google', 'Chrome', 'User Data', 'Default', 'History'),
+    edge: path.join(localAppData, 'Microsoft', 'Edge', 'User Data', 'Default', 'History'),
+    brave: path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'User Data', 'Default', 'History'),
+    opera: path.join(appData, 'Opera Software', 'Opera Stable', 'History'),
+  };
+}
+
+function detectInstalledBrowsers() {
+  const paths = getInstalledBrowserHistoryPaths();
+  return {
+    chrome: fs.existsSync(paths.chrome),
+    edge: fs.existsSync(paths.edge),
+    brave: fs.existsSync(paths.brave),
+    opera: fs.existsSync(paths.opera),
+  };
+}
+
+function importBrowserHistory(browserName) {
+  if (privateInstance) throw new Error('Cannot import history in private mode');
+  const paths = getInstalledBrowserHistoryPaths();
+  const histPath = paths[browserName];
+  if (!histPath || !fs.existsSync(histPath)) {
+    throw new Error('History database not found for ' + browserName);
+  }
+
+  const tmpCopy = path.join(os.tmpdir(), 'invicta_import_hist_' + Date.now() + '.tmp');
+  try {
+    fs.copyFileSync(histPath, tmpCopy);
+    const buf = fs.readFileSync(tmpCopy);
+    try { fs.unlinkSync(tmpCopy); } catch (e) {}
+
+    const str = buf.toString('latin1');
+    const matches = str.match(/https?:\/\/[a-zA-Z0-9\-._~:/?#[\]@!$&'()*+,;=%]+/g);
+    if (!matches || matches.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    const cleanUrls = Array.from(new Set(
+      matches.filter((u) => u.length > 10 && u.length < 500 && !u.includes('\0') && !u.includes('\r') && !u.includes('\n'))
+    ));
+
+    let added = 0;
+    const now = Date.now();
+    for (const rawUrl of cleanUrls) {
+      try {
+        const parsed = new URL(rawUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
+        const url = parsed.href;
+        if (url.includes('chrome-extension:') || url.includes('devtools:') || url.includes('edge://')) continue;
+
+        if (!historyRecords.some((r) => r.url === url)) {
+          historyRecords.push({
+            id: 'history-' + (now - added * 100) + '-' + Math.random().toString(36).slice(2, 8),
+            url,
+            title: parsed.hostname + (parsed.pathname && parsed.pathname !== '/' ? parsed.pathname.slice(0, 40) : ''),
+            visitedAt: now - added * 1000,
+          });
+          added++;
+        }
+      } catch (e) {}
+    }
+
+    if (historyRecords.length > MAX_HISTORY) {
+      historyRecords.splice(0, historyRecords.length - MAX_HISTORY);
+    }
+    scheduleHistorySave();
+    return { success: true, count: added };
+  } catch (err) {
+    try { if (fs.existsSync(tmpCopy)) fs.unlinkSync(tmpCopy); } catch (e) {}
+    throw new Error('Failed to import ' + browserName + ' history: ' + err.message);
+  }
+}
+
+function importHistoryFromFile(content, fileExtension) {
+  if (privateInstance) throw new Error('Cannot import history in private mode');
+  let items = [];
+  if (fileExtension === '.json') {
+    try {
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        items = parsed;
+      } else if (parsed && Array.isArray(parsed.history)) {
+        items = parsed.history;
+      }
+    } catch (e) {
+      throw new Error('Invalid JSON history file');
+    }
+  } else {
+    const rows = parseCsvRows(content);
+    if (rows.length > 0) {
+      const headers = rows[0].map((h) => h.toLowerCase());
+      const urlIdx = headers.findIndex((h) => h.includes('url'));
+      const titleIdx = headers.findIndex((h) => h.includes('title') || h.includes('name'));
+      const startRow = (urlIdx !== -1) ? 1 : 0;
+      const targetUrlIdx = urlIdx !== -1 ? urlIdx : 0;
+      const targetTitleIdx = titleIdx !== -1 ? titleIdx : (rows[0].length > 1 ? 1 : -1);
+
+      for (let i = startRow; i < rows.length; i++) {
+        const row = rows[i];
+        if (row[targetUrlIdx]) {
+          items.push({
+            url: row[targetUrlIdx],
+            title: targetTitleIdx >= 0 ? row[targetTitleIdx] : '',
+          });
+        }
+      }
+    }
+  }
+
+  let added = 0;
+  const now = Date.now();
+  for (const item of items) {
+    const rawUrl = typeof item === 'string' ? item : (item && (item.url || item.href));
+    if (!rawUrl || typeof rawUrl !== 'string') continue;
+    try {
+      const parsed = new URL(rawUrl);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
+      const url = parsed.href;
+      if (!historyRecords.some((r) => r.url === url)) {
+        historyRecords.push({
+          id: 'history-' + (now - added * 50) + '-' + Math.random().toString(36).slice(2, 8),
+          url,
+          title: (item && item.title) || parsed.hostname,
+          visitedAt: (item && item.visitedAt) || (now - added * 1000),
+        });
+        added++;
+      }
+    } catch (e) {}
+  }
+
+  if (historyRecords.length > MAX_HISTORY) {
+    historyRecords.splice(0, historyRecords.length - MAX_HISTORY);
+  }
+  scheduleHistorySave();
+  return { success: true, count: added };
+}
+
 function loadPersistentBrowserData() {
   if (!store) return;
   loadWorkspaces();
@@ -4075,20 +4325,21 @@ function getReleaseDetails() {
   return {
     version: app.getVersion(),
     releaseDate: '2026-11-16',
-    title: 'Low RAM Performance, Dark Mode & Reader Mode',
-    intro: 'Drastically reduced memory usage with automated tab sleeping, real-time memory monitoring, full dark mode, and distraction-free reading mode.',
+    title: 'Browser Migration Assistant & Performance Optimization',
+    intro: 'Seamlessly import history and passwords from Google Chrome, Microsoft Edge, Brave, and password managers, alongside low-RAM tab sleeping, dark mode, and reader mode.',
     features: [
-      'Ultra-low memory footprint with Chromium V8 heap capping and background tab process throttling.',
-      'Auto-sleeps inactive tabs after 10 minutes to discard unneeded cache, with one-click instant wake.',
+      'Migration Assistant: Direct 1-click browsing history import from installed Google Chrome, Microsoft Edge, and Brave browsers.',
+      'Password Importer: Import saved passwords exported as CSV from Chrome, Edge, Firefox, 1Password, Bitwarden, and other password managers with OS-backed encryption.',
+      'File History Importer: Import history records from exported JSON or CSV files with deduplication.',
+      'Ultra-low memory footprint with Chromium V8 heap bounds, background tab throttling, and 10-minute auto-tab sleeping.',
       'Real-time Memory Pill in the title bar showing active RAM consumption and instant one-click memory cache purge.',
       'Full Dark Mode support with color theme switcher (Light, Dark, System) in Settings.',
       'Distraction-free Reading Mode in the toolbar for clean article reading.',
-      'Dedicated Memory & Performance panel in Settings with live system and browser RAM metrics.',
     ],
     bugFixes: [
-      'All existing workspaces, extensions, AI tools, and shortcuts remain 100% intact.',
+      'All imported credentials are encrypted using Windows DPAPI safe storage.',
       'Inactive audio tabs and pinned tabs are preserved from sleeping.',
-      'Slim, modern 6px scrollbars and optional compact navigation bar.',
+      'All existing workspaces, extensions, AI tools, and shortcuts remain 100% intact.',
     ],
   };
 }
@@ -6077,6 +6328,54 @@ function registerIpcHandlers() {
       return true;
     })()`;
     return tab.view.webContents.executeJavaScript(script, true).catch(() => false);
+  });
+
+  registerHandler('detect-installed-browsers', () => detectInstalledBrowsers());
+
+  registerHandler('import-browser-history', (event, browserName) => {
+    const name = boundedString(browserName, 'browser name', 30, false).toLowerCase();
+    return importBrowserHistory(name);
+  });
+
+  registerHandler('pick-and-import-passwords', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, reason: 'Browser window is unavailable' };
+    }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import Passwords (CSV)',
+      filters: [
+        { name: 'Password CSV Files (*.csv)', extensions: ['csv'] },
+        { name: 'All Files (*.*)', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    const filePath = result.filePaths[0];
+    const content = fs.readFileSync(filePath, 'utf8');
+    return importPasswordsFromCsv(content);
+  });
+
+  registerHandler('pick-and-import-history', async () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, reason: 'Browser window is unavailable' };
+    }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import History (CSV or JSON)',
+      filters: [
+        { name: 'History Files (*.csv, *.json, *.txt)', extensions: ['csv', 'json', 'txt'] },
+        { name: 'All Files (*.*)', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+    if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+    const filePath = result.filePaths[0];
+    const ext = path.extname(filePath).toLowerCase();
+    const content = fs.readFileSync(filePath, 'utf8');
+    return importHistoryFromFile(content, ext);
   });
 
   registerHandler('get-system-info', () => ({

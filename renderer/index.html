@@ -686,6 +686,14 @@
         </fieldset>
 
         <fieldset class="settings-group">
+          <legend>Import browsing data</legend>
+          <p class="field-help">Import history and passwords from Google Chrome, Microsoft Edge, Brave, or CSV files.</p>
+          <div class="settings-actions">
+            <button class="primary-button compact" id="btn-open-import-modal" type="button">📥 Import History &amp; Passwords…</button>
+          </div>
+        </fieldset>
+
+        <fieldset class="settings-group">
           <legend>Updates and tools</legend>
           <div class="update-settings-card" id="update-settings-card" data-status="idle">
             <span class="update-settings-icon" id="update-settings-icon" aria-hidden="true">↻</span>
@@ -740,6 +748,7 @@
         <button role="menuitem" type="button" id="menu-print">Print… <kbd>Ctrl+P</kbd></button>
         <button role="menuitem" type="button" id="menu-save-pdf">Save as PDF…</button>
         <button class="menu-tool-action" role="menuitem" id="btn-passwords" type="button" aria-label="Password manager across workspaces">Passwords &amp; autofill</button>
+        <button class="menu-tool-action" role="menuitem" id="menu-import-data" type="button" aria-label="Import history and passwords">Import browsing data…</button>
         <button class="menu-tool-action" role="menuitem" id="btn-extensions" type="button" aria-label="Extensions">Extensions</button>
         <button role="menuitem" type="button" id="menu-devtools">Developer tools</button>
       </div>
@@ -903,6 +912,7 @@
         <div class="passwords-list" id="passwords-list"></div>
       </div>
       <footer class="modal-footer">
+        <button class="primary-button compact" id="btn-import-passwords-modal" type="button">📥 Import Passwords (CSV)</button>
         <button class="secondary-button" id="btn-close-passwords-done" type="button">Close</button>
       </footer>
     </section>
@@ -950,6 +960,80 @@
           <button class="secondary-button" id="btn-cancel-screen-picker" type="button">Cancel</button>
           <button class="primary-button screen-picker-share-button" id="btn-submit-screen-picker" type="button" disabled>Share</button>
         </div>
+      </footer>
+    </section>
+  </div>
+  <div class="modal-backdrop hidden" id="import-modal-backdrop">
+    <section class="update-modal" id="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title" tabindex="-1">
+      <header class="modal-header">
+        <div>
+          <p class="eyebrow">Migration Assistant</p>
+          <h2 id="import-modal-title">Import History &amp; Passwords</h2>
+        </div>
+        <button class="icon-button" id="btn-close-import-modal" type="button" aria-label="Close import dialog">✕</button>
+      </header>
+      <div class="modal-body">
+        <p class="modal-intro">Easily bring over your browsing history and passwords from other browsers.</p>
+
+        <div class="import-section">
+          <h3>🌐 Direct History Import from Installed Browsers</h3>
+          <p class="field-help">Click to import browsing history directly from your installed browsers:</p>
+          <div class="import-browser-grid">
+            <div class="import-browser-card">
+              <div class="import-browser-info">
+                <span class="import-browser-icon">🌐</span>
+                <div>
+                  <strong>Google Chrome</strong>
+                  <span class="import-status-text" id="status-chrome-detected">Checking…</span>
+                </div>
+              </div>
+              <button class="primary-button compact" id="btn-import-chrome" type="button">Import History</button>
+            </div>
+
+            <div class="import-browser-card">
+              <div class="import-browser-info">
+                <span class="import-browser-icon">🌊</span>
+                <div>
+                  <strong>Microsoft Edge</strong>
+                  <span class="import-status-text" id="status-edge-detected">Checking…</span>
+                </div>
+              </div>
+              <button class="primary-button compact" id="btn-import-edge" type="button">Import History</button>
+            </div>
+
+            <div class="import-browser-card">
+              <div class="import-browser-info">
+                <span class="import-browser-icon">🦁</span>
+                <div>
+                  <strong>Brave Browser</strong>
+                  <span class="import-status-text" id="status-brave-detected">Checking…</span>
+                </div>
+              </div>
+              <button class="primary-button compact" id="btn-import-brave" type="button">Import History</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="import-section">
+          <h3>🔑 Import Passwords (CSV)</h3>
+          <p class="field-help">Import passwords exported as CSV from Chrome, Edge, Firefox, or password managers (1Password, Bitwarden, etc.):</p>
+          <div class="form-actions">
+            <button class="primary-button compact" id="btn-import-passwords-csv" type="button">📂 Select Passwords CSV File…</button>
+          </div>
+        </div>
+
+        <div class="import-section">
+          <h3>📜 Import History from File</h3>
+          <p class="field-help">Import history from an exported JSON or CSV file:</p>
+          <div class="form-actions">
+            <button class="secondary-button compact" id="btn-import-history-file" type="button">📂 Select History File…</button>
+          </div>
+        </div>
+
+        <div class="import-result-message hidden" id="import-result-message" role="status" aria-live="polite"></div>
+      </div>
+      <footer class="modal-footer">
+        <button class="secondary-button" id="btn-close-import-done" type="button">Done</button>
       </footer>
     </section>
   </div>
