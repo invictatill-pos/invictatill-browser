@@ -151,14 +151,13 @@
     </section>
   </header>
 
-  <aside class="app-rail" id="app-rail" aria-label="Pinned apps">
-    <span class="app-rail-line" aria-hidden="true"></span>
-    <button class="app-rail-button whatsapp-button" id="btn-whatsapp" type="button" aria-label="Open WhatsApp side panel" aria-expanded="false" aria-controls="whatsapp-panel" title="Open WhatsApp side panel">
+  <aside class="app-rail" id="app-rail" aria-label="Sidebar shortcuts">
+    <button class="app-rail-button whatsapp-button" id="btn-whatsapp" type="button" data-sidebar-id="whatsapp" aria-label="Open WhatsApp side panel" aria-expanded="false" aria-controls="sidebar-panel" title="Open WhatsApp side panel">
       <svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.1 3.9A10 10 0 0 0 4.4 16l-1.3 4.8 4.9-1.3A10 10 0 0 0 20.1 3.9Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path><path d="M8.1 7.6c.3-.3.7-.2.9.1l1 2c.1.3 0 .6-.2.8l-.7.7c.7 1.5 1.9 2.7 3.4 3.4l.7-.8c.2-.2.5-.3.8-.1l1.9.9c.4.2.5.6.3.9-.5.9-1.4 1.4-2.4 1.3-3.4-.5-6.1-3.2-6.6-6.6-.1-1 .2-1.9.9-2.6Z" fill="currentColor"></path></svg>
       <span class="app-rail-badge hidden" id="whatsapp-unread-badge" aria-label="Unread WhatsApp messages">0</span>
       <span class="app-rail-label">WhatsApp</span>
     </button>
-    <button class="app-rail-button" id="btn-chatgpt" type="button" aria-label="Open ChatGPT" title="Open ChatGPT (Ctrl+Shift+G)">
+    <button class="app-rail-button" id="btn-chatgpt" type="button" data-sidebar-id="chatgpt" aria-label="Open ChatGPT side panel" aria-expanded="false" aria-controls="sidebar-panel" title="Open ChatGPT side panel (Ctrl+Shift+G)">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.5a8.5 8.5 0 0 1-8.5 8.5H4l1.5-3.6a8.5 8.5 0 1 1 15-4.9Z"></path><path d="M8.5 11.5h7"></path></svg>
       <span class="app-rail-label">ChatGPT</span>
     </button>
@@ -166,40 +165,43 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="M4 9h16m-10 0v11"></path></svg>
       <span class="app-rail-label">Tools</span>
     </button>
+    <div class="sidebar-site-list" id="sidebar-site-list" role="group" aria-label="Added websites"></div>
+    <button class="app-rail-button" id="btn-add-sidebar-site" type="button" aria-label="Add website to sidebar" aria-haspopup="dialog" title="Add website to sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    </button>
   </aside>
 
-  <aside class="whatsapp-panel hidden" id="whatsapp-panel" aria-labelledby="whatsapp-panel-title" aria-hidden="true">
-    <header class="whatsapp-panel-header">
-      <div class="whatsapp-panel-brand">
-        <span class="whatsapp-panel-logo" aria-hidden="true">
-          <svg width="20" height="20" viewBox="0 0 24 24"><path d="M20.1 3.9A10 10 0 0 0 4.4 16l-1.3 4.8 4.9-1.3A10 10 0 0 0 20.1 3.9Z" fill="none" stroke="#25d366" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path><path d="M8.1 7.6c.3-.3.7-.2.9.1l1 2c.1.3 0 .6-.2.8l-.7.7c.7 1.5 1.9 2.7 3.4 3.4l.7-.8c.2-.2.5-.3.8-.1l1.9.9c.4.2.5.6.3.9-.5.9-1.4 1.4-2.4 1.3-3.4-.5-6.1-3.2-6.6-6.6-.1-1 .2-1.9.9-2.6Z" fill="#25d366"></path></svg>
-        </span>
-        <div>
-          <h2 id="whatsapp-panel-title">WhatsApp</h2>
-          <p id="whatsapp-panel-status" role="status" aria-live="polite">Ready to connect</p>
+  <aside class="sidebar-panel hidden" id="sidebar-panel" aria-labelledby="sidebar-panel-title" aria-hidden="true">
+    <header class="sidebar-panel-header">
+      <div class="sidebar-panel-brand">
+        <span class="sidebar-panel-logo" id="sidebar-panel-logo" aria-hidden="true"></span>
+        <div class="sidebar-panel-labels">
+          <h2 id="sidebar-panel-title"></h2>
+          <p id="sidebar-panel-status" role="status" aria-live="polite"></p>
         </div>
       </div>
-      <div class="whatsapp-panel-actions">
-        <button class="icon-button" id="btn-whatsapp-open-tab" type="button" aria-label="Open WhatsApp in a full tab" title="Open in full tab">
+      <div class="sidebar-panel-actions">
+        <button class="icon-button" id="btn-sidebar-open-tab" type="button" aria-label="Open in full tab" title="Open in full tab">
           <svg width="15" height="15" viewBox="0 0 18 18" aria-hidden="true"><path d="M7 3H3.8a.8.8 0 0 0-.8.8v10.4c0 .44.36.8.8.8h10.4a.8.8 0 0 0 .8-.8V11" fill="none" stroke="currentColor" stroke-width="1.4"></path><path d="M10 3h5v5m0-5-7 7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
         </button>
-        <button class="icon-button" id="btn-whatsapp-reload" type="button" aria-label="Reload WhatsApp" title="Reload WhatsApp">
+        <button class="icon-button" id="btn-sidebar-reload" type="button" aria-label="Reload site" title="Reload site">
           <svg width="15" height="15" viewBox="0 0 18 18" aria-hidden="true"><path d="M14.8 5.7A6 6 0 1 0 15 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path><path d="M14.8 2.8v3.5h-3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"></path></svg>
         </button>
-        <button class="icon-button" id="btn-close-whatsapp" type="button" aria-label="Close WhatsApp side panel" title="Close WhatsApp panel">
+        <button class="icon-button hidden" id="btn-sidebar-remove" type="button" aria-label="Remove website from sidebar" title="Remove website from sidebar">
+          <svg width="15" height="15" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h12M7 5V3h4v2M5 5l.8 9.5h6.4L13 5M8 8v3.5m2-3.5v3.5"></path></svg>
+        </button>
+        <button class="icon-button" id="btn-close-sidebar" type="button" aria-label="Close side panel" title="Close panel">
           <svg width="14" height="14" viewBox="0 0 18 18" aria-hidden="true"><path d="m4 4 10 10M14 4 4 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path></svg>
         </button>
       </div>
     </header>
-    <div class="whatsapp-panel-view-host" id="whatsapp-panel-view-host" aria-label="WhatsApp Web content">
-      <div class="whatsapp-panel-placeholder">
-        <span class="whatsapp-loading-ring" aria-hidden="true"></span>
-        <strong>Loading WhatsApp</strong>
-        <span>Your sign-in stays available across every workspace.</span>
+    <div class="sidebar-panel-view-host" id="sidebar-panel-view-host" aria-label="Sidebar website content">
+      <div class="sidebar-panel-placeholder" id="sidebar-panel-placeholder">
+        <span class="sidebar-loading-ring" id="sidebar-loading-ring" aria-hidden="true"></span>
+        <strong id="sidebar-panel-message"></strong>
       </div>
     </div>
-    <!-- Drag handle: user drags this to resize the WhatsApp panel width -->
-    <div class="whatsapp-panel-resize-handle" id="whatsapp-resize-handle" role="separator" aria-label="Resize WhatsApp panel" aria-orientation="vertical" tabindex="0"></div>
+    <div class="sidebar-panel-resize-handle" id="sidebar-resize-handle" role="separator" aria-label="Resize side panel" aria-orientation="vertical" tabindex="0"></div>
   </aside>
 
   <main class="browser-stage" id="browser-stage">
@@ -297,27 +299,28 @@
       </div>
     </section>
 
-    <!-- HTTP Basic Authentication dialog -->
-    <div class="modal-backdrop http-auth-backdrop hidden" id="http-auth-modal-backdrop" role="dialog" aria-modal="false" aria-labelledby="http-auth-title">
-      <div class="http-auth-modal" id="http-auth-modal" tabindex="-1">
-        <div class="http-auth-icon" aria-hidden="true">🔒</div>
-        <h2 id="http-auth-title" class="http-auth-title">Sign in</h2>
-        <p id="http-auth-host" class="http-auth-host"></p>
-        <p id="http-auth-realm" class="http-auth-realm"></p>
-        <form id="http-auth-form" class="http-auth-form" autocomplete="on" novalidate>
-          <label class="visually-hidden" for="http-auth-username">Username</label>
-          <input id="http-auth-username" class="http-auth-input" type="text" placeholder="Username" autocomplete="username" spellcheck="false" required>
-          <label class="visually-hidden" for="http-auth-password">Password</label>
-          <input id="http-auth-password" class="http-auth-input" type="password" placeholder="Password" autocomplete="current-password">
-          <p id="http-auth-saved" class="http-auth-saved hidden">A saved password is ready. Leave the password field blank to use it.</p>
-          <div class="http-auth-actions">
-            <button type="button" id="btn-http-auth-cancel" class="secondary-button">Cancel</button>
-            <button type="submit" id="btn-http-auth-submit" class="primary-button">Sign in</button>
-          </div>
-        </form>
-      </div>
-    </div>
   </main>
+
+  <!-- HTTP Basic Authentication dialog -->
+  <div class="modal-backdrop http-auth-backdrop hidden" id="http-auth-modal-backdrop" role="dialog" aria-modal="false" aria-labelledby="http-auth-title">
+    <div class="http-auth-modal" id="http-auth-modal" tabindex="-1">
+      <div class="http-auth-icon" aria-hidden="true">🔒</div>
+      <h2 id="http-auth-title" class="http-auth-title">Sign in</h2>
+      <p id="http-auth-host" class="http-auth-host"></p>
+      <p id="http-auth-realm" class="http-auth-realm"></p>
+      <form id="http-auth-form" class="http-auth-form" autocomplete="on" novalidate>
+        <label class="visually-hidden" for="http-auth-username">Username</label>
+        <input id="http-auth-username" class="http-auth-input" type="text" placeholder="Username" autocomplete="username" spellcheck="false" required>
+        <label class="visually-hidden" for="http-auth-password">Password</label>
+        <input id="http-auth-password" class="http-auth-input" type="password" placeholder="Password" autocomplete="current-password">
+        <p id="http-auth-saved" class="http-auth-saved hidden">A saved password is ready. Leave the password field blank to use it.</p>
+        <div class="http-auth-actions">
+          <button type="button" id="btn-http-auth-cancel" class="secondary-button">Cancel</button>
+          <button type="submit" id="btn-http-auth-submit" class="primary-button">Sign in</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <section class="download-popout hidden" id="download-popout" aria-labelledby="download-popout-title" aria-hidden="true">
     <div class="download-popout-header">
@@ -597,7 +600,7 @@
         <fieldset class="settings-group">
           <legend>ChatGPT</legend>
           <p class="privacy-note">Sign in with your ChatGPT account on the official website.</p>
-          <button class="secondary-button compact" id="btn-settings-chatgpt" type="button">Open ChatGPT</button>
+          <button class="secondary-button compact" id="btn-settings-chatgpt" type="button">Open ChatGPT in sidebar</button>
         </fieldset>
 
         <fieldset class="settings-group">
@@ -705,6 +708,26 @@
     <button role="menuitem" type="button" id="menu-settings">Settings</button>
     <button role="menuitem" type="button" id="menu-release-notes">Release notes</button>
     <p class="menu-version">InvictaTill Browser <span id="about-version"></span></p>
+  </div>
+
+  <div class="modal-backdrop hidden" id="sidebar-site-backdrop">
+    <form class="update-modal sidebar-site-form" id="sidebar-site-form" role="dialog" aria-modal="true" aria-labelledby="sidebar-site-title" tabindex="-1">
+      <header class="modal-header">
+        <h2 id="sidebar-site-title">Add website to sidebar</h2>
+        <button class="icon-button" id="btn-close-sidebar-site" type="button" aria-label="Close add website dialog">✕</button>
+      </header>
+      <div class="modal-body sidebar-site-fields">
+        <label for="sidebar-site-url">Website address</label>
+        <input id="sidebar-site-url" type="text" inputmode="url" spellcheck="false" autocomplete="url" placeholder="https://example.com" maxlength="4096" required>
+        <label for="sidebar-site-name">Name <span>(optional)</span></label>
+        <input id="sidebar-site-name" type="text" maxlength="80">
+        <p class="sidebar-site-error hidden" id="sidebar-site-error" role="alert"></p>
+      </div>
+      <footer class="modal-footer">
+        <button class="secondary-button" id="btn-cancel-sidebar-site" type="button">Cancel</button>
+        <button class="primary-button" id="btn-save-sidebar-site" type="submit">Add website</button>
+      </footer>
+    </form>
   </div>
 
   <div class="command-backdrop hidden" id="command-backdrop">

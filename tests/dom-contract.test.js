@@ -46,16 +46,20 @@ test('find-in-page controls and accessible landmarks exist', () => {
     'download-popout-list', 'btn-close-download-popout', 'btn-open-all-downloads',
     'password-save-popout', 'password-save-domain', 'password-save-username',
     'btn-close-password-save', 'btn-dismiss-password-save', 'btn-confirm-password-save',
-    'whatsapp-panel', 'whatsapp-panel-view-host', 'whatsapp-panel-status',
-    'whatsapp-unread-badge', 'btn-whatsapp-open-tab', 'btn-whatsapp-reload',
-    'btn-close-whatsapp', 'drawer-panel-activity', 'activity-report',
+    'sidebar-panel', 'sidebar-panel-view-host', 'sidebar-panel-title', 'sidebar-panel-status',
+    'whatsapp-unread-badge', 'btn-sidebar-open-tab', 'btn-sidebar-reload', 'btn-close-sidebar',
+    'btn-sidebar-remove', 'sidebar-resize-handle', 'btn-add-sidebar-site', 'sidebar-site-backdrop',
+    'sidebar-site-form', 'sidebar-site-url', 'sidebar-site-name', 'btn-save-sidebar-site',
+    'drawer-panel-activity', 'activity-report',
   ]) {
     assert.ok(idSet.has(id), `Missing #${id}`);
   }
   assert.match(html, /Close download box; downloads will continue/);
   assert.match(html, /Available for autofill in every normal workspace/);
-  assert.match(html, /Your sign-in stays available across every workspace/);
-  assert.match(html, /aria-controls=["']whatsapp-panel["']/);
+  assert.match(html, /id=["']sidebar-panel["'][^>]+aria-labelledby=["']sidebar-panel-title["']/);
+  for (const id of ['btn-whatsapp', 'btn-chatgpt']) {
+    assert.match(html, new RegExp(`id=["']${id}["'][^>]+aria-controls=["']sidebar-panel["']`));
+  }
   assert.match(html, /id=["']btn-browser-tools["'][^>]+aria-controls=["']workspace-drawer["']/);
   assert.match(html, /Ctrl\+Shift\+G/);
 });
@@ -94,16 +98,17 @@ test('native tab surface stays below browser chrome and app rail', () => {
 test('HTTP Basic Auth prompts belong to their tab and leave browser controls usable', () => {
   assert.match(html, /id=["']http-auth-modal-backdrop["'][^>]*role=["']dialog["']/);
   assert.match(html, /id=["']http-auth-modal-backdrop["'][^>]*aria-modal=["']false["']/);
-  assert.match(html, /<main class=["']browser-stage["'] id=["']browser-stage["'][^>]*>[\s\S]*id=["']http-auth-modal-backdrop["'][\s\S]*<\/main>/);
-  assert.match(css, /\.http-auth-backdrop\s*{[^}]*\bposition:\s*absolute;[^}]*\binset:\s*0;[^}]*\bz-index:\s*50;[^}]*\boverflow:\s*hidden;/s);
-  assert.doesNotMatch(css, /body\.(?:whatsapp-panel-open|tools-panel-open|fullscreen) \.http-auth-backdrop/);
+  assert.match(html, /<main class=["']browser-stage["'] id=["']browser-stage["'][^>]*>[\s\S]*<\/main>\s*(?:<!--[\s\S]*?-->\s*)?<div[^>]*id=["']http-auth-modal-backdrop["']/);
+  assert.match(css, /\.http-auth-backdrop\s*{[^}]*\bposition:\s*fixed;[^}]*\btop:\s*var\(--http-auth-top,[^)]*\);[^}]*\bleft:\s*var\(--http-auth-left,[^)]*\);[^}]*\boverflow:\s*hidden;/s);
+  assert.doesNotMatch(css, /body\.(?:sidebar-panel-open|tools-panel-open|fullscreen) \.http-auth-backdrop/);
   assert.doesNotMatch(renderer, /\[els\.httpAuthBackdrop, els\.httpAuthModal\]/,
     'Tab auth prompts must stay outside the global modal focus trap');
   assert.doesNotMatch(renderer, /(?:open|close)ModalSurface\(els\.httpAuthBackdrop/);
   assert.match(renderer, /httpAuthRequests:\s*new Map\(/);
   assert.match(renderer, /function syncHttpAuthPrompt\(/);
   assert.match(renderer, /api\.on\('http-auth-closed'/);
-  assert.match(main, /sendToShell\('http-auth-request',\s*\{\s*requestId,\s*tabId:\s*requestingTab\.id,/);
+  assert.match(main, /sendToShell\('http-auth-request',\s*\{\s*requestId,\s*tabId:\s*sidebarSurface \? null : requestingTab\.id,/);
+  assert.match(main, /sidebarId:\s*sidebarSurface\.panel\.id,\s*workspaceId:\s*sidebarSurface\.workspaceId/);
   assert.match(main, /function hasPendingHttpAuthForTab\(/);
   assert.match(main, /function cancelHttpAuthRequestsForTab\(/);
   assert.match(main, /sendToShell\('http-auth-closed',\s*\{[^}]*requestId[^}]*tabId:\s*entry\.tabId/);
@@ -127,7 +132,7 @@ test('renderer avoids executable HTML and dynamic code sinks', () => {
 test('UI styling stays compatible with the strict content security policy', () => {
   assert.ok(!/\sstyle\s*=/.test(html), 'Inline HTML styles are blocked by style-src self');
   // Note: .style. access is intentionally used for live drag positioning on the download
-  // popout and the WhatsApp resize handle — these are runtime pixel operations, not layout.
+  // popout and the sidebar resize handle — these are runtime pixel operations, not layout.
   // We ban cssText (which sets multiple properties at once and bypasses review).
   assert.ok(!/\bcssText\b/.test(renderer), 'cssText bypasses the shared component system');
   assert.match(html, /<link\s+rel=["']stylesheet["']\s+href=["']style\.css["']>/);

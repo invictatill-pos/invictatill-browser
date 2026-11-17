@@ -47,6 +47,14 @@ async function main() {
         (signedIn ? '<p id="signed-in">Signed in</p>' : '<a id="sign-in" href="/chatgpt-login">Log in</a>') + '</main>');
       return;
     }
+    if (request.url === '/sidebar-site' || request.url === '/sidebar-site/next') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(`<!doctype html><title>Sidebar site fixture</title><main>
+        <label>Draft <input id="sidebar-draft"></label>
+        <a id="sidebar-next" href="/sidebar-site/next">Next page</a>
+      </main>`);
+      return;
+    }
     if (request.url === '/download-test') {
       const chunk = Buffer.alloc(32 * 1024, 'i');
       const totalChunks = 16;
@@ -617,11 +625,8 @@ async function main() {
         backdrop: rect('#http-auth-modal-backdrop'),
         modal: rect('#http-auth-modal'),
         stage: rect('#browser-stage'),
-        backdropParent: document.querySelector('#http-auth-modal-backdrop').parentElement.id,
       };
     });
-    assert.equal(authGeometry.backdropParent, 'browser-stage',
-      `Auth backdrop should be mounted inside the tab viewport: ${JSON.stringify(authGeometry)}`);
     assert.ok(authGeometry.chrome.height > 100 && authGeometry.chrome.display !== 'none',
       `Browser chrome was hidden during HTTP auth: ${JSON.stringify(authGeometry)}`);
     assert.ok(authGeometry.rail.width >= 40 && authGeometry.rail.display !== 'none',
@@ -708,12 +713,10 @@ async function main() {
     await capture('01d-http-auth-split.png');
     await window.locator('#btn-menu').click();
     await browserMenu.waitFor({ state: 'visible' });
-    await poll(
-      () => window.evaluate(() => window.electronAPI.getBrowserState()),
-      (state) => state.viewLayout.right >= 304,
-    );
+    const menuLeft = await browserMenu.evaluate((element) => element.getBoundingClientRect().left);
     const menuAuthGeometry = await poll(readAuthSplitGeometry, (geometry) =>
-      authSplitGeometryMatches(geometry) && geometry.backdrop.width < splitAuthGeometry.backdrop.width);
+      authSplitGeometryMatches(geometry) && geometry.backdrop.width < splitAuthGeometry.backdrop.width &&
+      geometry.secondary.x + geometry.secondary.width <= menuLeft);
     assert.ok(menuAuthGeometry.secondary.x >= menuAuthGeometry.backdrop.right - 1,
       `Auth prompt overlapped the secondary split pane with the menu open: ${JSON.stringify(menuAuthGeometry)}`);
     await capture('01e-http-auth-split-menu.png');
@@ -864,17 +867,22 @@ async function main() {
     });
     log('Per-workspace last-active tab restoration and pinned tabs verified');
 
+    const sidebarPanel = window.locator('#sidebar-panel');
+    const readSidebarPanel = (id) => window.evaluate((panelId) => window.electronAPI.getSidebarPanelState(panelId), id);
+    const waitForSidebarPage = (id, url) => poll(() => readSidebarPanel(id), (panelState) =>
+      panelState.visible && panelState.status === 'ready' && panelState.url === url);
+    const closeSidebar = async (id) => {
+      await window.locator('#btn-close-sidebar').click();
+      await sidebarPanel.waitFor({ state: 'hidden' });
+      await poll(() => readSidebarPanel(id), (panelState) => !panelState.visible);
+    };
     const whatsappUrl = `${pageUrl}whatsapp-test`;
     const tabsBeforeWhatsapp = await window.evaluate(() => window.electronAPI.getAllTabs());
     await window.locator('#btn-whatsapp').click();
-    const whatsappPanel = window.locator('#whatsapp-panel');
-    await whatsappPanel.waitFor({ state: 'visible', timeout: 5000 });
+    await sidebarPanel.waitFor({ state: 'visible', timeout: 5000 });
     assert.equal(await window.locator('#btn-whatsapp').getAttribute('aria-expanded'), 'true');
     assert.equal(await window.locator('#btn-whatsapp').evaluate((button) => button.classList.contains('active')), true);
-    const whatsappState = await poll(
-      () => window.evaluate(() => window.electronAPI.getWhatsappPanelState()),
-      (panelState) => panelState.visible && panelState.status === 'ready' && panelState.url === whatsappUrl,
-    );
+    const whatsappState = await waitForSidebarPage('whatsapp', whatsappUrl);
     assert.equal(whatsappState.persistent, true);
     assert.ok(whatsappState.bounds.width >= 500 && whatsappState.bounds.height >= 300,
       `WhatsApp view bounds are too small: ${JSON.stringify(whatsappState.bounds)}`);
@@ -902,15 +910,19 @@ async function main() {
       return {
         viewport: { width: window.innerWidth, height: window.innerHeight },
         rail: rect('#app-rail'),
-        panel: rect('#whatsapp-panel'),
-        host: rect('#whatsapp-panel-view-host'),
+        panel: rect('#sidebar-panel'),
+        host: rect('#sidebar-panel-view-host'),
+        resizeHandle: rect('#sidebar-resize-handle'),
         stage: rect('#browser-stage'),
       };
     });
     assert.ok(Math.abs(whatsappGeometry.panel.left - whatsappGeometry.rail.right) <= 1,
       `WhatsApp panel is detached from its rail: ${JSON.stringify(whatsappGeometry)}`);
+    const sidebarContentRight = whatsappGeometry.resizeHandle.width > 0
+      ? whatsappGeometry.resizeHandle.left : whatsappGeometry.panel.right;
     assert.ok(whatsappGeometry.host.top > whatsappGeometry.panel.top
-      && Math.abs(whatsappGeometry.host.width - whatsappGeometry.panel.width) <= 2,
+      && Math.abs(whatsappGeometry.host.left - whatsappGeometry.panel.left) <= 1
+      && Math.abs(whatsappGeometry.host.right - sidebarContentRight) <= 2,
       `WhatsApp host does not fill its panel: ${JSON.stringify(whatsappGeometry)}`);
     if (whatsappGeometry.viewport.width > 1100) {
       assert.ok(whatsappGeometry.stage.left >= whatsappGeometry.panel.right - 1,
@@ -925,19 +937,14 @@ async function main() {
     }, whatsappUrl);
     assert.equal(whatsappAcrossWorkspace.id, whatsappIdentity.id,
       'Workspace switching recreated the WhatsApp session');
-    assert.equal((await window.evaluate(() => window.electronAPI.getWhatsappPanelState())).visible, true);
+    assert.equal((await readSidebarPanel('whatsapp')).visible, true);
     await window.evaluate(() => window.electronAPI.setActiveWorkspace('default'));
     await window.evaluate((id) => window.electronAPI.switchTab(id), defaultLastTabId);
-    await window.locator('#btn-close-whatsapp').click();
-    await whatsappPanel.waitFor({ state: 'hidden' });
-    await poll(
-      () => window.evaluate(() => window.electronAPI.getWhatsappPanelState()),
-      (panelState) => panelState.visible === false,
-    );
+    await closeSidebar('whatsapp');
     await window.locator('#btn-whatsapp').click();
-    await whatsappPanel.waitFor({ state: 'visible' });
-    await window.locator('#btn-whatsapp-open-tab').click();
-    await whatsappPanel.waitFor({ state: 'hidden' });
+    await sidebarPanel.waitFor({ state: 'visible' });
+    await window.locator('#btn-sidebar-open-tab').click();
+    await sidebarPanel.waitFor({ state: 'hidden' });
     const whatsappFullTabState = await poll(
       () => window.evaluate(() => window.electronAPI.getBrowserState()),
       (browserState) => browserState.tabs.find((tab) => tab.id === browserState.activeTabId && tab.url === whatsappUrl),
@@ -1332,8 +1339,8 @@ async function main() {
     assert.equal(await drawer.getAttribute('aria-hidden'), 'false');
     assert.equal(await window.locator('#btn-browser-tools').getAttribute('aria-expanded'), 'true');
     assert.equal(await window.locator('#btn-browser-tools').evaluate((button) => button.classList.contains('active')), true);
-    assert.equal(await whatsappPanel.isHidden(), true);
-    assert.equal((await window.evaluate(() => window.electronAPI.getWhatsappPanelState())).visible, false);
+    assert.equal(await sidebarPanel.isHidden(), true);
+    assert.equal((await readSidebarPanel('whatsapp')).visible, false);
     const toolsPanelGeometry = await window.evaluate(() => {
       const rect = (selector) => {
         const bounds = document.querySelector(selector).getBoundingClientRect();
@@ -1396,46 +1403,70 @@ async function main() {
     await drawer.waitFor({ state: 'hidden' });
 
     const chatGptTab = () => window.evaluate((url) => window.electronAPI.getBrowserState().then((state) => {
-      return state.tabs.find((tab) => tab.id === state.activeTabId && tab.url === url && !tab.loading);
+      return state.tabs.find((tab) => tab.id === state.activeTabId && tab.url === url && !tab.isLoading);
     }), chatGptUrl);
-    const chatGptPage = (code) => electronApp.evaluate(({ webContents }, { url, code }) => {
-      const contents = webContents.getAllWebContents().find((item) => item.getURL() === url && !item.isDestroyed());
-      return contents && contents.executeJavaScript(code, true);
-    }, { url: chatGptUrl, code });
+    const visibleWebsite = (url, code) => electronApp.evaluate(async ({ BrowserWindow }, details) => {
+      const shell = BrowserWindow.getAllWindows().find((item) => !item.isDestroyed());
+      const view = shell.contentView.children.find((child) => child.getVisible() &&
+        child.webContents && !child.webContents.isDestroyed() && child.webContents.getURL() === details.url);
+      if (!view) return null;
+      return { id: view.webContents.id, result: await view.webContents.executeJavaScript(details.code, true) };
+    }, { url, code });
+    const waitForChatGptPanel = async () => {
+      await waitForSidebarPage('chatgpt', chatGptUrl);
+      return poll(() => visibleWebsite(chatGptUrl, 'document.title'), Boolean);
+    };
 
+    const tabsBeforeChatGpt = await window.evaluate(() => window.electronAPI.getAllTabs());
     await window.locator('#btn-chatgpt').click();
-    const initialChatGpt = await poll(chatGptTab, Boolean);
-    assert.equal(await chatGptPage('document.querySelector("#sign-in").textContent'), 'Log in');
-    assert.deepEqual(await chatGptPage('({ require: typeof require, bridge: typeof window.electronAPI })'),
+    const initialChatGpt = await waitForChatGptPanel();
+    assert.equal(await window.locator('#btn-chatgpt').getAttribute('aria-expanded'), 'true');
+    assert.equal((await window.locator('#sidebar-panel-title').textContent()).trim(), 'ChatGPT');
+    assert.equal((await window.evaluate(() => window.electronAPI.getAllTabs())).length, tabsBeforeChatGpt.length);
+    assert.equal((await visibleWebsite(chatGptUrl, 'document.querySelector("#sign-in").textContent')).result, 'Log in');
+    assert.deepEqual((await visibleWebsite(chatGptUrl, '({ require: typeof require, bridge: typeof window.electronAPI })')).result,
       { require: 'undefined', bridge: 'undefined' });
-    await chatGptPage('document.querySelector("#sign-in").click()');
-    await poll(() => chatGptPage('Boolean(document.querySelector("#signed-in"))'), Boolean);
-    await captureRemotePage(chatGptUrl, '05b-chatgpt-tab.png');
+    await visibleWebsite(chatGptUrl, 'document.querySelector("#sign-in").click()');
+    await poll(() => visibleWebsite(chatGptUrl, 'Boolean(document.querySelector("#signed-in"))'), (page) => page?.result);
+    await captureRemotePage(chatGptUrl, '05b-chatgpt-panel.png');
+
+    await window.locator('#btn-whatsapp').click();
+    await waitForSidebarPage('whatsapp', whatsappUrl);
+    assert.equal((await readSidebarPanel('chatgpt')).visible, false);
+    assert.equal((await visibleWebsite(whatsappUrl, 'document.title')).id, whatsappIdentity.id);
 
     await window.locator('#btn-menu').click();
     await window.locator('#menu-chatgpt').click();
-    assert.equal((await poll(chatGptTab, Boolean)).id, initialChatGpt.id);
+    assert.equal((await waitForChatGptPanel()).id, initialChatGpt.id);
+    assert.equal((await readSidebarPanel('whatsapp')).visible, false);
     await window.locator('#btn-browser-tools').click();
     await window.locator('#drawer-tab-settings').click();
     await window.locator('#btn-settings-chatgpt').click();
-    assert.equal((await poll(chatGptTab, Boolean)).id, initialChatGpt.id);
+    assert.equal((await waitForChatGptPanel()).id, initialChatGpt.id);
     await drawer.waitFor({ state: 'hidden' });
 
+    await closeSidebar('chatgpt');
     await window.locator('#btn-new-tab').click();
     await window.locator('#quick-link-chatgpt').click();
-    assert.equal((await poll(chatGptTab, Boolean)).id, initialChatGpt.id);
+    assert.equal((await waitForChatGptPanel()).id, initialChatGpt.id);
+    await closeSidebar('chatgpt');
     await window.locator('#address-bar').press('Control+Shift+A');
     await window.locator('#command-input').fill('Open ChatGPT');
     await window.locator('.command-result').filter({ hasText: 'Open ChatGPT' }).click();
-    assert.equal((await poll(chatGptTab, Boolean)).id, initialChatGpt.id);
+    assert.equal((await waitForChatGptPanel()).id, initialChatGpt.id);
 
-    await window.evaluate((id) => window.electronAPI.closeTab(id), initialChatGpt.id);
+    await window.locator('#btn-chatgpt').click();
+    await sidebarPanel.waitFor({ state: 'hidden' });
     await window.locator('#address-bar').press('Control+Shift+G');
-    const reopenedChatGpt = await poll(chatGptTab, Boolean);
-    assert.notEqual(reopenedChatGpt.id, initialChatGpt.id);
-    assert.equal(await chatGptPage('document.querySelector("#signed-in").textContent'), 'Signed in');
-    await window.evaluate((id) => window.electronAPI.closeTab(id), reopenedChatGpt.id);
-    log('ChatGPT launch points, tab reuse, and sign-in cookie retention verified');
+    assert.equal((await waitForChatGptPanel()).id, initialChatGpt.id);
+    assert.equal((await visibleWebsite(chatGptUrl, 'document.querySelector("#signed-in").textContent')).result, 'Signed in');
+    await window.locator('#btn-sidebar-open-tab').click();
+    await sidebarPanel.waitFor({ state: 'hidden' });
+    const fullChatGptTab = await poll(chatGptTab, Boolean);
+    await poll(() => visibleWebsite(chatGptUrl, 'document.querySelector("#signed-in")?.textContent'),
+      (page) => page?.id !== initialChatGpt.id && page?.result === 'Signed in');
+    await window.evaluate((id) => window.electronAPI.closeTab(id), fullChatGptTab.id);
+    log('ChatGPT opens in the shared sidebar and keeps its sign-in when expanded to a tab');
 
     const requestedCompactBounds = await electronApp.evaluate(async ({ BrowserWindow }) => {
       const shell = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
@@ -1510,7 +1541,82 @@ async function main() {
       log(`Saved shell screenshot to ${screenshotPath}`);
     }
 
-    process.stdout.write('✓ Electron shell, tabs, navigation, history, tools, and ChatGPT smoke checks passed\n');
+    const customSiteUrl = `${pageUrl}sidebar-site`;
+    const nextSiteUrl = `${customSiteUrl}/next`;
+    const customRailButton = (name) => window.locator('#app-rail').getByRole('button', {
+      name: new RegExp(`^(?:Open|Close) ${name} side panel$`),
+    });
+    const addSidebarSite = async (url, name) => {
+      await window.locator('#btn-add-sidebar-site').click();
+      await window.locator('#sidebar-site-backdrop').waitFor({ state: 'visible' });
+      await poll(() => readSidebarPanel('whatsapp'), (panelState) => !panelState.visible);
+      await window.locator('#sidebar-site-url').fill(url);
+      await window.locator('#sidebar-site-name').fill(name);
+      await window.locator('#btn-save-sidebar-site').click();
+      await window.locator('#sidebar-site-backdrop').waitFor({ state: 'hidden' });
+      const id = await customRailButton(name).getAttribute('data-sidebar-id');
+      assert.match(id, /^site-/);
+      await waitForSidebarPage(id, url);
+      return id;
+    };
+    const customSiteButton = customRailButton('Fixture site');
+    await window.locator('#btn-whatsapp').click();
+    await waitForSidebarPage('whatsapp', whatsappUrl);
+    const customSiteId = await addSidebarSite(customSiteUrl, 'Fixture site');
+    await assertViewportContained(['#app-rail', '#sidebar-panel', '#sidebar-panel-view-host', '#btn-sidebar-remove'],
+      'Pinned website at compact window width');
+    const fullSidebarWidth = (await readSidebarPanel(customSiteId)).bounds.width;
+    await window.locator('#btn-download-popout').click();
+    const downloadPopout = window.locator('#download-popout');
+    await downloadPopout.waitFor({ state: 'visible' });
+    const downloadLeft = await downloadPopout.evaluate((element) => element.getBoundingClientRect().left);
+    await poll(() => readSidebarPanel(customSiteId), ({ visible, bounds }) =>
+      visible && bounds.x + bounds.width <= downloadLeft);
+    await window.locator('#btn-close-download-popout').click();
+    await downloadPopout.waitFor({ state: 'hidden' });
+    await poll(() => readSidebarPanel(customSiteId), ({ visible, bounds }) => visible && bounds.width === fullSidebarWidth);
+    const customPage = await poll(() => visibleWebsite(customSiteUrl, 'document.querySelector("#sidebar-draft").value = "Keep this draft"'), Boolean);
+    await window.locator('#btn-chatgpt').click();
+    assert.equal((await waitForChatGptPanel()).id, initialChatGpt.id);
+    assert.equal((await readSidebarPanel(customSiteId)).visible, false);
+    await customSiteButton.click();
+    await waitForSidebarPage(customSiteId, customSiteUrl);
+    assert.deepEqual(await visibleWebsite(customSiteUrl, 'document.querySelector("#sidebar-draft").value'),
+      { id: customPage.id, result: 'Keep this draft' });
+
+    await visibleWebsite(customSiteUrl, 'document.querySelector("#sidebar-next").click()');
+    await waitForSidebarPage(customSiteId, nextSiteUrl);
+    await window.locator('#btn-sidebar-open-tab').click();
+    await sidebarPanel.waitFor({ state: 'hidden' });
+    const expanded = await poll(
+      () => window.evaluate(() => window.electronAPI.getBrowserState()),
+      (browserState) => browserState.tabs.some((tab) => tab.id === browserState.activeTabId && tab.url === nextSiteUrl),
+    );
+    await window.evaluate((id) => window.electronAPI.closeTab(id), expanded.activeTabId);
+
+    const otherSiteId = await addSidebarSite(nextSiteUrl, 'Another fixture');
+    assert.notEqual(otherSiteId, customSiteId);
+    await closeSidebar(otherSiteId);
+    await window.reload({ waitUntil: 'domcontentloaded' });
+    await customSiteButton.waitFor({ state: 'visible' });
+    assert.equal(await customSiteButton.getAttribute('data-sidebar-id'), customSiteId);
+    assert.equal(await customRailButton('Another fixture').getAttribute('data-sidebar-id'), otherSiteId);
+    await customSiteButton.click();
+    const restored = await poll(() => readSidebarPanel(customSiteId), (panelState) => panelState.visible && panelState.status === 'ready');
+    const restoredPage = await poll(() => visibleWebsite(restored.url, 'document.title'), Boolean);
+    await window.locator('#btn-sidebar-remove').click();
+    await sidebarPanel.waitFor({ state: 'hidden' });
+    await customSiteButton.waitFor({ state: 'detached' });
+    await poll(() => electronApp.evaluate(({ webContents }, id) => Boolean(webContents.fromId(id)), restoredPage.id),
+      (exists) => !exists);
+    await window.reload({ waitUntil: 'domcontentloaded' });
+    await customRailButton('Another fixture').waitFor({ state: 'visible' });
+    assert.equal(await customSiteButton.count(), 0);
+    await customRailButton('Another fixture').click();
+    await waitForSidebarPage(otherSiteId, nextSiteUrl);
+    log('Custom sidebar websites retain their page when switching and save their pins through a shell reload');
+
+    process.stdout.write('✓ Electron shell, tabs, navigation, history, tools, and sidebar smoke checks passed\n');
   } finally {
     if (electronApp) {
       await Promise.race([

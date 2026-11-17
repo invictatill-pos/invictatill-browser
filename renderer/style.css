@@ -44,7 +44,9 @@
   --chrome-height: calc(var(--titlebar-height) + var(--tabs-height) + var(--nav-height));
   --drawer-width: 450px;
   --app-rail-width: 48px;
-  --whatsapp-panel-width: clamp(520px, 56vw, 1040px);
+  --sidebar-panel-width: clamp(520px, 56vw, 1040px);
+  --sidebar-page-min-width: 320px;
+  --sidebar-width: min(var(--sidebar-panel-width), calc(100vw - var(--app-rail-width) - var(--sidebar-page-min-width)));
   --font-ui: "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
@@ -847,7 +849,7 @@ body.fullscreen .app-rail {
   display: none;
 }
 
-body.fullscreen .whatsapp-panel {
+body.fullscreen .sidebar-panel {
   display: none;
 }
 
@@ -867,14 +869,32 @@ body.fullscreen .whatsapp-panel {
   border-right: 1px solid var(--border);
 }
 
-.app-rail-line {
-  width: 22px;
-  height: 2px;
-  flex: 0 0 2px;
-  margin: 2px 0 1px;
-  background: linear-gradient(90deg, transparent, var(--green), transparent);
-  border-radius: 99px;
+.sidebar-site-list {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.sidebar-site-list:empty {
   display: none;
+}
+
+.sidebar-site-list .app-rail-button:focus-visible {
+  outline-offset: -2px;
+}
+
+.sidebar-site-initial {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .app-rail-button {
@@ -928,258 +948,140 @@ body.fullscreen .whatsapp-panel {
   display: none;
 }
 
-.whatsapp-panel {
+.sidebar-panel {
   position: fixed;
   z-index: 875;
   top: var(--chrome-height);
   bottom: 0;
   left: var(--app-rail-width);
-  width: var(--whatsapp-panel-width);
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   background: var(--bg-canvas);
   border-right: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
 }
 
-.whatsapp-panel-resize-handle {
-  position: absolute;
-  z-index: 30;
-  top: 0;
-  right: 0;
-  width: 6px;
-  height: 100%;
-  cursor: col-resize;
-  background: transparent;
-  transition: background 0.18s ease;
-  user-select: none;
-}
-
-.whatsapp-panel-resize-handle:hover,
-.whatsapp-panel-resize-handle:active {
-  background: rgba(71, 107, 85, 0.22);
-}
-
-body.whatsapp-resizing {
-  cursor: col-resize;
-  user-select: none;
-}
-
-.whatsapp-panel-header {
-  height: 60px;
+.sidebar-panel-header {
+  min-height: 60px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 0 10px 0 14px;
+  padding: 8px 10px 8px 14px;
   background: var(--bg-raised);
-  border-bottom: 1px solid rgba(71, 107, 85, 0.14);
-  box-shadow: none;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  border-color: var(--border);
 }
 
-.whatsapp-panel-brand {
+.sidebar-panel-brand {
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.whatsapp-panel-logo {
+.sidebar-panel-logo {
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
   display: grid;
   place-items: center;
   color: var(--green);
-  background: rgba(71, 107, 85, 0.09);
-  border: 1px solid rgba(71, 107, 85, 0.22);
+  background: var(--bg-active);
   border-radius: 9px;
 }
 
-.whatsapp-panel-brand h2,
-.whatsapp-panel-brand p {
+.sidebar-panel-labels {
+  min-width: 0;
+}
+
+.sidebar-panel-labels h2,
+.sidebar-panel-labels p {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.whatsapp-panel-brand h2 {
-  color: var(--text-primary);
+.sidebar-panel-labels h2 {
   font-size: 14px;
   font-weight: 720;
-  letter-spacing: 0.01em;
 }
 
-.whatsapp-panel-brand p {
+.sidebar-panel-labels p {
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 10px;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+  font-size: 11px;
 }
 
-/* Status dot — animated for "ready" state */
-.whatsapp-panel-brand p::before {
-  content: '';
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.whatsapp-panel-brand p[data-status="ready"] {
-  color: var(--green);
-}
-
-.whatsapp-panel-brand p[data-status="ready"]::before {
-  background: var(--green);
-  animation: none;
-}
-
-@keyframes wa-status-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(71, 107, 85, 0.5); }
-  50% { opacity: 0.85; box-shadow: 0 0 0 4px rgba(71, 107, 85, 0); }
-}
-
-.whatsapp-panel-brand p[data-status="error"] {
+.sidebar-panel-labels p[data-status="error"] {
   color: var(--red);
 }
 
-.whatsapp-panel-brand p[data-status="error"]::before {
-  background: var(--red);
-}
-
-.whatsapp-panel-actions {
+.sidebar-panel-actions {
   display: flex;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
 }
 
-.whatsapp-panel-actions .icon-button {
+.sidebar-panel-actions .icon-button {
   width: 33px;
   height: 33px;
-  color: var(--text-muted);
-  background: transparent;
-  border-radius: 8px;
-  transition: color 0.15s, background 0.15s;
 }
 
-.whatsapp-panel-actions .icon-button:hover {
-  color: var(--text-primary);
-  background: rgba(71, 107, 85, 0.1);
-}
-
-.whatsapp-panel-view-host {
-  position: absolute;
-  /* Match new 60px header height */
-  inset: 60px 0 0;
+.sidebar-panel-view-host {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-right: 8px;
   overflow: hidden;
-  background: var(--bg-canvas);
 }
 
-/* ── WhatsApp panel resize handle ── */
-.whatsapp-panel-resize-handle {
+.sidebar-panel-resize-handle {
   position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  inset: 60px 0 0 auto;
   width: 8px;
   cursor: col-resize;
-  z-index: 20;
-  transition: background 0.15s;
-}
-.whatsapp-panel-resize-handle::before {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 2px;
-  height: 40px;
-  border-radius: 2px;
-  background: rgba(71, 107, 85, 0);
-  transition: background 0.15s, height 0.15s;
-}
-.whatsapp-panel-resize-handle:hover::before,
-.whatsapp-panel-resize-handle:active::before,
-.whatsapp-panel-resize-handle.dragging::before {
-  background: rgba(71, 107, 85, 0.6);
-  height: 60px;
-  box-shadow: 0 0 8px rgba(71, 107, 85, 0.4);
-}
-.whatsapp-panel-resize-handle:focus-visible {
-  outline: none;
-}
-.whatsapp-panel-resize-handle:focus-visible::before {
-  background: rgba(71, 107, 85, 0.5);
+  touch-action: none;
 }
 
-.whatsapp-panel-placeholder {
+.sidebar-panel-resize-handle:hover,
+.sidebar-panel-resize-handle:focus-visible,
+body.sidebar-resizing .sidebar-panel-resize-handle {
+  background: var(--bg-active);
+}
+
+body.sidebar-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.sidebar-panel-placeholder {
   position: absolute;
   inset: 0;
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 24px;
   color: var(--text-secondary);
   text-align: center;
-  background:
-    radial-gradient(circle at 50% 38%, rgba(71, 107, 85, 0.08), transparent 28%),
-    var(--bg-canvas);
+  overflow-wrap: anywhere;
 }
 
-.whatsapp-panel-placeholder > span:last-child {
-  color: var(--text-muted);
-  font-size: 10px;
-  text-align: center;
-  max-width: 200px;
-}
-
-/* Enhanced loading ring — dual-ring for premium feel */
-.whatsapp-loading-ring {
-  width: 36px;
-  height: 36px;
-  border: 2.5px solid rgba(71, 107, 85, 0.12);
+.sidebar-loading-ring {
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--border);
   border-top-color: var(--green);
-  border-right-color: rgba(71, 107, 85, 0.4);
   border-radius: 50%;
-  animation: whatsapp-spin 0.85s cubic-bezier(0.6, 0.2, 0.4, 0.8) infinite;
-  box-shadow: none;
+  animation: sidebar-spin 0.85s linear infinite;
 }
 
-@keyframes whatsapp-spin {
+@keyframes sidebar-spin {
   to { transform: rotate(360deg); }
-}
-
-/* WhatsApp logo in app-rail — glowing green icon */
-.whatsapp-button {
-  color: var(--text-muted);
-  transition: color 0.15s, background 0.15s;
-}
-
-.whatsapp-button:hover,
-.whatsapp-button[aria-expanded="true"] {
-  color: var(--green) !important;
-}
-
-/* Compact mode — when WhatsApp panel is very narrow, keep content visible */
-.whatsapp-panel[style*="width"] .whatsapp-panel-view-host {
-  min-width: 300px;
-}
-
-/* Ensure webview inside always fills full available height */
-.whatsapp-panel webview,
-.whatsapp-panel-view-host > * {
-  width: 100% !important;
-  height: 100% !important;
-  min-width: 300px;
 }
 
 
@@ -1191,8 +1093,8 @@ body.whatsapp-resizing {
   background: var(--bg-canvas);
 }
 
-body.whatsapp-panel-open .browser-stage {
-  left: calc(var(--app-rail-width) + var(--whatsapp-panel-width));
+body.sidebar-panel-open .browser-stage {
+  left: calc(var(--app-rail-width) + var(--sidebar-width));
 }
 
 body.tools-panel-open .browser-stage {
@@ -2079,6 +1981,14 @@ summary:focus-visible {
   gap: 7px;
 }
 
+#drawer-panel-downloads .list-toolbar {
+  flex-wrap: wrap;
+}
+
+#drawer-panel-downloads .list-toolbar-actions {
+  flex-wrap: wrap;
+}
+
 .secondary-text-button {
   color: var(--cyan);
   background: transparent;
@@ -2170,6 +2080,7 @@ summary:focus-visible {
 
 .download-title-row .data-item-title {
   flex: 1;
+  min-width: 0;
 }
 
 .download-status-chip {
@@ -2201,7 +2112,7 @@ summary:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin: 7px 0 0 51px;
+  margin: 7px 0 0;
   padding: 3px 8px;
   color: var(--orange);
   background: rgba(245, 158, 11, 0.1);
@@ -2367,6 +2278,7 @@ summary:focus-visible {
 }
 
 .download-popout {
+  --download-panel-inset: 16px;
   position: fixed;
   z-index: 2200;
   /* Anchored BELOW the browser chrome (navbar), aligned top-right — non-movable */
@@ -2379,40 +2291,27 @@ summary:focus-visible {
   overflow: hidden;
   color: var(--text-primary);
   background: var(--bg-raised);
-  border: 1px solid rgba(89, 110, 86, 0.22);
+  border: 1px solid var(--border);
   border-radius: 16px;
-  box-shadow:
-    0 32px 80px rgba(39, 51, 42, 0.158),
-    0 12px 32px rgba(39, 51, 42, 0.092),
-    0 2px 8px rgba(39, 51, 42, 0.066),
-    inset 0 1px 0 rgba(41, 54, 46, 0.07);
-  animation: dl-popout-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  border-color: var(--border);
   box-shadow: var(--shadow-lg);
+  animation: dl-popout-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Arrow pointer toward the download button in the nav bar */
-.download-popout::before {
-  content: '';
-  position: absolute;
-  top: -6px;
-  right: 72px;
-  width: 12px;
-  height: 6px;
-  background: var(--bg-canvas);
-  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-  border-left: 1px solid rgba(89, 110, 86, 0.18);
-  border-right: 1px solid rgba(89, 110, 86, 0.18);
-  pointer-events: none;
-}
-
-
-/* Slides DOWN from top (from the nav bar button) */
 @keyframes dl-popout-in {
-  from { opacity: 0; transform: translateY(-12px) scale(0.97); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.download-popout-header,
+.download-popout-tools,
+.download-popout-list {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.download-popout-header,
+.download-popout-tools {
+  overflow: hidden;
 }
 
 /* ── Header ── */
@@ -2422,7 +2321,7 @@ summary:focus-visible {
   justify-content: space-between;
   gap: 14px;
   min-height: 68px;
-  padding: 13px 14px 13px 16px;
+  padding: 13px var(--download-panel-inset);
   background: var(--bg-canvas);
   border-bottom: 1px solid rgba(89, 110, 86, 0.11);
   flex-shrink: 0;
@@ -2442,9 +2341,9 @@ summary:focus-visible {
 }
 
 .download-popout-header-icon {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
   display: grid;
   place-items: center;
   color: var(--green);
@@ -2491,7 +2390,7 @@ summary:focus-visible {
 /* ── Summary bar ── */
 .download-popout-summary {
   margin: 0;
-  padding: 9px 16px;
+  padding: 9px var(--download-panel-inset);
   color: var(--text-muted);
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
@@ -2504,7 +2403,7 @@ summary:focus-visible {
   flex-shrink: 0;
   display: flex;
   gap: 8px;
-  padding: 8px 14px;
+  padding: 8px var(--download-panel-inset);
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
 }
@@ -2540,13 +2439,17 @@ summary:focus-visible {
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 /* ── Download item ── */
 .download-mini-item {
-  padding: 13px 14px 12px 16px;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px 11px;
+  flex: none;
+  padding: 12px var(--download-panel-inset);
   border-bottom: 1px solid rgba(89, 110, 86, 0.08);
   transition: background 0.16s, box-shadow 0.16s;
   cursor: default;
@@ -2592,17 +2495,9 @@ summary:focus-visible {
   box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.65);
 }
 
-/* ── Item heading row ── */
-.download-mini-heading {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-}
-
 .download-mini-icon {
   width: 40px;
   height: 40px;
-  flex: 0 0 40px;
   display: grid;
   place-items: center;
   border-radius: 11px;
@@ -2751,7 +2646,6 @@ summary:focus-visible {
 
 .download-mini-copy {
   min-width: 0;
-  flex: 1;
 }
 
 .download-mini-title,
@@ -2776,9 +2670,8 @@ summary:focus-visible {
 }
 
 .download-mini-dismiss {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
   color: var(--text-subtle);
@@ -2794,6 +2687,17 @@ summary:focus-visible {
   background: rgba(41, 54, 46, 0.08);
 }
 
+.download-mini-item > .download-warning,
+.download-mini-progress,
+.download-mini-actions {
+  grid-column: 2 / -1;
+}
+
+.download-mini-item > .download-warning {
+  justify-self: start;
+  margin: 0;
+}
+
 /* ── Progress bar (active shimmer) ── */
 @keyframes dl-shimmer {
   0%   { background-position: -200% 0; }
@@ -2806,7 +2710,7 @@ summary:focus-visible {
   display: block;
   width: 100%;
   height: 5px;
-  margin: 9px 0 0;
+  margin: 0;
   border: none;
   border-radius: 99px;
   background: rgba(41, 54, 46, 0.09);
@@ -2838,10 +2742,6 @@ summary:focus-visible {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 10px;
-  /* Left-align from icon baseline: icon is 40px + 11px gap = 51px */
-  padding-left: 51px;
-  justify-content: flex-start;
 }
 
 .download-mini-actions button {
@@ -2926,7 +2826,7 @@ summary:focus-visible {
 
 .download-mini-more {
   margin: 0;
-  padding: 11px 16px;
+  padding: 11px var(--download-panel-inset);
   color: var(--text-muted);
   background: rgba(41, 54, 46, 0.025);
   border-top: 1px solid rgba(89, 110, 86, 0.08);
@@ -3615,6 +3515,44 @@ kbd {
   border-top: 1px solid var(--border);
 }
 
+.sidebar-site-form {
+  width: min(440px, 100%);
+}
+
+.sidebar-site-fields {
+  display: grid;
+  gap: 8px;
+}
+
+.sidebar-site-fields label {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sidebar-site-fields label span {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.sidebar-site-fields input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+
+.sidebar-site-fields input + label {
+  margin-top: 6px;
+}
+
+.sidebar-site-error {
+  margin: 4px 0 0;
+  color: var(--red);
+}
+
 .site-info-modal {
   width: 520px;
   max-width: 92vw;
@@ -3788,17 +3726,8 @@ kbd {
   }
 
   .download-popout {
-    top: calc(var(--chrome-height) + 8px);
     right: 8px;
-    left: calc(var(--app-rail-width) + 8px);
-    width: auto;
-    max-height: calc(100vh - var(--chrome-height) - 16px);
-    min-width: unset;
-    resize: none;
-  }
-
-  .download-popout::before {
-    display: none;
+    width: min(420px, calc(100vw - var(--app-rail-width) - 16px));
   }
 
   .password-save-popout {
@@ -3815,12 +3744,18 @@ kbd {
 }
 
 @media (max-width: 1100px) {
-  .whatsapp-panel {
+  .sidebar-panel {
     right: 0;
     width: auto;
   }
 
-  body.whatsapp-panel-open .browser-stage {
+  .sidebar-panel-view-host {
+    margin-right: 0;
+  }
+
+  .sidebar-panel-resize-handle,
+  body.sidebar-panel-open:not(.fullscreen) .browser-stage,
+  body.sidebar-panel-open:not(.fullscreen) .http-auth-backdrop:not([data-sidebar]) {
     display: none;
   }
 }
@@ -4577,7 +4512,7 @@ kbd {
 
 /* HTTP Basic Auth Modal */
 .http-auth-backdrop {
-  position: absolute;
+  position: fixed;
   inset: 0;
   top: var(--http-auth-top, 0);
   left: var(--http-auth-left, 0);
@@ -4585,7 +4520,7 @@ kbd {
   bottom: auto;
   width: var(--http-auth-width, 100%);
   height: var(--http-auth-height, 100%);
-  z-index: 50;
+  z-index: 900;
   display: flex;
   align-items: flex-start;
   justify-content: center;

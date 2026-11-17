@@ -18,7 +18,7 @@ Regular tabs in each workspace share a persistent website session. Private windo
 - Automatic save/update prompts for submitted logins, with OS-encrypted storage and exact-site autofill shared across every normal workspace. Multi-step forms, open shadow-DOM forms, login popups, HTTP authentication, and generated strong passwords use the same vault; private windows never save or reuse vault passwords.
 - A Chrome-compatible identity for every normal tab and login popup, with JavaScript, WebAssembly, service workers, WebCrypto, WebGL, PDF/plugin content, local files, data/blob documents, and confirmed external-app links enabled through Chromium.
 - Browser permission and selection flows for passkeys, client certificates, protected media, File System Access, Bluetooth, HID, USB, serial devices, storage access, camera, microphone, location, notifications, and screen sharing.
-- An Opera-style WhatsApp side panel with a persistent cross-workspace login, unread badge, reload/full-tab controls, calling permissions, and a WhatsApp-scoped supported Chrome identity.
+- A sidebar for WhatsApp, ChatGPT, and saved websites. WhatsApp keeps its cross-workspace login, unread badge, and calling permissions.
 - Private windows backed by an isolated, non-persistent session.
 - Per-site permission prompts for capabilities such as camera, microphone, notifications, and location.
 - In-app tab, window, and entire-screen sharing with optional requested audio for WebRTC meeting sites.
@@ -27,9 +27,11 @@ Regular tabs in each workspace share a persistent website session. Private windo
 - Clear-browsing-data controls and visible update status.
 - Persistent focus sessions with pause/resume, completion notifications, daily focused-time statistics, recovery breaks, and one-click remote-work launchers.
 
-## ChatGPT
+## Sidebar
 
-Open **ChatGPT** from the app rail, new-tab shortcuts, browser menu, command palette, or **Browser tools → Settings**. You can also press `Ctrl+Shift+G`. The shortcut opens [chatgpt.com](https://chatgpt.com/) in the current workspace and reuses an existing ChatGPT tab there. Choose **Log in** on the site and sign in with your ChatGPT account.
+Open **ChatGPT** from the app rail, new-tab shortcuts, browser menu, command palette, or **Browser tools → Settings**. You can also press `Ctrl+Shift+G`. ChatGPT opens in the side panel using the current workspace's browser session.
+
+Use the **+** button in the app rail to add a website. Enter its address and an optional name. The browser saves the shortcut and keeps the page open when you switch between sidebar sites. Use the panel header to reload, open the current page in a full tab, or remove an added website.
 
 Select text on a page or in a draft and choose **Copy selection and open ChatGPT** to copy it to the clipboard. Paste it into ChatGPT when you want to share it. Chromium spellcheck is available in supported text fields.
 

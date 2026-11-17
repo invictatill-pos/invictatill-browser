@@ -57,7 +57,7 @@ function fixture() {
     splitScreen: { enabled: false, secondaryTabId: null },
     shellLayoutReady: true, tabsVisible: true,
     pendingHttpAuthCallbacks: new Map(), clearTimeout,
-    whatsappSurface: { view: nativeView() },
+    sidebarView: nativeView(),
     workspaceList: [{ id: 'default' }, { id: 'work' }],
     lastActiveTabByWorkspace: new Map(),
     chooseRememberedTab,
@@ -69,7 +69,7 @@ function fixture() {
     },
     publicTab: (tab) => tab,
     getBrowserState: () => ({ ...state.splitScreen, activeWorkspaceId: state.activeWorkspaceId }),
-    resizeWhatsappView: () => state.whatsappSurface.view.setVisible(true),
+    resizeSidebarView: (allowed) => state.sidebarView.setVisible(allowed),
     isPlainObject: (value) => value && typeof value === 'object' && !Array.isArray(value),
     assertPlainObject: (value) => assert.ok(value && typeof value === 'object'),
     boundedNumber: (value, name, min, max) => {
@@ -111,7 +111,7 @@ test('fullscreen in either split pane survives repeated native and shell layout 
     for (const tab of state.tabs.values()) {
       if (tab.id !== ownerId) assert.equal(tab.view.visible, false);
     }
-    assert.equal(state.whatsappSurface.view.visible, false);
+    assert.equal(state.sidebarView.visible, false);
 
     // A shell modal must remain able to hide the fullscreen native surface.
     state.setViewVisible(false);
@@ -128,7 +128,7 @@ test('fullscreen in either split pane survives repeated native and shell layout 
     assert.deepEqual(state.tabs.get(2).view.bounds, { x: 724, y: 128, width: 676, height: 772 });
     assert.equal(state.tabs.get(1).view.visible, true);
     assert.equal(state.tabs.get(2).view.visible, true);
-    assert.equal(state.whatsappSurface.view.visible, true);
+    assert.equal(state.sidebarView.visible, true);
   }
 });
 
@@ -183,7 +183,7 @@ test('pending authentication hides only its native tab across split and workspac
   state.setSplitScreen({ enabled: true, secondaryTabId: 2 });
   assert.equal(state.tabs.get(1).view.visible, false);
   assert.equal(state.tabs.get(2).view.visible, true);
-  assert.equal(state.whatsappSurface.view.visible, true);
+  assert.equal(state.sidebarView.visible, true);
   state.switchTab(2);
   assert.equal(state.tabs.get(2).view.visible, true);
   assert.equal(state.tabs.get(1).view.visible, false);

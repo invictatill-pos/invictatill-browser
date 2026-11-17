@@ -81,7 +81,10 @@ const WHATSAPP_WEB_URL = testMode && /^https?:\/\//i.test(process.env.INVICTA_TE
 const CHATGPT_WEB_URL = testMode && /^https?:\/\//i.test(process.env.INVICTA_TEST_CHATGPT_URL || '')
   ? process.env.INVICTA_TEST_CHATGPT_URL
   : 'https://chatgpt.com/';
-const CHATGPT_ORIGIN = new URL(CHATGPT_WEB_URL).origin;
+const sidebarPanels = new Map([
+  ['whatsapp', { id: 'whatsapp', title: 'WhatsApp', url: WHATSAPP_WEB_URL, surfaces: new Map() }],
+  ['chatgpt', { id: 'chatgpt', title: 'ChatGPT', url: CHATGPT_WEB_URL, surfaces: new Map() }],
+]);
 const NORMAL_PARTITION = 'persist:invictatill';
 const PRIVATE_PARTITION = 'invictatill-private-' + process.pid;
 const REMOTE_PARTITION = privateInstance ? PRIVATE_PARTITION : NORMAL_PARTITION;
@@ -111,11 +114,10 @@ const SCREEN_SHARE_REQUEST_TIMEOUT_MS = 120000;
 let mainWindow = null;
 let browserSession = null;
 let whatsappSession = null;
-let whatsappSurface = null;
-let whatsappPanelVisible = false;
-let whatsappPanelBounds = { x: 48, y: 176, width: 720, height: 640 };
-let whatsappPanelStatus = 'idle';
-let whatsappUnreadCount = 0;
+let activeSidebarPanel = null;
+let selectedSidebarSurface = null;
+let shownSidebarSurface = null;
+let sidebarPanelBounds = { x: 48, y: 176, width: 720, height: 640 };
 let store = null;
 let powerBlockerId = null;
 let currentGamingLevel = 0;
@@ -643,11 +645,17 @@ function trustedIpcSender(event) {
 }
 
 function tabForRemoteContents(contents) {
+  if (!contents) return null;
   for (const tab of tabs.values()) {
     if (tab.view && tab.view.webContents === contents) return tab;
   }
-  const ownerTabId = contents && popupOwnerTabIds.get(contents.id);
+  const ownerTabId = popupOwnerTabIds.get(contents.id);
   if (ownerTabId && tabs.has(ownerTabId)) return tabs.get(ownerTabId);
+  for (const panel of sidebarPanels.values()) {
+    for (const surface of panel.surfaces.values()) {
+      if (surface.view.webContents === contents || surface.id === ownerTabId) return surface;
+    }
+  }
   return null;
 }
 
@@ -1122,8 +1130,7 @@ function resizeViews() {
   for (const tab of tabs.values()) {
     safeViewSetVisible(tab.view, false);
   }
-  if (fullscreenTab && whatsappSurface) safeViewSetVisible(whatsappSurface.view, false);
-  else resizeWhatsappView();
+  resizeSidebarView(!fullscreenTab && !mainWindow.isFullScreen());
 
   if (!shellLayoutReady || !tabsVisible || !primary) return;
   if ((primary.workspaceId || 'default') !== activeWorkspaceId) return;
@@ -1344,13 +1351,6 @@ function handleShortcut(event, input, tabId) {
 
 function generatedStrongPassword() {
   return 'A!a1-' + crypto.randomBytes(18).toString('base64url');
-}
-
-function openChatGptTab() {
-  const active = getActiveTab();
-  if (active && URL.parse(active.url)?.origin === CHATGPT_ORIGIN) return publicTab(active);
-  const existing = getWorkspaceTabs().find((tab) => URL.parse(tab.url)?.origin === CHATGPT_ORIGIN);
-  return existing ? switchTab(existing.id) : createTab(CHATGPT_WEB_URL, { activate: true });
 }
 
 function appendChatGptContextAction(template, params) {
@@ -1581,8 +1581,7 @@ async function showContextMenu(tab, params) {
   menu.popup({ window: mainWindow });
 }
 
-async function showWhatsappContextMenu(params) {
-  const surface = whatsappSurface;
+async function showSidebarContextMenu(surface, params) {
   if (!surface || !surface.view || surface.view.webContents.isDestroyed()) return;
   const contents = surface.view.webContents;
   const template = [];
@@ -1660,7 +1659,7 @@ async function showWhatsappContextMenu(params) {
       if (navigation && navigation.canGoForward()) navigation.goForward();
     },
   });
-  template.push({ label: 'Reload WhatsApp', click: () => contents.reload() });
+  template.push({ label: 'Reload', click: () => reloadSidebarSurface(surface) });
 
   template.push({ type: 'separator' });
   template.push({
@@ -1689,25 +1688,44 @@ async function showWhatsappContextMenu(params) {
   Menu.buildFromTemplate(template).popup({ window: mainWindow });
 }
 
-function publicWhatsappPanelState() {
+function sidebarWorkspaceId(panel) {
+  return panel.id === 'whatsapp' ? null : activeWorkspaceId;
+}
+
+function sidebarPanelId(value) {
+  if (value === 'whatsapp' || value === 'chatgpt' ||
+      (typeof value === 'string' && /^site-[a-zA-Z0-9_-]{1,80}$/.test(value))) return value;
+  throw new TypeError('Invalid sidebar site ID');
+}
+
+function publicSidebarPanelState(panel) {
+  if (!panel) return null;
+  const surface = panel.surfaces.get(sidebarWorkspaceId(panel));
   return {
-    visible: whatsappPanelVisible,
-    status: whatsappPanelStatus,
-    unreadCount: whatsappUnreadCount,
-    url: whatsappSurface && whatsappSurface.view && !whatsappSurface.view.webContents.isDestroyed()
-      ? whatsappSurface.view.webContents.getURL()
-      : WHATSAPP_WEB_URL,
-    bounds: { ...whatsappPanelBounds },
+    id: panel.id,
+    title: panel.title,
+    visible: panel === activeSidebarPanel,
+    status: surface?.status || 'idle',
+    unreadCount: surface?.unreadCount || 0,
+    url: surface?.url || panel.url,
+    bounds: { ...sidebarPanelBounds },
     persistent: !privateInstance,
+    message: surface?.message || '',
   };
 }
 
-function emitWhatsappPanelStatus(status, message) {
-  if (status) whatsappPanelStatus = status;
-  sendToShell('whatsapp-panel-status', {
-    ...publicWhatsappPanelState(),
-    message: typeof message === 'string' ? message.slice(0, 300) : '',
-  });
+function emitSidebarPanelStatus(surface) {
+  const { panel, workspaceId } = surface;
+  if (workspaceId === sidebarWorkspaceId(panel) && panel.surfaces.get(workspaceId) === surface) {
+    sendToShell('sidebar-panel-status', publicSidebarPanelState(panel));
+  }
+}
+
+function setSidebarSurfaceStatus(surface, status, message = '') {
+  surface.status = status;
+  surface.message = message.slice(0, 300);
+  emitSidebarPanelStatus(surface);
+  if (surface === selectedSidebarSurface) resizeViews();
 }
 
 function getWhatsappSession() {
@@ -1725,15 +1743,16 @@ function getWhatsappSession() {
   return whatsappSession;
 }
 
-function ensureWhatsappSurface() {
-  if (whatsappSurface && whatsappSurface.view && !whatsappSurface.view.webContents.isDestroyed()) {
-    return whatsappSurface;
-  }
+function ensureSidebarSurface(panel) {
+  const workspaceId = sidebarWorkspaceId(panel);
+  const existing = panel.surfaces.get(workspaceId);
+  if (existing) return existing;
   if (!mainWindow || mainWindow.isDestroyed()) {
     throw new Error('Browser window is not available');
   }
 
-  const targetSession = getWhatsappSession();
+  const isWhatsApp = panel.id === 'whatsapp';
+  const targetSession = isWhatsApp ? getWhatsappSession() : getWorkspaceSession(workspaceId);
   const view = new WebContentsView({
     webPreferences: {
       session: targetSession,
@@ -1753,129 +1772,245 @@ function ensureWhatsappSurface() {
       backgroundThrottling: true,
     },
   });
-  whatsappSurface = {
-    id: 'whatsapp-panel',
+  const surface = {
+    id: 'sidebar:' + (workspaceId || '') + ':' + panel.id,
+    panel,
+    workspaceId,
     view,
-    url: WHATSAPP_WEB_URL,
-    title: 'WhatsApp',
-    isMuted: false,
+    url: panel.url,
+    unreadCount: 0,
+    status: 'loading',
+    message: '',
   };
-  view.setBackgroundColor('#0b141a');
-  view.webContents.setUserAgent(chromeCompatibilityUserAgent());
+  panel.surfaces.set(workspaceId, surface);
+  if (isWhatsApp) view.setBackgroundColor('#0b141a');
+  const contents = view.webContents;
+  contents.setUserAgent(chromeCompatibilityUserAgent());
   safeViewSetVisible(view, false);
-  view.setBounds(whatsappPanelBounds);
+  view.setBounds(sidebarPanelBounds);
   mainWindow.contentView.addChildView(view);
-  view.setBounds(whatsappPanelBounds);
   safeViewSetVisible(view, false);
-  attachNavigationGuards(view.webContents);
+  attachNavigationGuards(contents);
+  attachBluetoothPicker(contents);
+  attachHttpAuthLifecycle(contents);
 
-  view.webContents.setWindowOpenHandler((details) => {
+  contents.setWindowOpenHandler((details) => {
+    if (!isWhatsApp) return handleTabWindowOpen(details, surface, contents);
     const url = safeRemoteUrl(details.url);
-    if (!url) return { action: 'deny' };
-    const activate = details.disposition !== 'background-tab';
-    setImmediate(() => createTab(url, { activate }));
+    if (url) {
+      setImmediate(() => createTab(url, { activate: details.disposition !== 'background-tab' }));
+    } else if (safeExternalProtocolUrl(details.url)) {
+      setImmediate(() => confirmOpenExternalUrl(details.url, mainWindow).catch(() => {}));
+    }
     return { action: 'deny' };
   });
-  view.webContents.on('context-menu', (event, params) => {
-    showWhatsappContextMenu(params).catch(() => {});
+  contents.on('did-create-window', (popupWindow) => configurePagePopup(popupWindow, surface));
+  contents.on('context-menu', (event, params) => {
+    showSidebarContextMenu(surface, params).catch(() => {});
   });
-  view.webContents.on('before-input-event', (event, input) => {
-    const command = Boolean(input && (input.control || input.meta));
-    if (input && input.type === 'keyDown' && command && input.shift && String(input.key).toLowerCase() === 'g') {
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const key = input.key.toLowerCase();
+    if ((input.control || input.meta) && input.shift && key === 'g') {
       event.preventDefault();
-      rewriteActiveEditor(whatsappSurface, 'correct');
+      sendToShell('open-chatgpt-requested', null);
+    } else if (key === 'escape' && !input.control && !input.meta && !input.alt && !input.shift) {
+      event.preventDefault();
+      sendToShell('close-sidebar-panel-requested', null);
     }
   });
-  view.webContents.on('did-start-loading', () => {
-    emitWhatsappPanelStatus('loading', 'Loading WhatsApp...');
+  contents.on('did-start-navigation', (event, url, isInPlace, isMainFrame) => {
+    if (!isInPlace && isMainFrame) {
+      surface.requestedUrl = safeRemoteUrl(url) || panel.url;
+      setSidebarSurfaceStatus(surface, 'loading');
+    }
   });
-  view.webContents.on('did-finish-load', () => {
-    resizeWhatsappView();
-    emitWhatsappPanelStatus('ready', 'WhatsApp is ready');
+  const syncUrl = (url) => {
+    surface.url = safeRemoteUrl(url) || panel.url;
+    surface.requestedUrl = surface.url;
+    emitSidebarPanelStatus(surface);
+  };
+  contents.on('did-navigate', (event, url) => syncUrl(url));
+  contents.on('did-navigate-in-page', (event, url, isMainFrame) => {
+    if (isMainFrame) syncUrl(url);
   });
-  view.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+  contents.on('did-redirect-navigation', (event, url, isInPlace, isMainFrame) => {
+    if (isMainFrame) surface.requestedUrl = safeRemoteUrl(url) || panel.url;
+  });
+  contents.on('did-finish-load', () => {
+    surface.hasLoaded = true;
+    setSidebarSurfaceStatus(surface, 'ready');
+  });
+  contents.on('did-stop-loading', () => {
+    // Downloads and other canceled navigations leave the previous page intact.
+    if (surface.status === 'loading' && surface.hasLoaded) setSidebarSurfaceStatus(surface, 'ready');
+  });
+  contents.on('did-fail-load', (event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
     if (isMainFrame && errorCode !== -3) {
-      emitWhatsappPanelStatus('error', errorDescription || 'WhatsApp could not load');
+      surface.hasLoaded = false;
+      surface.requestedUrl = safeRemoteUrl(validatedUrl) || panel.url;
+      setSidebarSurfaceStatus(surface, 'error', errorDescription || 'Site could not load');
     }
   });
-  view.webContents.on('page-title-updated', (event, title) => {
-    whatsappSurface.title = typeof title === 'string' ? title.slice(0, 300) : 'WhatsApp';
-    const match = /^\((\d+)\)/.exec(whatsappSurface.title);
-    whatsappUnreadCount = match ? Math.min(999, Number(match[1])) : 0;
-    emitWhatsappPanelStatus(null, '');
+  if (isWhatsApp) {
+    contents.on('page-title-updated', (event, title) => {
+      const match = /^\((\d+)\)/.exec(title);
+      surface.unreadCount = match ? Math.min(999, Number(match[1])) : 0;
+      emitSidebarPanelStatus(surface);
+    });
+  }
+  contents.on('render-process-gone', () => {
+    surface.hasLoaded = false;
+    setSidebarSurfaceStatus(surface, 'error', 'The site stopped responding. Select Reload to reconnect.');
   });
-  view.webContents.on('render-process-gone', () => {
-    emitWhatsappPanelStatus('error', 'WhatsApp stopped responding. Use Reload to reconnect.');
+  contents.once('destroyed', () => {
+    surface.hasLoaded = false;
+    clearSidebarSurfaceReferences(surface);
+    if (panel.surfaces.get(workspaceId) === surface) {
+      setSidebarSurfaceStatus(surface, 'error', 'The site closed. Select Reload to reconnect.');
+    }
   });
 
-  whatsappPanelStatus = 'loading';
-  view.webContents.loadURL(WHATSAPP_WEB_URL, {
-    userAgent: chromeCompatibilityUserAgent(),
-  }).catch((error) => {
-    emitWhatsappPanelStatus('error', error && error.message ? error.message : 'WhatsApp could not load');
-  });
-  return whatsappSurface;
+  reloadSidebarSurface(surface);
+  return surface;
 }
 
 const WHATSAPP_BASE_WIDTH = 750;
 const WHATSAPP_MIN_ZOOM = 0.8;
 
-function resizeWhatsappView() {
-  const surface = whatsappSurface;
-  if (!surface || !surface.view || surface.view.webContents.isDestroyed()) return;
-  if (!mainWindow || mainWindow.isDestroyed() || !whatsappPanelVisible) {
-    safeViewSetVisible(surface.view, false);
-    return;
+function resizeSidebarView(allowVisible) {
+  const panel = activeSidebarPanel;
+  const surface = allowVisible && panel ? ensureSidebarSurface(panel) : null;
+  if (surface !== selectedSidebarSurface) {
+    selectedSidebarSurface = surface;
+    if (surface) emitSidebarPanelStatus(surface);
   }
-  const content = mainWindow.getContentBounds();
-  const x = Math.min(Math.max(0, Math.round(whatsappPanelBounds.x)), content.width);
-  const y = Math.min(Math.max(0, Math.round(whatsappPanelBounds.y)), content.height);
-  const width = Math.min(
-    Math.max(1, Math.round(whatsappPanelBounds.width)),
-    Math.max(1, content.width - x)
-  );
-  const height = Math.min(
-    Math.max(1, Math.round(whatsappPanelBounds.height)),
-    Math.max(1, content.height - y)
-  );
-  whatsappPanelBounds = { x, y, width, height };
+  const show = surface && !surface.view.webContents.isDestroyed() &&
+    surface.status !== 'error' && surface.hasLoaded && !hasPendingHttpAuthForTab(surface);
+  if (shownSidebarSurface && (!show || shownSidebarSurface !== surface)) {
+    safeViewSetVisible(shownSidebarSurface.view, false);
+    shownSidebarSurface = null;
+  }
+  if (!surface || surface.view.webContents.isDestroyed()) return;
 
-  const zoomFactor = Math.max(WHATSAPP_MIN_ZOOM, Math.min(1, width / WHATSAPP_BASE_WIDTH));
-  surface.view.webContents.setZoomFactor(zoomFactor);
-  surface.view.setBounds(whatsappPanelBounds);
-  safeViewSetVisible(surface.view, true);
+  const content = mainWindow.getContentBounds();
+  const x = Math.min(Math.round(sidebarPanelBounds.x), content.width);
+  const y = Math.min(Math.round(sidebarPanelBounds.y), content.height);
+  const width = Math.max(1, Math.min(Math.round(sidebarPanelBounds.width), content.width - x));
+  const height = Math.max(1, Math.min(Math.round(sidebarPanelBounds.height), content.height - y));
+  if (surface.panel.id === 'whatsapp') {
+    const zoomFactor = Math.max(WHATSAPP_MIN_ZOOM, Math.min(1, width / WHATSAPP_BASE_WIDTH));
+    surface.view.webContents.setZoomFactor(zoomFactor);
+  }
+  surface.view.setBounds({ x, y, width, height });
+  if (show) {
+    safeViewSetVisible(surface.view, true);
+    shownSidebarSurface = surface;
+  }
 }
 
-function setWhatsappPanel(payload) {
-  assertPlainObject(payload, 'WhatsApp panel layout');
+function setSidebarPanel(payload) {
+  assertPlainObject(payload, 'Sidebar panel layout');
   if (typeof payload.visible !== 'boolean') {
-    throw new TypeError('WhatsApp panel visibility must be a boolean');
+    throw new TypeError('Sidebar panel visibility must be a boolean');
   }
-  whatsappPanelVisible = payload.visible;
+  let bounds = sidebarPanelBounds;
   if (payload.bounds !== undefined) {
-    assertPlainObject(payload.bounds, 'WhatsApp panel bounds');
-    whatsappPanelBounds = {
-      x: boundedNumber(payload.bounds.x, 'WhatsApp panel x', 0, 5000),
-      y: boundedNumber(payload.bounds.y, 'WhatsApp panel y', 0, 5000),
-      width: boundedNumber(payload.bounds.width, 'WhatsApp panel width', 1, 5000),
-      height: boundedNumber(payload.bounds.height, 'WhatsApp panel height', 1, 5000),
+    assertPlainObject(payload.bounds, 'Sidebar panel bounds');
+    bounds = {
+      x: boundedNumber(payload.bounds.x, 'Sidebar panel x', 0, 5000),
+      y: boundedNumber(payload.bounds.y, 'Sidebar panel y', 0, 5000),
+      width: boundedNumber(payload.bounds.width, 'Sidebar panel width', 1, 5000),
+      height: boundedNumber(payload.bounds.height, 'Sidebar panel height', 1, 5000),
     };
   }
-  if (whatsappPanelVisible) ensureWhatsappSurface();
+  const previous = activeSidebarPanel;
+  let panel = null;
+  if (payload.visible) {
+    const id = sidebarPanelId(payload.id);
+    panel = sidebarPanels.get(id);
+    if (id.startsWith('site-')) {
+      const url = safeRemoteUrl(payload.url);
+      const parsed = url && new URL(url);
+      if (!parsed || parsed.username || parsed.password) {
+        throw new TypeError('Enter an HTTP or HTTPS website URL without credentials');
+      }
+      const title = boundedString(payload.title, 'Sidebar site title', 300, false);
+      if (panel && panel.url !== url) throw new Error('Sidebar site ID already refers to a different URL');
+      if (!panel) {
+        panel = { id, title, url, surfaces: new Map() };
+        sidebarPanels.set(id, panel);
+      }
+    }
+  }
+  sidebarPanelBounds = bounds;
+  activeSidebarPanel = panel;
   resizeViews();
-  return publicWhatsappPanelState();
+  return publicSidebarPanelState(panel || previous);
 }
 
-function reloadWhatsappPanel() {
-  const surface = ensureWhatsappSurface();
-  whatsappPanelStatus = 'loading';
-  surface.view.webContents.setUserAgent(chromeCompatibilityUserAgent());
-  surface.view.webContents.loadURL(WHATSAPP_WEB_URL, {
-    userAgent: chromeCompatibilityUserAgent(),
-  }).catch((error) => {
-    emitWhatsappPanelStatus('error', error && error.message ? error.message : 'WhatsApp could not load');
+function reloadSidebarSurface(surface) {
+  const contents = surface.view.webContents;
+  const url = surface.requestedUrl || surface.url;
+  const reload = surface.status === 'ready' && safeRemoteUrl(contents.getURL());
+  setSidebarSurfaceStatus(surface, 'loading');
+  if (reload) {
+    contents.reload();
+    return;
+  }
+  contents.loadURL(url).catch((error) => {
+    if (contents.isDestroyed() || surface.status !== 'loading' || contents.isLoadingMainFrame()) return;
+    const message = error.code === 'ERR_ABORTED' ? 'This address did not open a page' : error.message;
+    setSidebarSurfaceStatus(surface, 'error', message || 'Site could not load');
   });
-  return publicWhatsappPanelState();
+}
+
+function reloadSidebarPanel(value) {
+  const panel = sidebarPanels.get(sidebarPanelId(value));
+  if (!panel) throw new Error('Sidebar site is unavailable');
+  const surface = panel.surfaces.get(sidebarWorkspaceId(panel));
+  if (!surface || surface.view.webContents.isDestroyed()) {
+    if (surface) destroySidebarSurface(surface);
+    ensureSidebarSurface(panel);
+    resizeViews();
+  } else {
+    reloadSidebarSurface(surface);
+  }
+  return publicSidebarPanelState(panel);
+}
+
+function openSidebarPanelTab(value) {
+  const panel = sidebarPanels.get(sidebarPanelId(value));
+  if (!panel) throw new Error('Sidebar site is unavailable');
+  const url = panel.id === 'whatsapp' ? panel.url : publicSidebarPanelState(panel).url;
+  const existing = panel.id === 'chatgpt' && getWorkspaceTabs().find((tab) => tab.url === url);
+  return existing ? switchTab(existing.id) : createTab(url, { activate: true });
+}
+
+function clearSidebarSurfaceReferences(surface) {
+  for (const key of recentCredentialUsernames.keys()) {
+    if (key.startsWith(surface.id + '|')) recentCredentialUsernames.delete(key);
+  }
+  for (const [contentsId, ownerTabId] of popupOwnerTabIds) {
+    if (ownerTabId === surface.id) popupOwnerTabIds.delete(contentsId);
+  }
+}
+
+function destroySidebarSurface(surface) {
+  surface.panel.surfaces.delete(surface.workspaceId);
+  destroyTabView(surface);
+}
+
+function removeSidebarPanel(value) {
+  const id = sidebarPanelId(value);
+  if (!id.startsWith('site-')) throw new Error('Built-in sidebar sites cannot be removed');
+  const panel = sidebarPanels.get(id);
+  if (!panel) return false;
+  if (panel === activeSidebarPanel) activeSidebarPanel = null;
+  sidebarPanels.delete(id);
+  for (const surface of panel.surfaces.values()) destroySidebarSurface(surface);
+  resizeViews();
+  return true;
 }
 
 function openUrlInWorkspaceTab(url, sourceTab, options) {
@@ -1910,7 +2045,9 @@ function configurePagePopup(popupWindow, sourceTab) {
   attachBluetoothPicker(contents);
   contents.setWindowOpenHandler((details) => handleTabWindowOpen(details, sourceTab, contents));
   contents.on('did-create-window', (nestedPopup) => configurePagePopup(nestedPopup, sourceTab));
-  contents.on('before-input-event', (event, input) => handleShortcut(event, input, sourceTab.id));
+  if (!sourceTab.panel) {
+    contents.on('before-input-event', (event, input) => handleShortcut(event, input, sourceTab.id));
+  }
   contents.on('will-navigate', (event, url) => {
     if (!event.defaultPrevented && isAllowedNavigationUrl(url)) {
       contents.setUserAgent(chromeCompatibilityUserAgent());
@@ -1955,7 +2092,7 @@ function handleTabWindowOpen(details, sourceTab, contents) {
         autoHideMenuBar: true,
         parent: mainWindow || undefined,
         webPreferences: {
-          partition: workspacePartitionName(sourceTab && sourceTab.workspaceId),
+          session: contents.session,
           preload: REMOTE_PRELOAD_FILE,
           sandbox: true,
           contextIsolation: true,
@@ -3975,18 +4112,17 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-11-16',
-    title: 'ChatGPT and browser refinements',
-    intro: 'Sign in to ChatGPT from a browser tab and use the updated layouts and browser tools.',
+    releaseDate: '2026-11-17',
+    title: 'ChatGPT, saved websites, and Downloads',
+    intro: 'Open ChatGPT and your favorite websites in the sidebar.',
     features: [
-      'Open ChatGPT from the app rail, new-tab page, browser menu, command palette, or Settings. Ctrl+Shift+G also opens ChatGPT.',
-      'Select text on a page or in a draft and choose Copy selection and open ChatGPT. Paste into the chat when you want to share it.',
-      'Find tasks, focus sessions, and the 24-hour activity report under Browser tools.',
-      'Choose how Chromium throttles background tabs in Memory & Performance settings.',
+      'Open ChatGPT in the same sidebar as WhatsApp from the app rail or with Ctrl+Shift+G.',
+      'Use the plus button to save a website. Sidebar pages stay open as you switch between them.',
+      'Reload a sidebar site or open it in a full tab from the panel header.',
     ],
     bugFixes: [
-      'Improved tab hit targets, compact toolbar alignment, and dark theme contrast.',
-      'Fixed password CSV import, per-page Reading Mode, focus timer transitions, workspace extension popups, and update error handling.',
+      'Aligned file details, warnings, progress bars, and controls in Downloads.',
+      'Downloads and other browser popups stay accessible alongside sidebar websites.',
     ],
   };
 }
@@ -4375,11 +4511,12 @@ function registerIpcHandlers() {
   });
   registerHandler('set-view-visible', (event, visible) => setViewVisible(visible));
   registerHandler('set-view-layout', (event, layout) => setViewLayout(layout));
-  registerHandler('get-whatsapp-panel-state', () => publicWhatsappPanelState());
-  registerHandler('set-whatsapp-panel', (event, payload) => setWhatsappPanel(payload));
-  registerHandler('reload-whatsapp-panel', () => reloadWhatsappPanel());
-  registerHandler('open-whatsapp-tab', () => createTab(WHATSAPP_WEB_URL, { activate: true }));
-  registerHandler('open-chatgpt-tab', () => openChatGptTab());
+  registerHandler('get-sidebar-panel-state', (event, id) =>
+    publicSidebarPanelState(sidebarPanels.get(sidebarPanelId(id))));
+  registerHandler('set-sidebar-panel', (event, payload) => setSidebarPanel(payload));
+  registerHandler('reload-sidebar-panel', (event, id) => reloadSidebarPanel(id));
+  registerHandler('open-sidebar-panel-tab', (event, id) => openSidebarPanelTab(id));
+  registerHandler('remove-sidebar-panel', (event, id) => removeSidebarPanel(id));
   registerHandler('set-split-screen', (event, options) => setSplitScreen(options));
   registerHandler('find-in-page', (event, text, options) => findInActivePage(text, options));
   registerHandler('stop-find', (event, tabId) => stopFindActive(tabId));
@@ -4535,6 +4672,10 @@ function registerIpcHandlers() {
       activeWorkspaceId = 'default';
       activeTabId = null;
     }
+    for (const panel of sidebarPanels.values()) {
+      const surface = panel.surfaces.get(workspaceId);
+      if (surface) destroySidebarSurface(surface);
+    }
     for (const [tabId, tab] of Array.from(tabs.entries())) {
       if (tab.workspaceId === workspaceId) {
         closeTab(tabId);
@@ -4626,13 +4767,13 @@ function registerIpcHandlers() {
       }
     }
     completeHttpAuthRequest(payload.requestId, username, password, 'responded');
-    if (password && !entry.isProxy && entry.origin && entry.tabId !== null && tabs.has(entry.tabId)) {
+    if (password && !entry.isProxy && entry.origin) {
       setImmediate(() => {
         try {
-          queueCredentialSavePrompt(
-            { username, password },
-            { tab: tabs.get(entry.tabId), origin: entry.origin }
-          );
+          const tab = entry.sidebarSurface || tabs.get(entry.tabId);
+          if (tab && tab.view && !tab.view.webContents.isDestroyed()) {
+            queueCredentialSavePrompt({ username, password }, { tab, origin: entry.origin });
+          }
         } catch (error) {}
       });
     }
@@ -5232,9 +5373,13 @@ function createMainWindow() {
     resizeViews();
   });
   mainWindow.on('closed', () => {
-    whatsappSurface = null;
-    whatsappPanelVisible = false;
     mainWindow = null;
+    activeSidebarPanel = null;
+    selectedSidebarSurface = null;
+    shownSidebarSurface = null;
+    for (const panel of sidebarPanels.values()) {
+      for (const surface of panel.surfaces.values()) destroySidebarSurface(surface);
+    }
   });
 }
 
@@ -5419,7 +5564,8 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
     try { callback(); } catch (error) {}
     return;
   }
-  resizeTabViewToCurrentLayout(requestingTab);
+  const sidebarSurface = requestingTab.panel ? requestingTab : null;
+  if (!sidebarSurface) resizeTabViewToCurrentLayout(requestingTab);
 
   const requestId = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 
@@ -5447,6 +5593,7 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
     callback,
     timeout,
     tabId: requestingTab.id,
+    sidebarSurface,
     contentsId: _webContents.id,
     origin,
     domain,
@@ -5455,7 +5602,8 @@ app.on('login', (event, _webContents, _details, authInfo, callback) => {
 
   sendToShell('http-auth-request', {
     requestId,
-    tabId: requestingTab.id,
+    tabId: sidebarSurface ? null : requestingTab.id,
+    ...(sidebarSurface ? { sidebarId: sidebarSurface.panel.id, workspaceId: sidebarSurface.workspaceId } : {}),
     host: authInfo.host || '',
     port: authInfo.port || 0,
     realm: authInfo.realm || '',

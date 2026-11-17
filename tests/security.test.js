@@ -49,15 +49,17 @@ test('the privileged renderer has a strict script policy and no guest webview', 
   assert.match(html, /base-uri\s+'none'/);
 });
 
-test('ChatGPT opens a regular workspace tab through the trusted shell bridge', () => {
+test('sidebar sites use validated HTTP(S) addresses and the trusted shell bridge', () => {
   const main = read('main.js');
   const preload = read('preload.js');
 
   assert.match(main, /'https:\/\/chatgpt\.com\/'/);
-  assert.match(main, /getWorkspaceTabs\(\)\.find\(\(tab\) => URL\.parse\(tab\.url\)\?\.origin === CHATGPT_ORIGIN\)/);
-  assert.match(main, /createTab\(CHATGPT_WEB_URL, \{ activate: true \}\)/);
-  assert.match(main, /registerHandler\('open-chatgpt-tab'/);
-  assert.match(preload, /openChatGptTab: \(\) => ipcRenderer\.invoke\('open-chatgpt-tab'\)/);
+  assert.match(main, /const url = safeRemoteUrl\(payload\.url\)/);
+  assert.match(main, /if \(!parsed \|\| parsed\.username \|\| parsed\.password\)/);
+  assert.match(main, /registerHandler\('set-sidebar-panel'/);
+  assert.match(main, /registerHandler\('open-sidebar-panel-tab'/);
+  assert.match(preload, /setSidebarPanel: \(details\) => ipcRenderer\.invoke\('set-sidebar-panel', details\)/);
+  assert.match(preload, /openSidebarPanelTab: \(id\) => ipcRenderer\.invoke\('open-sidebar-panel-tab', id\)/);
   assert.doesNotMatch(main + preload, /api\.openai\.com|ask-invicta-ai|ai_config_v2|invicta-sk-|hf\.space\/api/);
 });
 
@@ -162,9 +164,9 @@ test('WhatsApp compatibility is isolated to its sandboxed persistent surface', (
   assert.match(main, /function chromeCompatibilityUserAgent/);
   assert.match(main, /function isWhatsAppWebUrl/);
   assert.match(main, /Chrome\/' \+ chromeVersion \+ ' Safari\/537\.36/);
-  assert.match(main, /function ensureWhatsappSurface/);
-  assert.match(main, /backgroundThrottling:\s*false/);
+  assert.match(main, /isWhatsApp \? getWhatsappSession\(\) : getWorkspaceSession\(workspaceId\)/);
+  assert.match(main, /function ensureSidebarSurface[\s\S]*?sandbox: true,[\s\S]*?contextIsolation: true,[\s\S]*?nodeIntegration: false/);
   assert.doesNotMatch(main, /appendSwitch\(['"]user-agent/);
-  assert.match(preload, /set-whatsapp-panel/);
-  assert.match(preload, /reload-whatsapp-panel/);
+  assert.match(preload, /set-sidebar-panel/);
+  assert.match(preload, /reload-sidebar-panel/);
 });

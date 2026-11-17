@@ -2,6 +2,13 @@
 
 const api = window.electronAPI || {};
 const $ = function (id) { return document.getElementById(id); };
+const SIDEBAR_SITES_KEY = 'invicta-sidebar-sites';
+const SIDEBAR_WIDTH_KEY = 'invicta-sidebar-width';
+const SIDEBAR_FULL_WIDTH = 1100;
+const BUILT_IN_SIDEBAR_SITES = new Map([
+  ['whatsapp', { id: 'whatsapp', title: 'WhatsApp' }],
+  ['chatgpt', { id: 'chatgpt', title: 'ChatGPT' }]
+]);
 
 const els = {
   browserChrome: $('browser-chrome'),
@@ -24,12 +31,13 @@ const els = {
   muteIcon: $('mute-icon'),
   splitButton: $('btn-split-screen'),
   appRail: $('app-rail'),
-  whatsappButton: $('btn-whatsapp'),
   toolsRailButton: $('btn-browser-tools'),
-  whatsappResizeHandle: $('whatsapp-resize-handle'),
-  whatsappPanel: $('whatsapp-panel'),
-  whatsappPanelHost: $('whatsapp-panel-view-host'),
-  whatsappPanelStatus: $('whatsapp-panel-status'),
+  sidebarPanel: $('sidebar-panel'),
+  sidebarPanelHost: $('sidebar-panel-view-host'),
+  sidebarPanelStatus: $('sidebar-panel-status'),
+  sidebarSiteList: $('sidebar-site-list'),
+  sidebarSiteBackdrop: $('sidebar-site-backdrop'),
+  sidebarSiteForm: $('sidebar-site-form'),
   whatsappUnreadBadge: $('whatsapp-unread-badge'),
   drawer: $('workspace-drawer'),
   menuButton: $('btn-menu'),
@@ -247,9 +255,10 @@ const state = {
   downloads: [],
   downloadPopoutOpen: false,
   dismissedDownloads: new Set(),
-  whatsappPanelOpen: false,
-  whatsappPanelStatus: 'idle',
-  lastWhatsappLayoutKey: '',
+  sidebarPanelId: null,
+  sidebarSites: [],
+  sidebarPanelStatuses: new Map(),
+  lastSidebarLayoutKey: '',
   passwordSaveRequest: null,
   httpAuthRequests: new Map(),
   httpAuthRequest: null, // The request displayed in the active tab.
@@ -294,6 +303,7 @@ function visibleModalSurface() {
     [els.screenPickerBackdrop, els.screenPickerModal],
     [els.importModalBackdrop, els.importModal],
     [els.siteInfoModalBackdrop, els.siteInfoModal],
+    [els.sidebarSiteBackdrop, els.sidebarSiteForm],
     [els.addWorkspaceModalBackdrop, els.addWorkspaceModal],
     [els.passwordsModalBackdrop, els.passwordsModal],
     [els.updateModalBackdrop, els.updateModal],
@@ -343,14 +353,20 @@ function rememberHttpAuthDraft() {
 
 function syncHttpAuthPrompt() {
   if (!els.httpAuthBackdrop) return;
-  const request = Array.from(state.httpAuthRequests.values()).find(function (item) {
-    return sameId(item.tabId, state.activeTabId);
+  const requests = Array.from(state.httpAuthRequests.values());
+  const request = requests.find(function (item) {
+    return item.sidebarId && item.sidebarId === state.sidebarPanelId &&
+      (!item.workspaceId || item.workspaceId === state.activeWorkspaceId);
+  }) || requests.find(function (item) {
+    return !item.sidebarId && sameId(item.tabId, state.activeTabId);
   }) || null;
   // A tab prompt leaves the browser chrome and other native panes usable.
   if (request === state.httpAuthRequest) return;
   rememberHttpAuthDraft();
   const hadFocus = els.httpAuthBackdrop.contains(document.activeElement);
   state.httpAuthRequest = request;
+  els.httpAuthBackdrop.toggleAttribute('data-sidebar', Boolean(request && request.sidebarId));
+  if (request) updateViewLayout();
   setHidden(els.httpAuthBackdrop, !request);
   if (els.httpAuthUsername) els.httpAuthUsername.value = request ? request.username : '';
   if (els.httpAuthPassword) els.httpAuthPassword.value = request ? request.password : '';
@@ -369,7 +385,7 @@ function syncHttpAuthPrompt() {
   }
   if (els.httpAuthSaved) setHidden(els.httpAuthSaved, !request.savedCredentialId);
   window.setTimeout(function () {
-    if (state.httpAuthRequest !== request || !sameId(request.tabId, state.activeTabId) || visibleModalSurface()) return;
+    if (state.httpAuthRequest !== request || visibleModalSurface()) return;
     const input = request.username ? els.httpAuthPassword : els.httpAuthUsername;
     if (input) input.focus();
   }, 0);
@@ -493,7 +509,7 @@ function shouldShowPageView() {
   if (state.drawerOpen && window.innerWidth <= 900) return false;
   if (state.downloadPopoutOpen && window.innerWidth <= 720) return false;
   if (state.passwordSaveRequest && window.innerWidth <= 720) return false;
-  if (state.whatsappPanelOpen && window.innerWidth <= 1100) return false;
+  if (state.sidebarPanelId && !state.isFullscreen && window.innerWidth <= SIDEBAR_FULL_WIDTH) return false;
   return true;
 }
 
@@ -504,9 +520,9 @@ function updateViewLayout() {
   if (!state.isFullscreen && els.appRail) {
     left = Math.ceil(els.appRail.getBoundingClientRect().width);
   }
-  const whatsappPanelShown = state.whatsappPanelOpen && !state.isFullscreen;
-  if (whatsappPanelShown && window.innerWidth > 1100 && els.whatsappPanel) {
-    left = Math.ceil(els.whatsappPanel.getBoundingClientRect().right);
+  const sidebarSite = state.isFullscreen ? null : getSidebarSite(state.sidebarPanelId);
+  if (sidebarSite && window.innerWidth > SIDEBAR_FULL_WIDTH) {
+    left = Math.ceil(els.sidebarPanel.getBoundingClientRect().right);
   }
   let right = 0;
   // The side drawer slides out from the left rail; its .right edge is the
@@ -514,24 +530,15 @@ function updateViewLayout() {
   if (state.drawerOpen && !state.isFullscreen && window.innerWidth > 900 && els.drawer) {
     left = Math.max(left, Math.ceil(els.drawer.getBoundingClientRect().right));
   }
-  if (state.menuOpen && window.innerWidth > 600) right = Math.max(right, 304);
-  if (state.downloadPopoutOpen && window.innerWidth > 720 && els.downloadPopout) {
-    // Compute how far the panel extends from the right edge of the window.
-    // The panel is fixed at `right: 16px`, so total space = panelWidth + 16px CSS gap.
-    // Add 8px buffer so the BrowserView never overlaps the panel's left edge.
-    // Use measured rect; fall back to 420px panel + 16px gap + 8px buffer = 444px.
-    var dlRect = els.downloadPopout.getBoundingClientRect();
-    var dlRight = dlRect.width > 0
-      ? Math.ceil(window.innerWidth - dlRect.left + 8)
-      : 444;
-    right = Math.max(right, dlRight);
-  }
-  if (state.passwordSaveRequest && window.innerWidth > 720 && els.passwordSavePopout) {
-    right = Math.max(right, Math.ceil(els.passwordSavePopout.getBoundingClientRect().width + 12));
-  }
-  if (state.zoomPopupOpen && els.zoomPopup && els.zoomPopup.offsetWidth) {
-    const popupLeft = els.zoomPopup.getBoundingClientRect().right - els.zoomPopup.offsetWidth;
-    right = Math.max(right, Math.ceil(window.innerWidth - popupLeft + 8));
+  const flyouts = [els.menu, els.downloadPopout, els.passwordSavePopout];
+  flyouts.forEach(function (flyout) {
+    if (flyout && flyout.offsetWidth) {
+      right = Math.max(right, window.innerWidth - flyout.offsetLeft + 8);
+    }
+  });
+  if (state.zoomPopupOpen && els.zoomPopup.offsetWidth) {
+    const zoomLeft = els.zoomPopup.getBoundingClientRect().right - els.zoomPopup.offsetWidth;
+    right = Math.max(right, Math.ceil(window.innerWidth - zoomLeft + 8));
   }
   let bottom = 0;
   if (state.updateBannerVisible && els.updateBanner) {
@@ -544,55 +551,56 @@ function updateViewLayout() {
     bottom: Math.max(0, bottom),
     compact: document.body.classList.contains('compact-nav')
   };
-  if (els.httpAuthBackdrop && els.browserStage) {
-    const stageRect = els.browserStage.getBoundingClientRect();
-    const contentWidth = Math.max(1, window.innerWidth - layout.left - layout.right);
-    const promptWidth = state.splitScreen && state.secondaryTabId
-      ? Math.max(1, Math.floor(contentWidth / 2)) : contentWidth;
-    els.httpAuthBackdrop.style.setProperty('--http-auth-left', Math.max(0, layout.left - stageRect.left) + 'px');
-    els.httpAuthBackdrop.style.setProperty('--http-auth-top', Math.max(0, layout.top - stageRect.top) + 'px');
-    els.httpAuthBackdrop.style.setProperty('--http-auth-width', promptWidth + 'px');
-    els.httpAuthBackdrop.style.setProperty('--http-auth-height', Math.max(1, window.innerHeight - layout.top - layout.bottom) + 'px');
-  }
+  const hostRect = sidebarSite && els.sidebarPanelHost.getBoundingClientRect();
+  const sidebarBounds = hostRect && {
+    x: Math.max(0, Math.ceil(hostRect.left)),
+    y: Math.max(0, Math.ceil(hostRect.top)),
+    width: Math.floor(Math.min(hostRect.right, window.innerWidth - right) - Math.ceil(hostRect.left)),
+    height: Math.floor(Math.min(hostRect.bottom, window.innerHeight - bottom) - Math.ceil(hostRect.top))
+  };
+  if (state.httpAuthRequest) updateHttpAuthLayout(layout, sidebarBounds);
   const layoutKey = layout.top + ':' + layout.left + ':' + layout.right + ':' + layout.bottom + ':' + layout.compact;
   if (layoutKey !== state.lastLayoutKey) {
     state.lastLayoutKey = layoutKey;
     invokeOptional('setViewLayout', layout).catch(function () {});
   }
-  const whatsappSurfaceVisible = whatsappPanelShown && !state.modalOpen && els.whatsappPanelHost;
-  let whatsappPayload = { visible: false };
-  if (whatsappSurfaceVisible) {
-    const hostRect = els.whatsappPanelHost.getBoundingClientRect();
-    if (hostRect.width >= 1 && hostRect.height >= 1) {
-      whatsappPayload = {
-        visible: true,
-        bounds: {
-          x: Math.max(0, Math.ceil(hostRect.left)),
-          y: Math.max(0, Math.ceil(hostRect.top)),
-          width: Math.max(1, Math.floor(hostRect.width)),
-          height: Math.max(1, Math.floor(hostRect.height))
-        }
-      };
-    }
-  }
-  const whatsappLayoutKey = whatsappPayload.visible && whatsappPayload.bounds
-    ? '1:' + whatsappPayload.bounds.x + ':' + whatsappPayload.bounds.y + ':' +
-      whatsappPayload.bounds.width + ':' + whatsappPayload.bounds.height
-    : '0';
-  if (whatsappLayoutKey !== state.lastWhatsappLayoutKey) {
-    state.lastWhatsappLayoutKey = whatsappLayoutKey;
-    invokeOptional('setWhatsappPanel', whatsappPayload).catch(function (error) {
-      if (state.whatsappPanelOpen && els.whatsappPanelStatus) {
-        els.whatsappPanelStatus.textContent = 'Could not open WhatsApp: ' + errorMessage(error);
-        els.whatsappPanelStatus.dataset.status = 'error';
+  const showSidebar = sidebarBounds && !state.modalOpen &&
+    sidebarBounds.width > 0 && sidebarBounds.height > 0;
+  const sidebarLayoutKey = showSidebar
+    ? [sidebarSite.id, sidebarBounds.x, sidebarBounds.y, sidebarBounds.width, sidebarBounds.height].join(':')
+    : 'hidden';
+  if (sidebarLayoutKey !== state.lastSidebarLayoutKey) {
+    state.lastSidebarLayoutKey = sidebarLayoutKey;
+    const payload = showSidebar
+      ? { ...sidebarSite, visible: true, bounds: sidebarBounds }
+      : { visible: false };
+    invokeOptional('setSidebarPanel', payload).catch(function (error) {
+      if (showSidebar && state.lastSidebarLayoutKey === sidebarLayoutKey) {
+        handleSidebarPanelStatus({ id: sidebarSite.id, status: 'error', message: errorMessage(error) });
       }
     });
   }
-  const visible = shouldShowPageView();
+  const visible = shouldShowPageView() && layout.left + layout.right < window.innerWidth;
   if (visible !== state.lastViewVisible) {
     state.lastViewVisible = visible;
     invokeOptional('setViewVisible', visible).catch(function () {});
   }
+}
+
+function updateHttpAuthLayout(layout, sidebarBounds) {
+  const contentWidth = window.innerWidth - layout.left - layout.right;
+  const sidebar = state.httpAuthRequest.sidebarId;
+  const bounds = sidebar ? sidebarBounds : {
+    x: layout.left,
+    y: layout.top,
+    width: state.splitScreen && state.secondaryTabId ? Math.floor(contentWidth / 2) : contentWidth,
+    height: window.innerHeight - layout.top - layout.bottom
+  };
+  if (!bounds) return;
+  els.httpAuthBackdrop.style.setProperty('--http-auth-left', bounds.x + 'px');
+  els.httpAuthBackdrop.style.setProperty('--http-auth-top', bounds.y + 'px');
+  els.httpAuthBackdrop.style.setProperty('--http-auth-width', Math.max(0, bounds.width) + 'px');
+  els.httpAuthBackdrop.style.setProperty('--http-auth-height', Math.max(0, bounds.height) + 'px');
 }
 
 let resizeFrame = 0;
@@ -604,50 +612,219 @@ function scheduleLayout() {
   });
 }
 
-function setWhatsappPanelOpen(open) {
-  const visible = Boolean(open);
-  if (visible && state.drawerOpen) closeDrawer(false);
-  state.whatsappPanelOpen = visible;
-  document.body.classList.toggle('whatsapp-panel-open', visible);
-  setHidden(els.whatsappPanel, !visible);
-  if (els.whatsappPanel) els.whatsappPanel.setAttribute('aria-hidden', visible ? 'false' : 'true');
-  if (els.whatsappButton) {
-    els.whatsappButton.classList.toggle('active', visible);
-    els.whatsappButton.setAttribute('aria-expanded', visible ? 'true' : 'false');
-    els.whatsappButton.title = visible ? 'Close WhatsApp side panel' : 'Open WhatsApp side panel';
+function getSidebarSite(id) {
+  return BUILT_IN_SIDEBAR_SITES.get(id) || state.sidebarSites.find(function (site) { return site.id === id; });
+}
+
+function sidebarWebsiteUrl(value) {
+  const input = value.trim();
+  if (!input || /[\s\\]/.test(input)) return null;
+  const scheme = /^[a-z][a-z\d+.-]*:/i.exec(input);
+  const hostWithPort = /^[^/:?#]+:\d+(?:[/?#]|$)/.test(input);
+  const url = URL.parse(scheme && !hostWithPort ? input : 'https://' + input);
+  if (!url || !['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.href.length > 4096) return null;
+  return url;
+}
+
+function saveSidebarSites(sites) {
+  localStorage.setItem(SIDEBAR_SITES_KEY, JSON.stringify(sites));
+  state.sidebarSites = sites;
+  renderSidebarSites();
+}
+
+function loadSidebarSites() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SIDEBAR_SITES_KEY) || '[]');
+    if (Array.isArray(saved)) {
+      state.sidebarSites = saved.filter(function (site) {
+        return site && typeof site.id === 'string' && /^site-[a-f0-9-]+$/.test(site.id) &&
+          typeof site.title === 'string' && site.title.length > 0 && site.title.length <= 80 &&
+          typeof site.url === 'string' && /^https?:\/\//.test(site.url) && sidebarWebsiteUrl(site.url);
+      });
+    }
+  } catch {}
+  renderSidebarSites();
+}
+
+function renderSidebarSites() {
+  const buttons = state.sidebarSites.map(function (site) {
+    const initial = Array.from(site.title)[0].toLocaleUpperCase();
+    const button = createElement('button', 'app-rail-button sidebar-site-button');
+    button.type = 'button';
+    button.dataset.sidebarId = site.id;
+    button.setAttribute('aria-controls', 'sidebar-panel');
+    button.append(createElement('span', 'sidebar-site-initial', initial));
+    return button;
+  });
+  els.sidebarSiteList.replaceChildren(...buttons);
+  syncSidebarButtons();
+}
+
+function syncSidebarButtons() {
+  els.appRail.querySelectorAll('[data-sidebar-id]').forEach(function (button) {
+    const site = getSidebarSite(button.dataset.sidebarId);
+    const active = site.id === state.sidebarPanelId;
+    const label = (active ? 'Close ' : 'Open ') + site.title + ' side panel';
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-expanded', String(active));
+    button.setAttribute('aria-label', label);
+    button.title = label + (site.id === 'chatgpt' ? ' (Ctrl+Shift+G)' : '');
+  });
+}
+
+function setSidebarPanel(id, restoreFocus) {
+  const site = getSidebarSite(id);
+  const previousId = state.sidebarPanelId;
+  if (site) {
+    if (state.drawerOpen) closeDrawer(false);
+    closeMenu(false);
   }
-  if (visible && els.whatsappPanelStatus && state.whatsappPanelStatus === 'idle') {
-    els.whatsappPanelStatus.textContent = 'Loading WhatsApp...';
-    els.whatsappPanelStatus.dataset.status = 'loading';
+  state.sidebarPanelId = site ? site.id : null;
+  document.body.classList.toggle('sidebar-panel-open', Boolean(site));
+  setHidden(els.sidebarPanel, !site);
+  els.sidebarPanel.setAttribute('aria-hidden', String(!site));
+  syncSidebarButtons();
+
+  if (site) {
+    const button = els.appRail.querySelector('[data-sidebar-id="' + site.id + '"]');
+    $('sidebar-panel-logo').replaceChildren((button.querySelector('svg, .sidebar-site-initial')).cloneNode(true));
+    $('sidebar-panel-title').textContent = site.title;
+    els.sidebarPanelHost.setAttribute('aria-label', site.title + ' content');
+    setHidden($('btn-sidebar-remove'), BUILT_IN_SIDEBAR_SITES.has(site.id));
+    renderSidebarStatus(site);
+  } else if (restoreFocus) {
+    const button = els.appRail.querySelector('[data-sidebar-id="' + previousId + '"]');
+    (button || $('btn-add-sidebar-site')).focus();
   }
-  state.lastLayoutKey = '';
-  state.lastWhatsappLayoutKey = '';
+  syncHttpAuthPrompt();
   scheduleLayout();
 }
 
-function handleWhatsappPanelStatus(payload) {
-  if (!payload || typeof payload !== 'object') return;
-  const status = typeof payload.status === 'string' ? payload.status : 'idle';
-  state.whatsappPanelStatus = status;
-  if (els.whatsappPanelStatus) {
-    const defaults = {
-      idle: 'Ready to connect',
-      loading: 'Loading WhatsApp...',
-      ready: 'Connected across every workspace',
-      error: 'WhatsApp could not load',
-    };
-    els.whatsappPanelStatus.textContent = payload.message || defaults[status] || defaults.idle;
-    els.whatsappPanelStatus.dataset.status = status;
-  }
-  const unreadCount = Math.max(0, Math.min(999, Number(payload.unreadCount) || 0));
-  if (els.whatsappUnreadBadge) {
+function renderSidebarStatus(site) {
+  const { status, message, url } = state.sidebarPanelStatuses.get(site.id) || {};
+  const loading = !status || status === 'idle' || status === 'loading';
+  const origin = URL.parse(url || site.url || '')?.origin;
+  const statusText = loading ? 'Loading…' : status === 'error' ? 'Could not load' : origin || 'Ready';
+
+  els.sidebarPanelStatus.textContent = statusText;
+  els.sidebarPanelStatus.title = origin || '';
+  els.sidebarPanelStatus.dataset.status = loading ? 'loading' : status;
+  setHidden($('sidebar-panel-placeholder'), !loading && status !== 'error');
+  setHidden($('sidebar-loading-ring'), !loading);
+  $('sidebar-panel-message').textContent = loading ? 'Loading ' + site.title + '…' :
+    message || 'Reload to try again.';
+}
+
+function handleSidebarPanelStatus(payload) {
+  if (!payload || !getSidebarSite(payload.id)) return;
+  state.sidebarPanelStatuses.set(payload.id, payload);
+  if (payload.id === state.sidebarPanelId) renderSidebarStatus(getSidebarSite(payload.id));
+  if (payload.id === 'whatsapp' && payload.unreadCount !== undefined) {
+    const unreadCount = clamp(payload.unreadCount, 0, 999);
     els.whatsappUnreadBadge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
-    els.whatsappUnreadBadge.setAttribute(
-      'aria-label',
-      unreadCount + ' unread WhatsApp message' + (unreadCount === 1 ? '' : 's')
-    );
+    els.whatsappUnreadBadge.setAttribute('aria-label', unreadCount + ' unread WhatsApp message' + (unreadCount === 1 ? '' : 's'));
     setHidden(els.whatsappUnreadBadge, unreadCount === 0);
   }
+}
+
+function openSidebarSiteDialog() {
+  els.sidebarSiteForm.reset();
+  setHidden($('sidebar-site-error'), true);
+  openModalSurface(els.sidebarSiteBackdrop, els.sidebarSiteForm);
+  window.setTimeout(function () { $('sidebar-site-url').focus(); }, 0);
+}
+
+function closeSidebarSiteDialog() {
+  closeModalSurface(els.sidebarSiteBackdrop);
+}
+
+function submitSidebarSite(event) {
+  event.preventDefault();
+  const error = $('sidebar-site-error');
+  const url = sidebarWebsiteUrl($('sidebar-site-url').value);
+  if (!url) {
+    error.textContent = 'Enter a valid HTTP or HTTPS website address.';
+    setHidden(error, false);
+    $('sidebar-site-url').focus();
+    return;
+  }
+  const existing = state.sidebarSites.find(function (site) { return site.url === url.href; });
+  const hostname = url.hostname.replace(/^www\./i, '') || url.hostname;
+  const site = existing || {
+    id: 'site-' + crypto.randomUUID(),
+    title: $('sidebar-site-name').value.trim() || hostname.slice(0, 80),
+    url: url.href
+  };
+  try {
+    if (!existing) saveSidebarSites([...state.sidebarSites, site]);
+  } catch {
+    error.textContent = 'Could not save the website to the sidebar.';
+    setHidden(error, false);
+    return;
+  }
+  closeSidebarSiteDialog();
+  setSidebarPanel(site.id);
+  els.appRail.querySelector('[data-sidebar-id="' + site.id + '"]').focus();
+}
+
+async function removeSidebarSite() {
+  const id = state.sidebarPanelId;
+  if (!id || BUILT_IN_SIDEBAR_SITES.has(id)) return;
+  try {
+    saveSidebarSites(state.sidebarSites.filter(function (site) { return site.id !== id; }));
+    setSidebarPanel(null, true);
+    state.sidebarPanelStatuses.delete(id);
+    await invoke('removeSidebarPanel', id);
+  } catch (error) {
+    notify('Could not remove the website: ' + errorMessage(error), 'error');
+  }
+}
+
+function initSidebarResize() {
+  const rootStyle = document.documentElement.style;
+  const handle = $('sidebar-resize-handle');
+  let drag = null;
+
+  function resize(width) {
+    const pageWidth = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-page-min-width'));
+    const maxWidth = Math.min(1600, window.innerWidth - els.appRail.offsetWidth - pageWidth);
+    rootStyle.setProperty('--sidebar-panel-width', Math.round(clamp(width, 420, maxWidth)) + 'px');
+    scheduleLayout();
+  }
+
+  function saveWidth() {
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, rootStyle.getPropertyValue('--sidebar-panel-width'));
+    } catch {}
+  }
+
+  handle.addEventListener('pointerdown', function (event) {
+    if (event.button !== 0 || drag) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    drag = { x: event.clientX, width: els.sidebarPanel.offsetWidth };
+    document.body.classList.add('sidebar-resizing');
+  });
+  handle.addEventListener('pointermove', function (event) {
+    if (drag && handle.hasPointerCapture(event.pointerId)) resize(drag.width + event.clientX - drag.x);
+  });
+  handle.addEventListener('lostpointercapture', function () {
+    if (!drag) return;
+    drag = null;
+    document.body.classList.remove('sidebar-resizing');
+    saveWidth();
+  });
+  handle.addEventListener('keydown', function (event) {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const step = (event.shiftKey ? 50 : 10) * (event.key === 'ArrowLeft' ? -1 : 1);
+    resize(els.sidebarPanel.offsetWidth + step);
+    saveWidth();
+  });
+  try {
+    const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY) || localStorage.getItem('invicta-whatsapp-width');
+    if (saved && /^\d+px$/.test(saved)) rootStyle.setProperty('--sidebar-panel-width', saved);
+  } catch {}
 }
 
 function setMode(mode) {
@@ -1937,16 +2114,9 @@ async function newTab(url) {
   }
 }
 
-async function openChatGpt() {
-  if (state.drawerOpen) closeDrawer(false);
-  if (state.whatsappPanelOpen) setWhatsappPanelOpen(false);
-  closeMenu(false);
-  try {
-    await invoke('openChatGptTab');
-    await refreshBrowserState();
-  } catch (error) {
-    notify('Could not open ChatGPT: ' + errorMessage(error), 'error');
-  }
+function openChatGpt() {
+  setSidebarPanel('chatgpt');
+  $('btn-chatgpt').focus();
 }
 
 async function closeTab(id) {
@@ -2738,9 +2908,6 @@ function renderDownloadPopout() {
     row.dataset.danger = isDangerousDownload(item) ? 'true' : 'false';
     row.dataset.missing = (item.exists === false) ? 'true' : 'false';
 
-    // ── Heading row (icon + copy + dismiss) ──
-    const heading = createElement('div', 'download-mini-heading');
-
     // File type badge with data-ext for CSS colour-coding
     const ext = downloadExtension(item);
     const icon = createElement('span', 'download-mini-icon', downloadIcon(item));
@@ -2749,7 +2916,8 @@ function renderDownloadPopout() {
 
     // File details
     const copy = createElement('div', 'download-mini-copy');
-    const titleEl = createElement('p', 'download-mini-title', item.filename);
+    const titleEl = createElement('p', 'download-mini-title', item.filename || 'Unknown file');
+    titleEl.title = titleEl.textContent;
     const metaEl = createElement('p', 'download-mini-meta', downloadMetaText(item));
     const source = downloadSourceText(item);
     if (source) metaEl.title = source;
@@ -2765,8 +2933,7 @@ function renderDownloadPopout() {
       renderDownloadPopout();
     });
 
-    heading.append(icon, copy, dismiss);
-    row.appendChild(heading);
+    row.append(icon, copy, dismiss);
 
     // Dangerous file warning chip
     if (isDangerousDownload(item)) {
@@ -2869,7 +3036,9 @@ function renderDownloads() {
 
     const main = createElement('div', 'data-item-main');
     const titleRow = createElement('div', 'download-title-row');
-    titleRow.appendChild(createElement('p', 'data-item-title', item.filename || 'Unknown file'));
+    const title = createElement('p', 'data-item-title', item.filename || 'Unknown file');
+    title.title = title.textContent;
+    titleRow.appendChild(title);
     titleRow.appendChild(createElement('span', 'download-status-chip', downloadStateText(item)));
     main.appendChild(titleRow);
 
@@ -3059,7 +3228,7 @@ function setDrawerPanel(panelName, focusTab) {
 }
 
 function openDrawer(panelName) {
-  if (state.whatsappPanelOpen) setWhatsappPanelOpen(false);
+  if (state.sidebarPanelId) setSidebarPanel(null);
   state.drawerOpen = true;
   document.body.classList.add('tools-panel-open');
   setHidden(els.drawer, false);
@@ -3758,7 +3927,8 @@ function registerBrowserEvents() {
   registerEvent('download-created', function (payload) { upsertDownload(payload, true); });
   registerEvent('download-updated', function (payload) { upsertDownload(payload, false); });
   registerEvent('password-save-request', showPasswordSaveRequest);
-  registerEvent('whatsapp-panel-status', handleWhatsappPanelStatus);
+  registerEvent('sidebar-panel-status', handleSidebarPanelStatus);
+  registerEvent('close-sidebar-panel-requested', function () { setSidebarPanel(null, true); });
   registerEvent('fullscreen-change', function (isFullscreen) {
     state.isFullscreen = Boolean(isFullscreen);
     document.body.classList.toggle('fullscreen', state.isFullscreen);
@@ -4023,94 +4193,43 @@ function wireUi() {
   });
   bindClick('btn-split-screen', toggleSplitScreen);
   bindClick('btn-screenshot', takeScreenshot);
-  bindClick('btn-whatsapp', function () {
-    setWhatsappPanelOpen(!state.whatsappPanelOpen);
+  els.appRail.addEventListener('click', function (event) {
+    const button = event.target.closest('[data-sidebar-id]');
+    if (button) {
+      const id = button.dataset.sidebarId;
+      setSidebarPanel(id === state.sidebarPanelId ? null : id);
+    }
   });
   bindClick('btn-browser-tools', toggleDrawer);
-  bindClick('btn-chatgpt', openChatGpt);
   bindClick('quick-link-chatgpt', openChatGpt);
   bindClick('btn-settings-chatgpt', openChatGpt);
-  bindClick('btn-close-whatsapp', function () { setWhatsappPanelOpen(false); });
-  bindClick('btn-whatsapp-reload', async function () {
-    state.whatsappPanelStatus = 'loading';
-    handleWhatsappPanelStatus({ status: 'loading', message: 'Reloading WhatsApp...' });
+  bindClick('btn-add-sidebar-site', openSidebarSiteDialog);
+  bindClick('btn-close-sidebar-site', closeSidebarSiteDialog);
+  bindClick('btn-cancel-sidebar-site', closeSidebarSiteDialog);
+  els.sidebarSiteForm.addEventListener('submit', submitSidebarSite);
+  bindClick('btn-close-sidebar', function () { setSidebarPanel(null, true); });
+  bindClick('btn-sidebar-remove', removeSidebarSite);
+  bindClick('btn-sidebar-reload', async function () {
+    const id = state.sidebarPanelId;
+    if (!id) return;
     try {
-      await invoke('reloadWhatsappPanel');
+      await invoke('reloadSidebarPanel', id);
     } catch (error) {
-      handleWhatsappPanelStatus({ status: 'error', message: 'Reload failed: ' + errorMessage(error) });
+      handleSidebarPanelStatus({ id: id, status: 'error', message: errorMessage(error) });
     }
   });
-  bindClick('btn-whatsapp-open-tab', async function () {
+  bindClick('btn-sidebar-open-tab', async function () {
+    const id = state.sidebarPanelId;
+    if (!id) return;
     try {
-      await invoke('openWhatsappTab');
-      setWhatsappPanelOpen(false);
+      await invoke('openSidebarPanelTab', id);
+      if (id === state.sidebarPanelId) setSidebarPanel(null);
+      await refreshBrowserState();
     } catch (error) {
-      notify('Could not open WhatsApp tab: ' + errorMessage(error), 'error');
+      notify('Could not open the website in a tab: ' + errorMessage(error), 'error');
     }
   });
-
-  (function initWhatsappResize() {
-    var handle = els.whatsappResizeHandle;
-    if (!handle) return;
-    var dragging = false;
-    var startX = 0;
-    var startWidth = 0;
-    var MIN_W = 420;
-    var MAX_W = 1600;
-
-    function onMouseDown(e) {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      dragging = true;
-      startX = e.clientX;
-      startWidth = els.whatsappPanel.getBoundingClientRect().width;
-      document.body.classList.add('whatsapp-resizing');
-      document.addEventListener('mousemove', onMouseMove);
-      document.addEventListener('mouseup', onMouseUp);
-    }
-
-    function onMouseMove(e) {
-      if (!dragging) return;
-      var delta = e.clientX - startX;
-      var newWidth = Math.min(MAX_W, Math.max(MIN_W, startWidth + delta));
-      document.documentElement.style.setProperty('--whatsapp-panel-width', newWidth + 'px');
-      scheduleLayout();
-    }
-
-    function onMouseUp() {
-      if (!dragging) return;
-      dragging = false;
-      document.body.classList.remove('whatsapp-resizing');
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
-      try {
-        var saved = document.documentElement.style.getPropertyValue('--whatsapp-panel-width');
-        if (saved) localStorage.setItem('invicta-whatsapp-width', saved);
-      } catch (error) { /* ignore */ }
-    }
-
-    handle.addEventListener('mousedown', onMouseDown);
-
-    handle.addEventListener('keydown', function (e) {
-      var step = e.shiftKey ? 50 : 10;
-      var panel = els.whatsappPanel;
-      var current = panel ? panel.getBoundingClientRect().width : 520;
-      if (e.key === 'ArrowRight') { e.preventDefault(); onKeyboardNudge(current + step); }
-      if (e.key === 'ArrowLeft')  { e.preventDefault(); onKeyboardNudge(current - step); }
-    });
-
-    function onKeyboardNudge(w) {
-      var newWidth = Math.min(MAX_W, Math.max(MIN_W, Math.round(w)));
-      document.documentElement.style.setProperty('--whatsapp-panel-width', newWidth + 'px');
-      scheduleLayout();
-      try { localStorage.setItem('invicta-whatsapp-width', newWidth + 'px'); } catch (error) { /* ignore */ }
-    }
-
-    try {
-      var saved = localStorage.getItem('invicta-whatsapp-width');
-      if (saved) document.documentElement.style.setProperty('--whatsapp-panel-width', saved);
-    } catch (error) { /* ignore */ }
-  })();
+  initSidebarResize();
 
   bindClick('btn-download-popout', function () {
     setDownloadPopoutOpen(!state.downloadPopoutOpen);
@@ -4687,7 +4806,7 @@ function wireUi() {
   // — HTTP Basic Auth dialog —
   if (typeof api.on === 'function') {
     api.on('http-auth-request', function (data) {
-      if (!data || !data.requestId || data.tabId === undefined || data.tabId === null) return;
+      if (!data || !data.requestId || (!data.sidebarId && data.tabId == null)) return;
       if (state.httpAuthRequests.has(data.requestId)) return;
       state.httpAuthRequests.set(data.requestId, Object.assign({}, data, {
         username: data.savedUsername || '',
@@ -4724,6 +4843,7 @@ function wireUi() {
   document.addEventListener('click', function (event) {
     if (state.menuOpen && !els.menu.contains(event.target) && !els.menuButton.contains(event.target)) closeMenu();
     if (event.target === els.siteInfoModalBackdrop) closeSiteInfoModal();
+    if (event.target === els.sidebarSiteBackdrop) closeSidebarSiteDialog();
     if (event.target === els.addWorkspaceModalBackdrop) closeAddWorkspaceModal();
     if (event.target === els.passwordsModalBackdrop) closePasswordsModal();
     if (event.target === els.importModalBackdrop) closeImportModal();
@@ -4786,6 +4906,9 @@ function handleGlobalShortcuts(event) {
     } else if (!els.siteInfoModalBackdrop.classList.contains('hidden')) {
       event.preventDefault();
       closeSiteInfoModal();
+    } else if (!els.sidebarSiteBackdrop.classList.contains('hidden')) {
+      event.preventDefault();
+      closeSidebarSiteDialog();
     } else if (!els.addWorkspaceModalBackdrop.classList.contains('hidden')) {
       event.preventDefault();
       closeAddWorkspaceModal();
@@ -4805,12 +4928,15 @@ function handleGlobalShortcuts(event) {
     } else if (state.passwordSaveRequest) {
       event.preventDefault();
       dismissPasswordSaveRequest();
-    } else if (state.whatsappPanelOpen) {
-      event.preventDefault();
-      setWhatsappPanelOpen(false);
     } else if (state.downloadPopoutOpen) {
       event.preventDefault();
       setDownloadPopoutOpen(false);
+    } else if (state.httpAuthRequest && state.httpAuthRequest.sidebarId) {
+      event.preventDefault();
+      respondToHttpAuth(true);
+    } else if (state.sidebarPanelId) {
+      event.preventDefault();
+      setSidebarPanel(null, true);
     } else if (state.extensionStoreOpen) {
       event.preventDefault();
       closeExtensionStore();
@@ -4922,7 +5048,8 @@ async function initialize() {
   closeDrawer(false);
   closeMenu(false);
   setDownloadPopoutOpen(false);
-  setWhatsappPanelOpen(false);
+  loadSidebarSites();
+  setSidebarPanel(null);
   setPasswordSavePromptVisible(false);
   setHidden(els.findBar, true);
   setHidden(els.updateModalBackdrop, true);
