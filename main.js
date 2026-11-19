@@ -41,13 +41,9 @@ app.commandLine.appendSwitch('enable-usermedia-screen-capturing');
 app.commandLine.appendSwitch('allow-http-screen-capture');
 app.commandLine.appendSwitch('enable-features', 'ScreenCapture,WebRTCPipeWireCapturer,OverlayScrollbar,CanvasOopRasterization,PartitionedCookies');
 app.commandLine.appendSwitch('disable-features', 'WebRtcHideLocalIpsWithMdns,TranslateUI,MediaRouter,OptimizationHints');
-// Low-RAM Chromium flags
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256 --optimize-for-size');
-app.commandLine.appendSwitch('renderer-process-limit', '5');
+// Memory & Performance optimization switches
+// Keep background networking disabled to avoid unnecessary background data and CPU usage.
 app.commandLine.appendSwitch('disable-background-networking');
-app.commandLine.appendSwitch('memory-pressure-off');
-app.commandLine.appendSwitch('aggressive-cache-discard');
-app.commandLine.appendSwitch('purge-memory-button');
 
 const isDev = process.argv.includes('--dev') || !app.isPackaged;
 const privateInstance = process.argv.includes('--private-mode');
@@ -2244,8 +2240,12 @@ function attachTabEvents(tab) {
         audible = false;
       }
     }
+    const changed = tab.audible !== audible;
     tab.audible = audible;
     emitTab('tab-audio-state', tab);
+    if (changed && typeof applyTabBackgroundThrottling === 'function') {
+      applyTabBackgroundThrottling();
+    }
   };
 
   contents.on('media-started-playing', () => updateAudio(true));
@@ -2270,12 +2270,16 @@ function attachTabEvents(tab) {
   });
 
   contents.on('render-process-gone', (event, details) => {
+    const reason = details && details.reason ? details.reason : 'unknown';
+    const exitCode = details && details.exitCode !== undefined ? details.exitCode : -1;
+    console.warn(`[Renderer crash] Tab ${tab.id} (${tab.url}) render-process-gone: ${reason} (exitCode: ${exitCode})`);
     tab.crashed = true;
     tab.isLoading = false;
     emitTab('tab-update', tab);
     sendToShell('tab-update', {
       ...publicTab(tab),
-      crashReason: details && details.reason ? details.reason : 'unknown',
+      crashReason: reason,
+      exitCode,
     });
   });
 
@@ -2511,6 +2515,9 @@ function switchTab(id) {
   if (tab.view && tab.view.webContents && !tab.view.webContents.isDestroyed()) {
     tab.view.webContents.setZoomFactor(Number.isFinite(tab.zoom) ? tab.zoom : 1.0);
   }
+  if (typeof applyTabBackgroundThrottling === 'function') {
+    applyTabBackgroundThrottling();
+  }
   resizeViews();
   emitTab('tab-switched', tab);
   scheduleSessionSave();
@@ -2618,8 +2625,19 @@ function goForwardActive() {
 
 function reloadTab(id, ignoreCache) {
   const tab = getTab(id);
-  if (ignoreCache) tab.view.webContents.reloadIgnoringCache();
-  else tab.view.webContents.reload();
+  tab.crashed = false;
+  tab.isLoading = true;
+  emitTab('tab-update', tab);
+  const contents = tab.view.webContents;
+  if (!contents.isDestroyed()) {
+    if (contents.isCrashed()) {
+      loadTabContents(tab, tab.url || 'about:blank').catch(() => {});
+    } else if (ignoreCache) {
+      contents.reloadIgnoringCache();
+    } else {
+      contents.reload();
+    }
+  }
   return publicTab(tab);
 }
 
@@ -4112,17 +4130,19 @@ async function clearBrowsingData(options) {
 function getReleaseDetails() {
   return {
     version: app.getVersion(),
-    releaseDate: '2026-11-17',
-    title: 'ChatGPT, saved websites, and Downloads',
-    intro: 'Open ChatGPT and your favorite websites in the sidebar.',
+    releaseDate: '2026-11-19',
+    title: 'Gmail & Heavy SPA Stability and Memory Performance',
+    intro: 'Fixes Gmail and heavy web application crashes, and optimizes memory and tab resilience.',
     features: [
-      'Open ChatGPT in the same sidebar as WhatsApp from the app rail or with Ctrl+Shift+G.',
-      'Use the plus button to save a website. Sidebar pages stay open as you switch between them.',
-      'Reload a sidebar site or open it in a full tab from the panel header.',
+      'Uncapped V8 JavaScript heap headroom so complex web apps like Gmail, Google Chat, and Google Meet load reliably without out-of-memory aborts.',
+      'Isolated multi-process renderer architecture preventing background tab crashes from affecting active workspaces.',
+      'Active tabs and audible media/meeting tabs are protected from background timer throttling.',
+      'Accurate real-time RAM metrics in the titlebar reflecting actual private working set memory.',
     ],
     bugFixes: [
-      'Aligned file details, warnings, progress bars, and controls in Downloads.',
-      'Downloads and other browser popups stay accessible alongside sidebar websites.',
+      'Resolved repeated "This tab stopped responding" crashes on Gmail and Google Workspace services.',
+      'Restored one-click instant recovery from page crashes with full process re-initialization.',
+      'Re-enabled Chromium native memory pressure notifications to naturally trim cache during system memory constraints.',
     ],
   };
 }
@@ -4369,7 +4389,10 @@ function applyTabBackgroundThrottling() {
   const enabled = currentGamingLevel === 0 && backgroundTabThrottlingEnabled();
   for (const tab of tabs.values()) {
     const contents = tab.view.webContents;
-    if (!contents.isDestroyed()) contents.setBackgroundThrottling(enabled);
+    if (!contents.isDestroyed()) {
+      const shouldThrottle = enabled && tab.id !== activeTabId && !tab.audible;
+      contents.setBackgroundThrottling(shouldThrottle);
+    }
   }
 }
 
@@ -5001,9 +5024,11 @@ function registerIpcHandlers() {
 
   registerHandler('get-memory-stats', async () => {
     const metrics = app.getAppMetrics();
-    const totalMB = metrics.reduce((sum, m) => sum + (m.memory ? (m.memory.workingSetSize || 0) : 0), 0);
+    const privateKB = metrics.reduce((sum, m) => sum + (m.memory && m.memory.privateBytes ? m.memory.privateBytes : (m.memory ? m.memory.workingSetSize || 0 : 0)), 0);
+    const sharedKB = metrics.reduce((max, m) => Math.max(max, (m.memory && m.memory.sharedBytes) || 0), 0);
+    const totalMB = Math.round((privateKB + sharedKB) / 1024);
     return {
-      totalMB: Math.round(totalMB / 1024),
+      totalMB,
       processes: metrics.length,
       backgroundTabThrottling: backgroundTabThrottlingEnabled(),
       freeSystemMB: Math.round(os.freemem() / (1024 * 1024)),

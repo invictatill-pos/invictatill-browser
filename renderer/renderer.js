@@ -2212,8 +2212,16 @@ async function goForward() {
 async function reloadOrStop() {
   const tab = activeTab();
   try {
-    if (tab && tab.loading) await invoke('stop');
-    else await invoke('reload');
+    if (tab && (tab.crashed || tab.status === 'crashed')) {
+      tab.crashed = false;
+      tab.loading = true;
+      displayHostForTab(tab);
+      await invoke('reload');
+    } else if (tab && tab.loading) {
+      await invoke('stop');
+    } else {
+      await invoke('reload');
+    }
   } catch (error) {
     notify(errorMessage(error), 'error');
   }
@@ -3998,8 +4006,8 @@ async function updateMemoryStats() {
     }
     if (els.memoryPill) {
       setHidden(els.memoryPill, false);
-      els.memoryPill.classList.toggle('warn', stats.totalMB > 800);
-      els.memoryPill.classList.toggle('danger', stats.totalMB > 1500);
+      els.memoryPill.classList.toggle('warn', stats.totalMB > 2000);
+      els.memoryPill.classList.toggle('danger', stats.totalMB > 3500);
       els.memoryPill.title = 'InvictaTill Browser: ' + stats.totalMB + ' MB RAM. Click to clear page caches.';
     }
     if (els.memStatTotal) els.memStatTotal.textContent = stats.totalMB + ' MB';
